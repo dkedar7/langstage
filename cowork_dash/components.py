@@ -271,6 +271,9 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
     downloadable = result.get("downloadable", False)
     csv_data = result.get("csv")
 
+    # Get item ID for potential debugging
+    item_id = result.get("_item_id", "unknown")
+
     # Build title header if present
     header_children = []
     if title:
@@ -373,16 +376,24 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
 
     elif display_type == "pdf":
         mime_type = result.get("mime_type", "application/pdf")
-        data_url = f"data:{mime_type};base64,{data}"
-        content_element = html.Embed(
-            src=data_url,
-            type="application/pdf",
-            style={
-                "width": "100%",
-                "height": "400px",
-                "borderRadius": "5px",
-            }
-        )
+        # Debug: Check if data exists
+        if not data:
+            content_element = html.Div(
+                "Error: PDF data is empty or missing",
+                style={"color": "red", "padding": "10px"}
+            )
+        else:
+            data_url = f"data:{mime_type};base64,{data}"
+            # Use iframe instead of embed for better browser compatibility
+            content_element = html.Iframe(
+                src=data_url,
+                style={
+                    "width": "100%",
+                    "height": "400px",
+                    "border": "none",
+                    "borderRadius": "5px",
+                }
+            )
 
     elif display_type == "json":
         json_str = json.dumps(data, indent=2) if isinstance(data, (dict, list)) else str(data)
@@ -425,20 +436,110 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
             })
         )
 
-    # Assemble final component
-    children = [*header_children]
-    if content_element:
-        children.append(content_element)
+    # Assemble final component with collapsible wrapper
+    # Note: Dash components evaluate to False in boolean context, so use 'is not None'
+
+    # Build the summary label for the collapsible header
+    display_type_labels = {
+        "image": "📷 Image",
+        "plotly": "📊 Chart",
+        "dataframe": "📋 Table",
+        "html": "🌐 HTML",
+        "pdf": "📄 PDF",
+        "json": "📝 JSON",
+        "text": "📝 Text",
+        "error": "⚠️ Error",
+    }
+    type_label = display_type_labels.get(display_type, "📎 Content")
+    summary_text = f"{type_label}: {title}" if title else type_label
+    if filename:
+        summary_text += f" ({filename})"
+
+    # Content to show inside the collapsible section
+    content_children = []
+    if content_element is not None:
+        content_children.append(content_element)
     if footer_children:
-        children.append(
+        content_children.append(
             html.Div(footer_children, style={"marginTop": "5px"})
         )
 
-    return html.Div(children, className="display-inline-container", style={
+    # Create "Add to Canvas" button with pattern-matching ID
+    # Using html.Button for reliable n_clicks behavior (DMC Tooltip can interfere with callbacks)
+    add_to_canvas_btn = html.Button(
+        DashIconify(icon="mdi:palette-outline", width=16),
+        id={"type": "add-display-to-canvas-btn", "index": item_id},
+        className="add-to-canvas-btn",
+        title="Add to Canvas",
+        style={
+            "background": "transparent",
+            "border": "none",
+            "cursor": "pointer",
+            "padding": "4px",
+            "borderRadius": "4px",
+            "display": "flex",
+            "alignItems": "center",
+            "justifyContent": "center",
+        }
+    )
+
+    # Store the result data in a hidden div for the callback to retrieve
+    result_store = dcc.Store(
+        id={"type": "display-inline-data", "index": item_id},
+        data=result
+    )
+
+    # Build summary with text and button
+    summary_content = html.Div([
+        html.Span(summary_text, className="display-inline-summary-text"),
+        add_to_canvas_btn,
+    ], className="display-inline-summary-row", style={
+        "display": "flex",
+        "alignItems": "center",
+        "justifyContent": "space-between",
+        "width": "100%",
+    })
+
+    return html.Details([
+        html.Summary(summary_content, className="display-inline-summary"),
+        html.Div(content_children, className="display-inline-content", style={
+            "marginTop": "8px",
+        }),
+        result_store,  # Hidden store for callback data
+    ], className="display-inline-container", open=True, style={
         "padding": "10px",
         "borderRadius": "8px",
         "marginTop": "5px",
     })
+
+
+def extract_display_inline_results(tool_calls: List[Dict], colors: Dict) -> List:
+    """Extract and render display_inline results prominently from tool calls.
+
+    This function finds all display_inline tool results and renders them
+    as standalone visual elements that appear alongside messages, rather
+    than buried in the tool call details.
+
+    Args:
+        tool_calls: List of tool call dicts with 'name', 'args', 'result', 'status'
+        colors: Color scheme dict
+
+    Returns:
+        List of rendered display_inline components (may be empty)
+    """
+    if not tool_calls:
+        return []
+
+    results = []
+    for tc in tool_calls:
+        if tc.get("name") == "display_inline" and tc.get("status") in ("success", "error"):
+            result = tc.get("result")
+            # Check if result is a dict with display_inline structure
+            if isinstance(result, dict) and result.get("type") == "display_inline":
+                rendered = render_display_inline_result(result, colors)
+                results.append(rendered)
+
+    return results
 
 
 def format_tool_calls_inline(tool_calls: List[Dict], colors: Dict):
@@ -613,6 +714,8 @@ def _get_type_badge(item_type: str) -> dmc.Badge:
         "image": "green",
         "plotly": "violet",
         "mermaid": "cyan",
+        "pdf": "red",
+        "error": "red",
     }
     type_labels = {
         "markdown": "Text",
@@ -621,6 +724,8 @@ def _get_type_badge(item_type: str) -> dmc.Badge:
         "image": "Image",
         "plotly": "Plot",
         "mermaid": "Diagram",
+        "pdf": "PDF",
+        "error": "Error",
     }
     color = type_colors.get(item_type, "gray")
     label = type_labels.get(item_type, item_type.title())
@@ -788,6 +893,30 @@ def render_canvas_items(canvas_items: List[Dict], colors: Dict, collapsed_ids: O
                 "textAlign": "center",
                 "overflow": "auto",
             })
+
+        elif item_type == "pdf":
+            pdf_data = item.get("data", "")
+            mime_type = item.get("mime_type", "application/pdf")
+            if not pdf_data:
+                content = html.Div([
+                    html.Div("Error: PDF data is empty or missing", style={"color": "red"})
+                ], className="canvas-item-content canvas-item-pdf", style={"padding": "10px"})
+            else:
+                data_url = f"data:{mime_type};base64,{pdf_data}"
+                # Use iframe instead of embed for better browser compatibility
+                content = html.Div([
+                    html.Iframe(
+                        src=data_url,
+                        style={
+                            "width": "100%",
+                            "height": "500px",
+                            "border": "none",
+                            "borderRadius": "5px",
+                        }
+                    )
+                ], className="canvas-item-content canvas-item-pdf", style={
+                    "padding": "10px",
+                })
 
         else:
             # Unknown type
