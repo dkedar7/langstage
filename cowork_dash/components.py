@@ -73,18 +73,12 @@ def format_message(role: str, content: str, colors: Dict, styles: Dict, is_new: 
 
 
 def format_loading(colors: Dict):
-    """Format loading indicator."""
+    """Format loading indicator with dots loader."""
     return html.Div([
-        html.Div([
-            html.Span("Agent", className="message-role-agent", style={
-                "fontSize": "12px", "fontWeight": "500",
-                "textTransform": "uppercase",
-            }),
-        ], style={"marginBottom": "5px"}),
-        html.Span("Thinking", className="loading-dots thinking-pulse thinking-text", style={
-            "fontSize": "15px", "fontWeight": "500",
-        })
-    ], className="chat-message chat-message-loading", style={"padding": "12px 15px"})
+        dmc.Loader(type="dots", size="sm")
+    ], className="chat-message chat-message-loading", style={
+        "padding": "12px 15px",
+    })
 
 
 def format_thinking(thinking_text: str, colors: Dict):
