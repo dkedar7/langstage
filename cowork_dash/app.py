@@ -35,7 +35,7 @@ from .canvas import export_canvas_to_markdown, load_canvas_from_markdown
 from .file_utils import build_file_tree, render_file_tree, read_file_content, get_file_download_data, load_folder_contents
 from .components import (
     format_message, format_loading, format_thinking, format_todos_inline, render_canvas_items, format_tool_calls_inline,
-    format_interrupt
+    format_interrupt, extract_display_inline_results, render_display_inline_result
 )
 from .layout import create_layout as create_layout_component
 from .virtual_fs import get_session_manager
@@ -251,6 +251,7 @@ _agent_state = {
     "thinking": "",
     "todos": [],
     "tool_calls": [],  # Current turn's tool calls (reset each turn)
+    "display_inline_items": [],  # Items pushed by display_inline tool (bypasses LangGraph)
     "canvas": load_canvas_from_markdown(WORKSPACE_ROOT) if not USE_VIRTUAL_FS else [],  # Load from canvas.md if exists (physical FS only)
     "response": "",
     "error": None,
@@ -258,6 +259,7 @@ _agent_state = {
     "last_update": time.time(),
     "start_time": None,  # Track when agent started for response time calculation
     "stop_requested": False,  # Flag to request agent stop
+    "stop_event": None,  # Threading event for immediate stop signaling
 }
 _agent_state_lock = threading.Lock()
 
@@ -275,11 +277,13 @@ def _get_default_agent_state() -> Dict[str, Any]:
         "thinking": "",
         "todos": [],
         "tool_calls": [],
+        "display_inline_items": [],  # Items pushed by display_inline tool (bypasses LangGraph)
         "canvas": [],
         "response": "",
         "error": None,
         "interrupt": None,
         "last_update": time.time(),
+        "stop_event": None,  # Threading event for immediate stop signaling
         "start_time": None,
         "stop_requested": False,
     }
@@ -323,7 +327,9 @@ def _get_session_state_lock() -> threading.Lock:
 
 
 def request_agent_stop(session_id: Optional[str] = None):
-    """Request the agent to stop execution.
+    """Request the agent to stop execution immediately.
+
+    Sets the stop_requested flag and signals the stop_event for immediate interruption.
 
     Args:
         session_id: Session ID for virtual FS mode, None for physical FS mode.
@@ -333,10 +339,16 @@ def request_agent_stop(session_id: Optional[str] = None):
         with _session_agents_lock:
             state["stop_requested"] = True
             state["last_update"] = time.time()
+            # Signal the stop event for immediate interruption
+            if state.get("stop_event"):
+                state["stop_event"].set()
     else:
         with _agent_state_lock:
             _agent_state["stop_requested"] = True
             _agent_state["last_update"] = time.time()
+            # Signal the stop event for immediate interruption
+            if _agent_state.get("stop_event"):
+                _agent_state["stop_event"].set()
 
 
 def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: str = None, session_id: Optional[str] = None):
@@ -366,6 +378,12 @@ def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: st
             current_state["response"] = f"⚠️ {current_state.get('error', 'No agent available')}\n\nPlease check your setup and try again."
             current_state["running"] = False
         return
+
+    # Create a stop event for immediate interruption
+    stop_event = threading.Event()
+    with state_lock:
+        current_state["stop_event"] = stop_event
+        current_state["stop_requested"] = False  # Reset stop flag
 
     # Track tool calls by their ID for updating status
     tool_call_map = {}
@@ -423,14 +441,15 @@ def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: st
             agent_input = {"messages": [{"role": "user", "content": message_with_context}]}
 
         for update in current_agent.stream(agent_input, stream_mode="updates", config=stream_config):
-            # Check if stop was requested
-            with state_lock:
-                if current_state.get("stop_requested"):
-                    current_state["response"] = current_state.get("response", "") + "\n\nAgent stopped by user."
+            # Check if stop was requested (via flag or event)
+            if stop_event.is_set() or current_state.get("stop_requested"):
+                with state_lock:
+                    current_state["response"] = current_state.get("response", "") + "\n\n⏹️ Agent stopped by user."
                     current_state["running"] = False
                     current_state["stop_requested"] = False
+                    current_state["stop_event"] = None
                     current_state["last_update"] = time.time()
-                    return
+                return
 
             # Check for interrupt
             if isinstance(update, dict) and "__interrupt__" in update:
@@ -488,10 +507,16 @@ def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: st
                                             content_lower.startswith("traceback")):
                                             status = "error"
 
-                                    # Truncate result for display
-                                    result_display = str(content)
-                                    if len(result_display) > 1000:
-                                        result_display = result_display[:1000] + "..."
+                                    # display_inline now pushes rich content directly to queue
+                                    # and returns a simple confirmation message, so no special handling needed
+                                    if isinstance(content, str):
+                                        # Truncate result for display
+                                        result_display = content[:1000] + "..." if len(content) > 1000 else content
+                                    else:
+                                        # Convert other types to string and truncate
+                                        result_display = str(content)
+                                        if len(result_display) > 1000:
+                                            result_display = result_display[:1000] + "..."
 
                                     _update_tool_call_result(tool_call_id, result_display, status)
 
@@ -696,6 +721,7 @@ def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: st
 
         with state_lock:
             current_state["running"] = False
+            current_state["stop_event"] = None  # Clean up stop event
             current_state["last_update"] = time.time()
 
 
@@ -899,6 +925,7 @@ def resume_agent_from_interrupt(decision: str, action: str = "approve", action_r
 
         with state_lock:
             current_state["running"] = False
+            current_state["stop_event"] = None  # Clean up stop event
             current_state["response"] = f"Action rejected{tool_info}: {reject_message}"
             current_state["last_update"] = time.time()
 
@@ -955,7 +982,32 @@ def get_agent_state(session_id: Optional[str] = None) -> Dict[str, Any]:
         state["tool_calls"] = copy.deepcopy(current_state["tool_calls"])
         state["todos"] = copy.deepcopy(current_state["todos"])
         state["canvas"] = copy.deepcopy(current_state["canvas"])
+        state["display_inline_items"] = copy.deepcopy(current_state.get("display_inline_items", []))
         return state
+
+
+def push_display_inline_item(item: Dict[str, Any], session_id: Optional[str] = None):
+    """Push a display_inline item to the agent state (thread-safe).
+
+    This is called by the display_inline tool to store rich content
+    that bypasses LangGraph serialization.
+
+    Args:
+        item: The display result dict with type, display_type, data, etc.
+        session_id: Session ID for virtual FS mode, None for physical FS mode.
+    """
+    if USE_VIRTUAL_FS and session_id:
+        current_state = _get_session_state(session_id)
+        state_lock = _session_agents_lock
+    else:
+        current_state = _agent_state
+        state_lock = _agent_state_lock
+
+    with state_lock:
+        if "display_inline_items" not in current_state:
+            current_state["display_inline_items"] = []
+        current_state["display_inline_items"].append(item)
+        current_state["last_update"] = time.time()
 
 
 def reset_agent_state(session_id: Optional[str] = None):
@@ -979,8 +1031,11 @@ def reset_agent_state(session_id: Optional[str] = None):
         current_state["thinking"] = ""
         current_state["todos"] = []
         current_state["tool_calls"] = []
+        current_state["display_inline_items"] = []
         current_state["response"] = ""
         current_state["error"] = None
+        current_state["stop_event"] = None
+        current_state["stop_requested"] = False
         current_state["interrupt"] = None
         current_state["start_time"] = None
         current_state["stop_requested"] = False
@@ -1097,9 +1152,18 @@ def display_initial_messages(history, theme, skip_render, session_initialized, s
         messages.append(format_message(msg["role"], msg["content"], colors, STYLES, is_new=False, response_time=msg_response_time))
         # Render tool calls stored with this message
         if msg.get("tool_calls"):
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+            messages.extend(inline_results)
+            # Show collapsed tool calls section
             tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
+        # Render display_inline items stored with this message
+        if msg.get("display_inline_items"):
+            for item in msg["display_inline_items"]:
+                rendered = render_display_inline_result(item, colors)
+                messages.append(rendered)
         # Render todos stored with this message
         if msg.get("todos"):
             todos_block = format_todos_inline(msg["todos"], colors)
@@ -1175,6 +1239,10 @@ def handle_send_immediate(n_clicks, n_submit, message, history, theme, current_w
         messages.append(format_message(m["role"], m["content"], colors, STYLES, is_new=is_new, response_time=msg_response_time))
         # Render tool calls stored with this message
         if m.get("tool_calls"):
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(m["tool_calls"], colors)
+            messages.extend(inline_results)
+            # Show collapsed tool calls section
             tool_calls_block = format_tool_calls_inline(m["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
@@ -1228,17 +1296,29 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
     history = history or []
     colors = get_colors(theme or "light")
 
+    # Get display_inline items from agent state (bypasses LangGraph serialization)
+    display_inline_items = state.get("display_inline_items", [])
+
     def render_history_messages(history_items):
-        """Render all history items including tool calls and todos."""
+        """Render all history items including tool calls, display_inline items, and todos."""
         messages = []
         for msg in history_items:
             msg_response_time = msg.get("response_time") if msg["role"] == "assistant" else None
             messages.append(format_message(msg["role"], msg["content"], colors, STYLES, response_time=msg_response_time))
             # Render tool calls stored with this message
             if msg.get("tool_calls"):
+                # Extract and show display_inline results prominently
+                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+                messages.extend(inline_results)
+                # Show collapsed tool calls section
                 tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
                 if tool_calls_block:
                     messages.append(tool_calls_block)
+            # Render display_inline items stored with this message
+            if msg.get("display_inline_items"):
+                for item in msg["display_inline_items"]:
+                    rendered = render_display_inline_result(item, colors)
+                    messages.append(rendered)
             # Render todos stored with this message
             if msg.get("todos"):
                 todos_block = format_todos_inline(msg["todos"], colors)
@@ -1258,9 +1338,18 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
                 messages.append(thinking_block)
 
         if state.get("tool_calls"):
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(state["tool_calls"], colors)
+            messages.extend(inline_results)
+            # Show collapsed tool calls section
             tool_calls_block = format_tool_calls_inline(state["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
+
+        # Render any queued display_inline items (bypasses LangGraph serialization)
+        for item in display_inline_items:
+            rendered = render_display_inline_result(item, colors)
+            messages.append(rendered)
 
         if state["todos"]:
             todos_block = format_todos_inline(state["todos"], colors)
@@ -1282,15 +1371,20 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
         if state.get("start_time"):
             response_time = time.time() - state["start_time"]
 
-        # Agent finished - store tool calls and todos with the USER message (they appear after user msg)
+        # Agent finished - store tool calls, todos, and display_inline items with the USER message
+        # (they appear after user msg in the UI)
+        saved_display_inline_items = False
         if history:
-            # Find the last user message and attach tool calls and todos to it
+            # Find the last user message and attach tool calls, todos, and display_inline items to it
             for i in range(len(history) - 1, -1, -1):
                 if history[i]["role"] == "user":
                     if state.get("tool_calls"):
                         history[i]["tool_calls"] = state["tool_calls"]
                     if state.get("todos"):
                         history[i]["todos"] = state["todos"]
+                    if display_inline_items:
+                        history[i]["display_inline_items"] = display_inline_items
+                        saved_display_inline_items = True
                     break
 
         # Add assistant response to history (with response time)
@@ -1310,14 +1404,30 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
             final_messages.append(format_message(msg["role"], msg["content"], colors, STYLES, is_new=is_new, response_time=msg_response_time))
             # Render tool calls stored with this message
             if msg.get("tool_calls"):
+                # Extract and show display_inline results prominently
+                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+                final_messages.extend(inline_results)
+                # Show collapsed tool calls section
                 tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
                 if tool_calls_block:
                     final_messages.append(tool_calls_block)
+            # Render display_inline items stored with this message
+            if msg.get("display_inline_items"):
+                for item in msg["display_inline_items"]:
+                    rendered = render_display_inline_result(item, colors)
+                    final_messages.append(rendered)
             # Render todos stored with this message
             if msg.get("todos"):
                 todos_block = format_todos_inline(msg["todos"], colors)
                 if todos_block:
                     final_messages.append(todos_block)
+
+        # Render any NEW queued display_inline items only if not already saved to history
+        # (avoids duplicate rendering)
+        if not saved_display_inline_items:
+            for item in display_inline_items:
+                rendered = render_display_inline_result(item, colors)
+                final_messages.append(rendered)
 
         # Disable polling, set skip flag to prevent display_initial_messages from re-rendering
         return final_messages, history, True, True
@@ -1333,9 +1443,18 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
 
         # Add current tool calls if available
         if state.get("tool_calls"):
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(state["tool_calls"], colors)
+            messages.extend(inline_results)
+            # Show collapsed tool calls section
             tool_calls_block = format_tool_calls_inline(state["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
+
+        # Render any queued display_inline items (bypasses LangGraph serialization)
+        for item in display_inline_items:
+            rendered = render_display_inline_result(item, colors)
+            messages.append(rendered)
 
         # Add current todos if available
         if state["todos"]:
@@ -1394,9 +1513,18 @@ def handle_stop_button(n_clicks, history, theme, session_id):
             msg_response_time = msg.get("response_time") if msg["role"] == "assistant" else None
             messages.append(format_message(msg["role"], msg["content"], colors, STYLES, is_new=False, response_time=msg_response_time))
             if msg.get("tool_calls"):
+                # Extract and show display_inline results prominently
+                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+                messages.extend(inline_results)
+                # Show collapsed tool calls section
                 tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
                 if tool_calls_block:
                     messages.append(tool_calls_block)
+            # Render display_inline items stored with this message
+            if msg.get("display_inline_items"):
+                for item in msg["display_inline_items"]:
+                    rendered = render_display_inline_result(item, colors)
+                    messages.append(rendered)
             if msg.get("todos"):
                 todos_block = format_todos_inline(msg["todos"], colors)
                 if todos_block:
@@ -1482,9 +1610,18 @@ def handle_interrupt_response(approve_clicks, reject_clicks, edit_clicks, input_
         messages.append(format_message(msg["role"], msg["content"], colors, STYLES, response_time=msg_response_time))
         # Render tool calls stored with this message
         if msg.get("tool_calls"):
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+            messages.extend(inline_results)
+            # Show collapsed tool calls section
             tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
+        # Render display_inline items stored with this message
+        if msg.get("display_inline_items"):
+            for item in msg["display_inline_items"]:
+                rendered = render_display_inline_result(item, colors)
+                messages.append(rendered)
         # Render todos stored with this message
         if msg.get("todos"):
             todos_block = format_todos_inline(msg["todos"], colors)
@@ -2966,6 +3103,133 @@ def handle_delete_confirmation(confirm_clicks, cancel_clicks, item_id, theme, co
         return render_canvas_items(canvas_items, colors, new_collapsed_ids), False, new_collapsed_ids
 
     raise PreventUpdate
+
+
+# =============================================================================
+# ADD DISPLAY_INLINE TO CANVAS CALLBACK
+# =============================================================================
+
+@app.callback(
+    [Output("canvas-content", "children", allow_duplicate=True),
+     Output("sidebar-view-toggle", "value", allow_duplicate=True)],
+    Input({"type": "add-display-to-canvas-btn", "index": ALL}, "n_clicks"),
+    [State({"type": "display-inline-data", "index": ALL}, "data"),
+     State("theme-store", "data"),
+     State("collapsed-canvas-items", "data"),
+     State("session-id", "data")],
+    prevent_initial_call=True
+)
+def add_display_inline_to_canvas(n_clicks_list, data_list, theme, collapsed_ids, session_id):
+    """Add a display_inline item to the canvas when the button is clicked.
+
+    This allows users to save inline display items to the canvas for persistent reference.
+    """
+    from .canvas import generate_canvas_id, export_canvas_to_markdown
+    from datetime import datetime
+
+    # Check if any button was actually clicked
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+
+    # Find which button was clicked
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    triggered = ctx.triggered[0]
+    triggered_id = triggered["prop_id"]
+
+    # Parse the pattern-matching ID to get the index
+    try:
+        # Format: {"type":"add-display-to-canvas-btn","index":"abc123"}.n_clicks
+        id_part = triggered_id.rsplit(".", 1)[0]
+        id_dict = json.loads(id_part)
+        clicked_index = id_dict.get("index")
+    except (json.JSONDecodeError, KeyError, AttributeError):
+        raise PreventUpdate
+
+    if not clicked_index:
+        raise PreventUpdate
+
+    # Find the corresponding data
+    display_data = None
+    for data in data_list:
+        if data and data.get("_item_id") == clicked_index:
+            display_data = data
+            break
+
+    if not display_data:
+        raise PreventUpdate
+
+    colors = get_colors(theme or "light")
+    collapsed_ids = collapsed_ids or []
+
+    # Get workspace for this session (virtual or physical)
+    workspace_root = get_workspace_for_session(session_id)
+
+    # Convert display_inline result to canvas item format
+    display_type = display_data.get("display_type", "text")
+    title = display_data.get("title")
+    data = display_data.get("data")
+
+    # Generate new canvas ID and timestamp
+    canvas_id = generate_canvas_id()
+    created_at = datetime.now().isoformat()
+
+    # Map display_inline types to canvas types
+    canvas_item = {
+        "id": canvas_id,
+        "created_at": created_at,
+    }
+
+    if title:
+        canvas_item["title"] = title
+
+    if display_type == "image":
+        canvas_item["type"] = "image"
+        canvas_item["data"] = data  # base64 image data
+    elif display_type == "plotly":
+        canvas_item["type"] = "plotly"
+        canvas_item["data"] = data  # Plotly JSON
+    elif display_type == "dataframe":
+        canvas_item["type"] = "dataframe"
+        canvas_item["data"] = display_data.get("csv", {}).get("data", [])
+        canvas_item["columns"] = display_data.get("csv", {}).get("columns", [])
+        canvas_item["html"] = display_data.get("csv", {}).get("html", "")
+    elif display_type == "pdf":
+        canvas_item["type"] = "pdf"
+        canvas_item["data"] = data  # base64 PDF data
+        canvas_item["mime_type"] = display_data.get("mime_type", "application/pdf")
+    elif display_type == "html":
+        canvas_item["type"] = "markdown"
+        canvas_item["data"] = data  # Store HTML as markdown (will render)
+    elif display_type == "json":
+        canvas_item["type"] = "markdown"
+        canvas_item["data"] = f"```json\n{json.dumps(data, indent=2)}\n```"
+    else:
+        # text or other
+        canvas_item["type"] = "markdown"
+        canvas_item["data"] = str(data) if data else ""
+
+    # Add item to canvas (session-specific in virtual FS mode)
+    if USE_VIRTUAL_FS and session_id:
+        current_state = _get_session_state(session_id)
+        with _session_agents_lock:
+            current_state["canvas"].append(canvas_item)
+            canvas_items = current_state["canvas"].copy()
+    else:
+        with _agent_state_lock:
+            _agent_state["canvas"].append(canvas_item)
+            canvas_items = _agent_state["canvas"].copy()
+
+    # Export updated canvas to markdown file
+    try:
+        export_canvas_to_markdown(canvas_items, workspace_root)
+    except Exception as e:
+        print(f"Failed to export canvas after adding display item: {e}")
+
+    # Render updated canvas and switch to canvas view
+    return render_canvas_items(canvas_items, colors, collapsed_ids), "canvas"
 
 
 # =============================================================================
