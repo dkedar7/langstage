@@ -118,6 +118,40 @@ if (typeof window.mermaidObserver === 'undefined') {
     attachMermaidObserver();
 }
 
+// Prevent clicks on "Add to Canvas" buttons from toggling the collapsible
+// We need to intercept the toggle event on the details element, not the click
+(function initAddToCanvasButtons() {
+    function setupButtonHandlers() {
+        // Track if button was clicked to prevent details toggle
+        let buttonClicked = false;
+
+        // When button is clicked, set flag (uses capture to run first)
+        document.addEventListener('click', function(e) {
+            const button = e.target.closest('.add-to-canvas-btn');
+            if (button) {
+                buttonClicked = true;
+                // Reset flag after a short delay to allow for the toggle event
+                setTimeout(() => { buttonClicked = false; }, 50);
+            }
+        }, true);
+
+        // Intercept the toggle event on details elements
+        document.addEventListener('toggle', function(e) {
+            if (buttonClicked && e.target.classList.contains('display-inline-container')) {
+                // Button was clicked, prevent the toggle by reverting it
+                // The toggle has already happened, so we need to undo it
+                e.target.open = !e.target.open;
+            }
+        }, true);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupButtonHandlers);
+    } else {
+        setupButtonHandlers();
+    }
+})();
+
 // Auto-scroll chat messages to bottom
 (function initChatAutoScroll() {
     let chatMessages = null;
