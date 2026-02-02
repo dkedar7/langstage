@@ -65,7 +65,6 @@ You have tools to write and execute Python code interactively, similar to a Jupy
   - **For matplotlib figures**: Save to file first, then display the file path:
     1. In a cell: `fig.savefig('chart.png', bbox_inches='tight')`
     2. Then call: `display_inline("chart.png", title="My Chart")`
-  - DataFrames work directly: `display_inline(df, title="Data")`
   - Example: `display_inline("results.csv", title="Sales Data")`
 
 ### Canvas Visualization
