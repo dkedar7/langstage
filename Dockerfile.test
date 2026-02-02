@@ -1,0 +1,23 @@
+# Dockerfile for running virtual FS tests in Linux environment
+FROM python:3.11-slim
+
+# Install bubblewrap for sandboxing
+RUN apt-get update && apt-get install -y \
+    bubblewrap \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy all project files
+COPY pyproject.toml uv.lock README.md ./
+COPY cowork_dash/ ./cowork_dash/
+COPY tests/ ./tests/
+
+# Install uv and dependencies
+RUN pip install uv && \
+    uv sync --frozen
+
+# Default command: run sandbox tests
+CMD ["uv", "run", "pytest", "tests/test_sandbox.py", "-v"]

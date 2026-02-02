@@ -136,8 +136,18 @@ def load_folder_contents(
     return build_file_tree(full_path, workspace_root, lazy_load=True)
 
 
-def render_file_tree(items: List[Dict], colors: Dict, styles: Dict, level: int = 0, parent_path: str = "", expanded_folders: List[str] = None) -> List:
-    """Render file tree with collapsible folders using CSS classes for theming."""
+def render_file_tree(items: List[Dict], colors: Dict, styles: Dict, level: int = 0, parent_path: str = "", expanded_folders: List[str] = None, workspace_root: AnyRoot = None) -> List:
+    """Render file tree with collapsible folders using CSS classes for theming.
+
+    Args:
+        items: List of file/folder items from build_file_tree
+        colors: Theme colors dict
+        styles: Style dict
+        level: Current nesting level
+        parent_path: Path of parent folder
+        expanded_folders: List of folder IDs that should be expanded
+        workspace_root: Workspace root for loading expanded folder contents
+    """
     components = []
     indent = level * 15  # Scaled up indent
     expanded_folders = expanded_folders or []
@@ -199,7 +209,7 @@ def render_file_tree(items: List[Dict], colors: Dict, styles: Dict, level: int =
 
             if children:
                 # Children are loaded, render them
-                child_content = render_file_tree(children, colors, styles, level + 1, item["path"], expanded_folders)
+                child_content = render_file_tree(children, colors, styles, level + 1, item["path"], expanded_folders, workspace_root)
             elif not has_children:
                 # Folder is known to be empty
                 child_content = [
@@ -210,8 +220,37 @@ def render_file_tree(items: List[Dict], colors: Dict, styles: Dict, level: int =
                         "fontStyle": "italic",
                     })
                 ]
+            elif is_expanded and workspace_root is not None:
+                # Folder is expanded but children not loaded - load them now
+                # This happens when rebuilding the tree with preserved expanded_folders state
+                try:
+                    folder_items = load_folder_contents(item["path"], workspace_root)
+                    child_content = render_file_tree(folder_items, colors, styles, level + 1, item["path"], expanded_folders, workspace_root)
+                    if not child_content:
+                        child_content = [
+                            html.Div("(empty)", className="file-tree-empty", style={
+                                "padding": "4px 10px",
+                                "paddingLeft": f"{25 + (level + 1) * 15}px",
+                                "fontSize": "12px",
+                                "fontStyle": "italic",
+                            })
+                        ]
+                except Exception:
+                    # Fall back to loading placeholder if loading fails
+                    child_content = [
+                        html.Div("Loading...",
+                            id={"type": "folder-loading", "path": folder_id},
+                            className="file-tree-loading",
+                            style={
+                                "padding": "4px 10px",
+                                "paddingLeft": f"{25 + (level + 1) * 15}px",
+                                "fontSize": "12px",
+                                "fontStyle": "italic",
+                            }
+                        )
+                    ]
             else:
-                # Children not yet loaded (lazy loading)
+                # Children not yet loaded (lazy loading) and folder is collapsed
                 child_content = [
                     html.Div("Loading...",
                         id={"type": "folder-loading", "path": folder_id},

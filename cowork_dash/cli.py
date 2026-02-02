@@ -148,12 +148,21 @@ cowork-dash run --help
 
 def run_app_cli(args):
     """Run the application with CLI arguments."""
+    import platform
+
     # Import here to avoid loading Dash when just running init
     from .app import run_app
 
     # Only pass virtual_fs if explicitly set via --virtual-fs flag
     # Otherwise pass None to let env var / config take precedence
     virtual_fs = True if args.virtual_fs else None
+
+    # Warn if --virtual-fs requested on non-Linux
+    if args.virtual_fs and platform.system() != "Linux":
+        print("⚠️  Warning: --virtual-fs is only supported on Linux")
+        print("   Virtual filesystem mode requires Linux for secure bash sandboxing (bubblewrap).")
+        print("   Running in physical filesystem mode instead.\n")
+        virtual_fs = None  # Let config handle it (will be False)
 
     return run_app(
         workspace=args.workspace,

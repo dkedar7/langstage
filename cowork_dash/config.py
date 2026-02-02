@@ -23,7 +23,13 @@ when no environment variables or CLI arguments are provided.
 """
 
 import os
+import platform
 from pathlib import Path
+
+
+def is_linux() -> bool:
+    """Check if running on Linux."""
+    return platform.system() == "Linux"
 
 
 def get_config(key: str, default=None, type_cast=None):
@@ -111,18 +117,23 @@ WELCOME_MESSAGE = get_config("welcome_message", default=_default_welcome)
 # Virtual filesystem mode (for multi-user deployments)
 # Environment variable: DEEPAGENT_VIRTUAL_FS
 # Accepts: true/1/yes to enable
+# IMPORTANT: Only available on Linux due to sandboxing requirements
 # When enabled:
 #   - Each browser session gets isolated in-memory file storage
 #   - Files, canvas, and uploads are not shared between sessions
 #   - All data is ephemeral (cleared when session ends)
+#   - Bash commands run in bubblewrap sandbox for security
 # When disabled (default):
 #   - All sessions share the same workspace directory on disk
 #   - Files persist on disk
-VIRTUAL_FS = get_config(
+_virtual_fs_requested = get_config(
     "virtual_fs",
     default=False,
     type_cast=lambda x: str(x).lower() in ("true", "1", "yes")
 )
+# Virtual FS is only supported on Linux (requires bubblewrap for bash sandboxing)
+VIRTUAL_FS = _virtual_fs_requested and is_linux()
+VIRTUAL_FS_UNAVAILABLE_REASON = None if is_linux() else "Virtual filesystem mode requires Linux (uses bubblewrap for bash sandboxing)"
 
 # Session timeout in seconds (only used when VIRTUAL_FS is True)
 # Environment variable: DEEPAGENT_SESSION_TIMEOUT

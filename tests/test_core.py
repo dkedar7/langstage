@@ -2,22 +2,36 @@
 Core functionality tests for Cowork Dash.
 
 Tests the main entry points:
-- CLI argument parsing (5 tests)
+- CLI argument parsing (7 tests)
 - run_app() Python API (7 tests)
-- Agent loading (3 tests)
+- Agent loading (5 tests)
+- Config/platform behavior (4 tests)
+- Components rendering (6 tests)
 
-Total: 15 tests
+Total: 29 tests
 """
 
 import os
-from unittest.mock import patch
+import json
+from unittest.mock import patch, MagicMock
+
+import pytest
 
 from cowork_dash.app import run_app, load_agent_from_spec
 from cowork_dash.cli import main
+from cowork_dash.components import (
+    format_message,
+    format_loading,
+    format_thinking,
+    format_todos_inline,
+    format_tool_calls_inline,
+    extract_thinking_from_tool_calls,
+    extract_display_inline_results,
+)
 
 
 # =============================================================================
-# CLI TESTS (5 tests)
+# CLI TESTS (7 tests)
 # =============================================================================
 
 
@@ -64,14 +78,41 @@ def test_cli_debug_flag(monkeypatch):
         assert mock_run.call_args[1]["debug"] is True
 
 
-def test_cli_title_subtitle(monkeypatch):
-    """Test CLI --title and --subtitle arguments."""
+def test_cli_title_argument(monkeypatch):
+    """Test CLI --title argument."""
     test_args = ["cowork-dash", "run", "--title", "My App"]
     monkeypatch.setattr("sys.argv", test_args)
 
     with patch("cowork_dash.app.run_app") as mock_run:
         main()
         assert mock_run.call_args[1]["title"] == "My App"
+
+
+def test_cli_virtual_fs_flag_on_linux(monkeypatch):
+    """Test CLI --virtual-fs flag is passed through on Linux."""
+    test_args = ["cowork-dash", "run", "--virtual-fs"]
+    monkeypatch.setattr("sys.argv", test_args)
+
+    with patch("cowork_dash.app.run_app") as mock_run:
+        with patch("platform.system") as mock_platform:
+            mock_platform.return_value = "Linux"
+            main()
+            assert mock_run.call_args[1]["virtual_fs"] is True
+
+
+def test_cli_virtual_fs_warning_on_non_linux(monkeypatch, capsys):
+    """Test CLI --virtual-fs shows warning on non-Linux systems."""
+    test_args = ["cowork-dash", "run", "--virtual-fs"]
+    monkeypatch.setattr("sys.argv", test_args)
+
+    with patch("cowork_dash.app.run_app") as mock_run:
+        with patch("platform.system") as mock_platform:
+            mock_platform.return_value = "Darwin"
+            main()
+            # Should set virtual_fs to None (fallback to config)
+            assert mock_run.call_args[1]["virtual_fs"] is None
+            captured = capsys.readouterr()
+            assert "warning" in captured.out.lower()
 
 
 # =============================================================================
@@ -96,13 +137,12 @@ def test_api_agent_spec_priority(tmp_path, sample_agent):
     workspace = tmp_path / "ws"
     workspace.mkdir()
 
-    # Create test agent file
     agent_file = tmp_path / "test_agent.py"
     agent_file.write_text("class Agent:\n    pass\nmy_agent = Agent()\n")
 
     with patch("cowork_dash.app.app.run"):
         run_app(
-            sample_agent,  # Should be ignored
+            sample_agent,
             workspace=str(workspace),
             agent_spec=f"{agent_file}:my_agent"
         )
@@ -117,9 +157,7 @@ def test_api_workspace_env_var(tmp_path):
     workspace.mkdir()
 
     with patch("cowork_dash.app.app.run"):
-        # Explicitly use physical filesystem mode to ensure env var is set
         run_app(workspace=str(workspace), virtual_fs=False)
-
         assert os.environ["DEEPAGENT_WORKSPACE_ROOT"] == str(workspace.resolve())
 
 
@@ -177,7 +215,7 @@ def test_api_title_subtitle_config(tmp_path):
 
 
 # =============================================================================
-# AGENT LOADING TESTS (3 tests)
+# AGENT LOADING TESTS (5 tests)
 # =============================================================================
 
 
@@ -217,3 +255,257 @@ agent = MyAgent()
     assert loaded_agent is not None
     assert error is None
     assert hasattr(loaded_agent, 'stream')
+
+
+def test_load_agent_invalid_spec_format():
+    """Test loading agent with invalid spec format returns error."""
+    agent, error = load_agent_from_spec("invalid_spec_no_colon")
+
+    assert agent is None
+    assert error is not None
+    assert "Invalid agent spec" in error
+
+
+def test_load_agent_module_format(tmp_path, monkeypatch):
+    """Test loading agent from module format works."""
+    # Create a simple module
+    module_dir = tmp_path / "mypackage"
+    module_dir.mkdir()
+    (module_dir / "__init__.py").write_text("")
+    (module_dir / "agents.py").write_text("""
+class TestAgent:
+    def stream(self, input, stream_mode="updates"):
+        yield {"response": "test"}
+
+test_agent = TestAgent()
+""")
+
+    # Add to sys.path temporarily
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    loaded_agent, error = load_agent_from_spec("mypackage.agents:test_agent")
+
+    assert loaded_agent is not None
+    assert error is None
+    assert hasattr(loaded_agent, 'stream')
+
+
+# =============================================================================
+# CONFIG TESTS (4 tests)
+# =============================================================================
+
+
+def test_config_is_linux_function():
+    """Test is_linux() function returns correct value."""
+    from cowork_dash.config import is_linux
+    import platform
+
+    expected = platform.system() == "Linux"
+    assert is_linux() == expected
+
+
+def test_config_virtual_fs_disabled_on_non_linux():
+    """Test VIRTUAL_FS is False on non-Linux even when requested."""
+    import importlib
+    from unittest.mock import patch
+
+    with patch("platform.system") as mock_platform:
+        mock_platform.return_value = "Darwin"
+
+        with patch.dict(os.environ, {"DEEPAGENT_VIRTUAL_FS": "true"}):
+            import cowork_dash.config as config_module
+            importlib.reload(config_module)
+
+            assert config_module.VIRTUAL_FS is False
+            assert config_module.VIRTUAL_FS_UNAVAILABLE_REASON is not None
+            assert "Linux" in config_module.VIRTUAL_FS_UNAVAILABLE_REASON
+
+
+def test_config_virtual_fs_enabled_on_linux():
+    """Test VIRTUAL_FS can be enabled on Linux."""
+    import importlib
+    from unittest.mock import patch
+
+    with patch("platform.system") as mock_platform:
+        mock_platform.return_value = "Linux"
+
+        with patch.dict(os.environ, {"DEEPAGENT_VIRTUAL_FS": "true"}):
+            import cowork_dash.config as config_module
+            importlib.reload(config_module)
+
+            assert config_module.VIRTUAL_FS is True
+            assert config_module.VIRTUAL_FS_UNAVAILABLE_REASON is None
+
+
+def test_config_virtual_fs_default_false():
+    """Test VIRTUAL_FS defaults to False."""
+    import importlib
+    from unittest.mock import patch
+
+    with patch.dict(os.environ, {}, clear=True):
+        os.environ.pop("DEEPAGENT_VIRTUAL_FS", None)
+
+        import cowork_dash.config as config_module
+        importlib.reload(config_module)
+
+        assert config_module.VIRTUAL_FS is False
+
+
+# =============================================================================
+# COMPONENTS TESTS (6 tests)
+# =============================================================================
+
+
+@pytest.fixture
+def test_colors():
+    """Return test color scheme."""
+    return {
+        "bg_primary": "#ffffff",
+        "bg_secondary": "#f8f9fa",
+        "text_primary": "#202124",
+        "text_secondary": "#5f6368",
+        "text_muted": "#80868b",
+        "accent": "#1a73e8",
+        "success": "#1e8e3e",
+        "warning": "#f9ab00",
+        "error": "#d93025",
+        "todo": "#0891b2",
+    }
+
+
+@pytest.fixture
+def test_styles():
+    """Return test styles."""
+    return {
+        "font_size": "14px",
+        "border_radius": "8px",
+    }
+
+
+def test_format_message_user(test_colors, test_styles):
+    """Test format_message renders user messages correctly."""
+    result = format_message("user", "Hello world", test_colors, test_styles)
+
+    assert result is not None
+    assert "chat-message-user" in result.className
+
+
+def test_format_message_assistant(test_colors, test_styles):
+    """Test format_message renders assistant messages correctly."""
+    result = format_message("assistant", "Hi there!", test_colors, test_styles)
+
+    assert result is not None
+    assert "chat-message-agent" in result.className
+
+
+def test_format_loading(test_colors):
+    """Test format_loading renders dots loader."""
+    result = format_loading(test_colors)
+
+    assert result is not None
+    assert "chat-message-loading" in result.className
+    # Check that it contains a loader component
+    assert len(result.children) > 0
+
+
+def test_format_thinking(test_colors):
+    """Test format_thinking renders thinking block."""
+    result = format_thinking("Let me think about this...", test_colors)
+
+    assert result is not None
+    # Should be a details element
+    assert hasattr(result, 'children')
+    # Should be expanded by default
+    assert result.open is True
+
+
+def test_format_thinking_empty(test_colors):
+    """Test format_thinking returns None for empty text."""
+    result = format_thinking("", test_colors)
+    assert result is None
+
+    result = format_thinking(None, test_colors)
+    assert result is None
+
+
+def test_extract_thinking_from_tool_calls(test_colors):
+    """Test extracting think_tool results from tool calls."""
+    tool_calls = [
+        {
+            "name": "think_tool",
+            "status": "success",
+            "result": "I need to analyze this problem carefully."
+        },
+        {
+            "name": "bash",
+            "status": "success",
+            "result": "command output"
+        },
+        {
+            "name": "think_tool",
+            "status": "success",
+            "result": {"reflection": "Second thought here."}
+        }
+    ]
+
+    results = extract_thinking_from_tool_calls(tool_calls, test_colors)
+
+    # Should extract 2 thinking blocks
+    assert len(results) == 2
+
+
+def test_format_tool_calls_inline_excludes_think_tool(test_colors):
+    """Test that format_tool_calls_inline excludes think_tool calls."""
+    tool_calls = [
+        {
+            "name": "think_tool",
+            "status": "success",
+            "result": "thinking...",
+            "args": {}
+        },
+        {
+            "name": "bash",
+            "status": "success",
+            "result": "output",
+            "args": {"command": "ls"}
+        }
+    ]
+
+    result = format_tool_calls_inline(tool_calls, test_colors)
+
+    # Should only show 1 tool (bash), not think_tool
+    # The summary should say "Tools (1 done)"
+    assert result is not None
+    summary = result.children[0]  # First child is Summary
+    assert "1 done" in summary.children
+
+
+def test_format_tool_calls_inline_empty_after_filtering(test_colors):
+    """Test format_tool_calls_inline returns None if only think_tool calls."""
+    tool_calls = [
+        {
+            "name": "think_tool",
+            "status": "success",
+            "result": "thinking..."
+        }
+    ]
+
+    result = format_tool_calls_inline(tool_calls, test_colors)
+
+    # Should return None since all calls are think_tool
+    assert result is None
+
+
+def test_format_todos_inline(test_colors):
+    """Test format_todos_inline renders todo list."""
+    todos = [
+        {"content": "Task 1", "status": "completed"},
+        {"content": "Task 2", "status": "in_progress"},
+        {"content": "Task 3", "status": "pending"},
+    ]
+
+    result = format_todos_inline(todos, test_colors)
+
+    assert result is not None
+    # Should be a Details element
+    assert hasattr(result, 'children')

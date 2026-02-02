@@ -73,18 +73,12 @@ def format_message(role: str, content: str, colors: Dict, styles: Dict, is_new: 
 
 
 def format_loading(colors: Dict):
-    """Format loading indicator."""
+    """Format loading indicator with dots loader."""
     return html.Div([
-        html.Div([
-            html.Span("Agent", className="message-role-agent", style={
-                "fontSize": "12px", "fontWeight": "500",
-                "textTransform": "uppercase",
-            }),
-        ], style={"marginBottom": "5px"}),
-        html.Span("Thinking", className="loading-dots thinking-pulse thinking-text", style={
-            "fontSize": "15px", "fontWeight": "500",
-        })
-    ], className="chat-message chat-message-loading", style={"padding": "12px 15px"})
+        dmc.Loader(type="dots", size="sm")
+    ], className="chat-message chat-message-loading", style={
+        "padding": "12px 15px",
+    })
 
 
 def format_thinking(thinking_text: str, colors: Dict):
@@ -97,7 +91,7 @@ def format_thinking(thinking_text: str, colors: Dict):
         html.Div(thinking_text, className="details-content details-content-thinking", style={
             "whiteSpace": "pre-wrap",
         })
-    ], className="chat-details", style={
+    ], open=True, className="chat-details", style={
         "marginBottom": "4px",
     })
 
@@ -183,7 +177,7 @@ def format_todos_inline(todos, colors: Dict):
 
 
 def format_tool_call(tool_call: Dict, colors: Dict, is_completed: bool = False):
-    """Format a single tool call as a submessage.
+    """Format a single tool call as a collapsible submessage.
 
     Args:
         tool_call: Dict with 'name', 'args', and optionally 'result', 'status'
@@ -195,23 +189,15 @@ def format_tool_call(tool_call: Dict, colors: Dict, is_completed: bool = False):
     tool_result = tool_call.get("result")
     tool_status = tool_call.get("status", "pending")
 
-    # Status indicator - use CSS classes for theme awareness
+    # Status class for styling
     if tool_status == "success":
-        status_icon = "✓"
         status_class = "tool-call-success"
-        icon_class = "tool-call-icon-success"
     elif tool_status == "error":
-        status_icon = "✗"
         status_class = "tool-call-error"
-        icon_class = "tool-call-icon-error"
     elif tool_status == "running":
-        status_icon = "◐"
         status_class = "tool-call-running"
-        icon_class = "tool-call-icon-running"
     else:  # pending
-        status_icon = "○"
         status_class = "tool-call-pending"
-        icon_class = "tool-call-icon-pending"
 
     # Format args for display (truncate if too long)
     args_display = ""
@@ -224,43 +210,363 @@ def format_tool_call(tool_call: Dict, colors: Dict, is_completed: bool = False):
         except:
             args_display = str(tool_args)[:500]
 
-    # Build the tool call display using CSS classes
-    tool_header = html.Div([
-        html.Span(status_icon, className=icon_class, style={
-            "marginRight": "10px",
-            "fontWeight": "bold",
-        }),
-        html.Span("Tool: ", className="tool-call-label"),
-        html.Span(tool_name, className="tool-call-name"),
-    ], style={"display": "flex", "alignItems": "center"})
+    # Build inner content (shown when expanded)
+    inner_children = []
 
-    # Arguments section (collapsible)
-    args_section = None
+    # Arguments section
     if args_display:
-        args_section = html.Details([
+        inner_children.append(html.Details([
             html.Summary("Arguments", className="tool-call-summary"),
             html.Pre(args_display, className="tool-call-args")
-        ], style={"marginTop": "5px"})
+        ]))
 
-    # Result section (collapsible, only if completed)
-    result_section = None
+    # Result section (only if completed)
     if tool_result is not None and is_completed:
-        result_display = str(tool_result)
-        if len(result_display) > 500:
-            result_display = result_display[:500] + "..."
+        # Special handling for display_inline results - render them richly
+        if tool_name == "display_inline" and isinstance(tool_result, dict) and tool_result.get("type") == "display_inline":
+            inner_children.append(render_display_inline_result(tool_result, colors))
+        else:
+            result_display = str(tool_result)
+            if len(result_display) > 500:
+                result_display = result_display[:500] + "..."
 
-        result_section = html.Details([
-            html.Summary("Result", className="tool-call-summary"),
-            html.Pre(result_display, className="tool-call-result")
-        ], style={"marginTop": "5px"})
+            inner_children.append(html.Details([
+                html.Summary("Result", className="tool-call-summary"),
+                html.Pre(result_display, className="tool-call-result")
+            ]))
 
-    children = [tool_header]
-    if args_section:
-        children.append(args_section)
-    if result_section:
-        children.append(result_section)
+    # Wrap entire tool call in a details element
+    return html.Details([
+        html.Summary([
+            html.Span(className="tool-call-status-dot"),
+            html.Span(tool_name, className="tool-call-name"),
+        ], className="tool-call-header"),
+        html.Div(inner_children, className="tool-call-body") if inner_children else None
+    ], className=f"tool-call {status_class}")
 
-    return html.Div(children, className=f"tool-call {status_class}")
+
+def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
+    """Render display_inline tool result as rich interactive content.
+
+    Args:
+        result: The display_inline result dictionary
+        colors: Color scheme dict
+
+    Returns:
+        A Dash html.Div component with the rendered content
+    """
+    display_type = result.get("display_type", "text")
+    title = result.get("title")
+    data = result.get("data")
+    preview = result.get("preview")
+    error = result.get("error")
+    status = result.get("status", "success")
+    filename = result.get("filename")
+    downloadable = result.get("downloadable", False)
+    csv_data = result.get("csv")
+
+    # Get item ID for potential debugging
+    item_id = result.get("_item_id", "unknown")
+
+    # Build title header if present
+    header_children = []
+    if title:
+        header_children.append(
+            html.Div(title, className="display-inline-title", style={
+                "fontWeight": "600",
+                "fontSize": "15px",
+                "marginBottom": "8px",
+            })
+        )
+
+    # Error state
+    if status == "error":
+        return html.Div([
+            *header_children,
+            html.Div([
+                html.Span("Error: ", style={"fontWeight": "600"}),
+                html.Span(error or "Unknown error")
+            ], className="display-inline-error", style={
+                "color": "#e53e3e",
+                "padding": "10px",
+                "borderRadius": "5px",
+                "backgroundColor": "rgba(229, 62, 62, 0.1)",
+            })
+        ], className="display-inline-container")
+
+    content_element = None
+
+    # Render based on display type
+    if display_type == "image":
+        mime_type = result.get("mime_type", "image/png")
+        data_url = f"data:{mime_type};base64,{data}"
+        content_element = html.Img(
+            src=data_url,
+            className="display-inline-image",
+            style={
+                "maxWidth": "100%",
+                "maxHeight": "400px",
+                "borderRadius": "5px",
+                "objectFit": "contain",
+            }
+        )
+
+    elif display_type == "plotly":
+        content_element = dcc.Graph(
+            figure=data,
+            config={"displayModeBar": True, "responsive": True},
+            style={"height": "350px"},
+            className="display-inline-plotly"
+        )
+
+    elif display_type == "dataframe":
+        # Show preview with expand option for full data
+        preview_html = preview.get("html", "") if isinstance(preview, dict) else ""
+        rows_shown = preview.get("rows_shown", 0) if isinstance(preview, dict) else 0
+        total_rows = preview.get("total_rows", 0) if isinstance(preview, dict) else 0
+        columns = preview.get("columns", []) if isinstance(preview, dict) else []
+
+        # Summary line
+        summary = f"{total_rows} rows × {len(columns)} columns"
+        if rows_shown < total_rows:
+            summary += f" (showing first {rows_shown})"
+
+        content_element = html.Div([
+            html.Div(summary, className="display-inline-df-summary", style={
+                "fontSize": "12px",
+                "marginBottom": "5px",
+                "opacity": "0.8",
+            }),
+            html.Div(
+                dcc.Markdown(preview_html, dangerously_allow_html=True),
+                className="display-inline-dataframe",
+                style={
+                    "overflowX": "auto",
+                    "maxHeight": "300px",
+                    "overflowY": "auto",
+                }
+            )
+        ])
+
+    elif display_type == "html":
+        # Show preview thumbnail with expand button
+        preview_content = preview or data
+        if len(str(preview_content)) > 500:
+            preview_content = str(preview_content)[:500] + "..."
+
+        content_element = html.Details([
+            html.Summary("HTML Content", className="tool-call-summary"),
+            html.Iframe(
+                srcDoc=data,
+                style={
+                    "width": "100%",
+                    "height": "300px",
+                    "border": "1px solid #ddd",
+                    "borderRadius": "5px",
+                    "backgroundColor": "white",
+                }
+            )
+        ], className="display-inline-html")
+
+    elif display_type == "pdf":
+        mime_type = result.get("mime_type", "application/pdf")
+        # Debug: Check if data exists
+        if not data:
+            content_element = html.Div(
+                "Error: PDF data is empty or missing",
+                style={"color": "red", "padding": "10px"}
+            )
+        else:
+            data_url = f"data:{mime_type};base64,{data}"
+            # Use iframe instead of embed for better browser compatibility
+            content_element = html.Iframe(
+                src=data_url,
+                style={
+                    "width": "100%",
+                    "height": "400px",
+                    "border": "none",
+                    "borderRadius": "5px",
+                }
+            )
+
+    elif display_type == "json":
+        json_str = json.dumps(data, indent=2) if isinstance(data, (dict, list)) else str(data)
+        content_element = html.Details([
+            html.Summary("JSON Data", className="tool-call-summary"),
+            html.Pre(json_str, className="display-inline-json", style={
+                "maxHeight": "300px",
+                "overflowY": "auto",
+                "fontSize": "12px",
+                "padding": "10px",
+                "borderRadius": "5px",
+            })
+        ])
+
+    else:  # text or unknown
+        text_content = str(data) if data else ""
+        if len(text_content) > 1000:
+            content_element = html.Details([
+                html.Summary(f"Text ({len(text_content)} chars)", className="tool-call-summary"),
+                html.Pre(text_content, className="display-inline-text", style={
+                    "maxHeight": "300px",
+                    "overflowY": "auto",
+                    "whiteSpace": "pre-wrap",
+                    "fontSize": "13px",
+                })
+            ])
+        else:
+            content_element = html.Pre(text_content, className="display-inline-text", style={
+                "whiteSpace": "pre-wrap",
+                "fontSize": "13px",
+            })
+
+    # Build footer with download option if applicable
+    footer_children = []
+    if filename:
+        footer_children.append(
+            html.Span(filename, className="display-inline-filename", style={
+                "fontSize": "11px",
+                "opacity": "0.7",
+            })
+        )
+
+    # Assemble final component with collapsible wrapper
+    # Note: Dash components evaluate to False in boolean context, so use 'is not None'
+
+    # Build the summary label for the collapsible header
+    display_type_labels = {
+        "image": "📷 Image",
+        "plotly": "📊 Chart",
+        "dataframe": "📋 Table",
+        "html": "🌐 HTML",
+        "pdf": "📄 PDF",
+        "json": "📝 JSON",
+        "text": "📝 Text",
+        "error": "⚠️ Error",
+    }
+    type_label = display_type_labels.get(display_type, "📎 Content")
+    summary_text = f"{type_label}: {title}" if title else type_label
+    if filename:
+        summary_text += f" ({filename})"
+
+    # Content to show inside the collapsible section
+    content_children = []
+    if content_element is not None:
+        content_children.append(content_element)
+    if footer_children:
+        content_children.append(
+            html.Div(footer_children, style={"marginTop": "5px"})
+        )
+
+    # Create "Add to Canvas" button with pattern-matching ID
+    # Using html.Button for reliable n_clicks behavior (DMC Tooltip can interfere with callbacks)
+    add_to_canvas_btn = html.Button(
+        DashIconify(icon="mdi:palette-outline", width=16),
+        id={"type": "add-display-to-canvas-btn", "index": item_id},
+        className="add-to-canvas-btn",
+        title="Add to Canvas",
+        style={
+            "background": "transparent",
+            "border": "none",
+            "cursor": "pointer",
+            "padding": "4px",
+            "borderRadius": "4px",
+            "display": "flex",
+            "alignItems": "center",
+            "justifyContent": "center",
+        }
+    )
+
+    # Store the result data in a hidden div for the callback to retrieve
+    result_store = dcc.Store(
+        id={"type": "display-inline-data", "index": item_id},
+        data=result
+    )
+
+    # Build summary with text and button
+    summary_content = html.Div([
+        html.Span(summary_text, className="display-inline-summary-text"),
+        add_to_canvas_btn,
+    ], className="display-inline-summary-row", style={
+        "display": "flex",
+        "alignItems": "center",
+        "justifyContent": "space-between",
+        "width": "100%",
+    })
+
+    return html.Details([
+        html.Summary(summary_content, className="display-inline-summary"),
+        html.Div(content_children, className="display-inline-content", style={
+            "marginTop": "8px",
+        }),
+        result_store,  # Hidden store for callback data
+    ], className="display-inline-container", open=True, style={
+        "padding": "10px",
+        "borderRadius": "8px",
+        "marginTop": "5px",
+    })
+
+
+def extract_display_inline_results(tool_calls: List[Dict], colors: Dict) -> List:
+    """Extract and render display_inline results prominently from tool calls.
+
+    This function finds all display_inline tool results and renders them
+    as standalone visual elements that appear alongside messages, rather
+    than buried in the tool call details.
+
+    Args:
+        tool_calls: List of tool call dicts with 'name', 'args', 'result', 'status'
+        colors: Color scheme dict
+
+    Returns:
+        List of rendered display_inline components (may be empty)
+    """
+    if not tool_calls:
+        return []
+
+    results = []
+    for tc in tool_calls:
+        if tc.get("name") == "display_inline" and tc.get("status") in ("success", "error"):
+            result = tc.get("result")
+            # Check if result is a dict with display_inline structure
+            if isinstance(result, dict) and result.get("type") == "display_inline":
+                rendered = render_display_inline_result(result, colors)
+                results.append(rendered)
+
+    return results
+
+
+def extract_thinking_from_tool_calls(tool_calls: List[Dict], colors: Dict) -> List:
+    """Extract think_tool calls and render them as thinking blocks.
+
+    Args:
+        tool_calls: List of tool call dicts with 'name', 'args', 'result', 'status'
+        colors: Color scheme dict
+
+    Returns:
+        List of rendered thinking components (may be empty)
+    """
+    if not tool_calls:
+        return []
+
+    results = []
+    for tc in tool_calls:
+        if tc.get("name") == "think_tool" and tc.get("status") in ("success", "error"):
+            result = tc.get("result")
+            if result:
+                # Extract thinking text from result
+                thinking_text = ""
+                if isinstance(result, str):
+                    thinking_text = result
+                elif isinstance(result, dict):
+                    thinking_text = result.get("reflection", str(result))
+
+                if thinking_text:
+                    thinking_block = format_thinking(thinking_text, colors)
+                    if thinking_block:
+                        results.append(thinking_block)
+
+    return results
 
 
 def format_tool_calls_inline(tool_calls: List[Dict], colors: Dict):
@@ -269,14 +575,23 @@ def format_tool_calls_inline(tool_calls: List[Dict], colors: Dict):
     Args:
         tool_calls: List of tool call dicts with 'name', 'args', 'result', 'status'
         colors: Color scheme dict
+
+    Note: think_tool calls are excluded from this rendering - they are rendered
+    separately via extract_thinking_from_tool_calls() to appear in correct order.
     """
     if not tool_calls:
         return None
 
-    # Count statuses
-    completed = sum(1 for tc in tool_calls if tc.get("status") in ("success", "error"))
-    total = len(tool_calls)
-    running = sum(1 for tc in tool_calls if tc.get("status") == "running")
+    # Filter out think_tool calls - they are rendered separately as thinking blocks
+    filtered_tool_calls = [tc for tc in tool_calls if tc.get("name") != "think_tool"]
+
+    if not filtered_tool_calls:
+        return None
+
+    # Count statuses (on filtered list)
+    completed = sum(1 for tc in filtered_tool_calls if tc.get("status") in ("success", "error"))
+    total = len(filtered_tool_calls)
+    running = sum(1 for tc in filtered_tool_calls if tc.get("status") == "running")
 
     # Summary text and class
     if running > 0:
@@ -291,7 +606,7 @@ def format_tool_calls_inline(tool_calls: List[Dict], colors: Dict):
 
     tool_elements = [
         format_tool_call(tc, colors, is_completed=tc.get("status") in ("success", "error"))
-        for tc in tool_calls
+        for tc in filtered_tool_calls
     ]
 
     return html.Details([
@@ -435,6 +750,8 @@ def _get_type_badge(item_type: str) -> dmc.Badge:
         "image": "green",
         "plotly": "violet",
         "mermaid": "cyan",
+        "pdf": "red",
+        "error": "red",
     }
     type_labels = {
         "markdown": "Text",
@@ -443,6 +760,8 @@ def _get_type_badge(item_type: str) -> dmc.Badge:
         "image": "Image",
         "plotly": "Plot",
         "mermaid": "Diagram",
+        "pdf": "PDF",
+        "error": "Error",
     }
     color = type_colors.get(item_type, "gray")
     label = type_labels.get(item_type, item_type.title())
@@ -610,6 +929,30 @@ def render_canvas_items(canvas_items: List[Dict], colors: Dict, collapsed_ids: O
                 "textAlign": "center",
                 "overflow": "auto",
             })
+
+        elif item_type == "pdf":
+            pdf_data = item.get("data", "")
+            mime_type = item.get("mime_type", "application/pdf")
+            if not pdf_data:
+                content = html.Div([
+                    html.Div("Error: PDF data is empty or missing", style={"color": "red"})
+                ], className="canvas-item-content canvas-item-pdf", style={"padding": "10px"})
+            else:
+                data_url = f"data:{mime_type};base64,{pdf_data}"
+                # Use iframe instead of embed for better browser compatibility
+                content = html.Div([
+                    html.Iframe(
+                        src=data_url,
+                        style={
+                            "width": "100%",
+                            "height": "500px",
+                            "border": "none",
+                            "borderRadius": "5px",
+                        }
+                    )
+                ], className="canvas-item-content canvas-item-pdf", style={
+                    "padding": "10px",
+                })
 
         else:
             # Unknown type
