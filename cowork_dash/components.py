@@ -97,7 +97,7 @@ def format_thinking(thinking_text: str, colors: Dict):
         html.Div(thinking_text, className="details-content details-content-thinking", style={
             "whiteSpace": "pre-wrap",
         })
-    ], className="chat-details", style={
+    ], open=True, className="chat-details", style={
         "marginBottom": "4px",
     })
 
@@ -542,20 +542,62 @@ def extract_display_inline_results(tool_calls: List[Dict], colors: Dict) -> List
     return results
 
 
+def extract_thinking_from_tool_calls(tool_calls: List[Dict], colors: Dict) -> List:
+    """Extract think_tool calls and render them as thinking blocks.
+
+    Args:
+        tool_calls: List of tool call dicts with 'name', 'args', 'result', 'status'
+        colors: Color scheme dict
+
+    Returns:
+        List of rendered thinking components (may be empty)
+    """
+    if not tool_calls:
+        return []
+
+    results = []
+    for tc in tool_calls:
+        if tc.get("name") == "think_tool" and tc.get("status") in ("success", "error"):
+            result = tc.get("result")
+            if result:
+                # Extract thinking text from result
+                thinking_text = ""
+                if isinstance(result, str):
+                    thinking_text = result
+                elif isinstance(result, dict):
+                    thinking_text = result.get("reflection", str(result))
+
+                if thinking_text:
+                    thinking_block = format_thinking(thinking_text, colors)
+                    if thinking_block:
+                        results.append(thinking_block)
+
+    return results
+
+
 def format_tool_calls_inline(tool_calls: List[Dict], colors: Dict):
     """Format multiple tool calls as an inline collapsible section.
 
     Args:
         tool_calls: List of tool call dicts with 'name', 'args', 'result', 'status'
         colors: Color scheme dict
+
+    Note: think_tool calls are excluded from this rendering - they are rendered
+    separately via extract_thinking_from_tool_calls() to appear in correct order.
     """
     if not tool_calls:
         return None
 
-    # Count statuses
-    completed = sum(1 for tc in tool_calls if tc.get("status") in ("success", "error"))
-    total = len(tool_calls)
-    running = sum(1 for tc in tool_calls if tc.get("status") == "running")
+    # Filter out think_tool calls - they are rendered separately as thinking blocks
+    filtered_tool_calls = [tc for tc in tool_calls if tc.get("name") != "think_tool"]
+
+    if not filtered_tool_calls:
+        return None
+
+    # Count statuses (on filtered list)
+    completed = sum(1 for tc in filtered_tool_calls if tc.get("status") in ("success", "error"))
+    total = len(filtered_tool_calls)
+    running = sum(1 for tc in filtered_tool_calls if tc.get("status") == "running")
 
     # Summary text and class
     if running > 0:
@@ -570,7 +612,7 @@ def format_tool_calls_inline(tool_calls: List[Dict], colors: Dict):
 
     tool_elements = [
         format_tool_call(tc, colors, is_completed=tc.get("status") in ("success", "error"))
-        for tc in tool_calls
+        for tc in filtered_tool_calls
     ]
 
     return html.Details([

@@ -35,7 +35,7 @@ from .canvas import export_canvas_to_markdown, load_canvas_from_markdown
 from .file_utils import build_file_tree, render_file_tree, read_file_content, get_file_download_data, load_folder_contents
 from .components import (
     format_message, format_loading, format_thinking, format_todos_inline, render_canvas_items, format_tool_calls_inline,
-    format_interrupt, extract_display_inline_results, render_display_inline_result
+    format_interrupt, extract_display_inline_results, render_display_inline_result, extract_thinking_from_tool_calls
 )
 from .layout import create_layout as create_layout_component
 from .virtual_fs import get_session_manager
@@ -1150,25 +1150,30 @@ def display_initial_messages(history, theme, skip_render, session_initialized, s
     for msg in history:
         msg_response_time = msg.get("response_time") if msg["role"] == "assistant" else None
         messages.append(format_message(msg["role"], msg["content"], colors, STYLES, is_new=False, response_time=msg_response_time))
+        # Order: tool calls -> todos -> thinking -> display inline items
         # Render tool calls stored with this message
         if msg.get("tool_calls"):
-            # Extract and show display_inline results prominently
-            inline_results = extract_display_inline_results(msg["tool_calls"], colors)
-            messages.extend(inline_results)
-            # Show collapsed tool calls section
+            # Show collapsed tool calls section first
             tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
-        # Render display_inline items stored with this message
-        if msg.get("display_inline_items"):
-            for item in msg["display_inline_items"]:
-                rendered = render_display_inline_result(item, colors)
-                messages.append(rendered)
         # Render todos stored with this message
         if msg.get("todos"):
             todos_block = format_todos_inline(msg["todos"], colors)
             if todos_block:
                 messages.append(todos_block)
+        # Extract and show thinking from tool calls
+        if msg.get("tool_calls"):
+            thinking_blocks = extract_thinking_from_tool_calls(msg["tool_calls"], colors)
+            messages.extend(thinking_blocks)
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+            messages.extend(inline_results)
+        # Render display_inline items stored with this message
+        if msg.get("display_inline_items"):
+            for item in msg["display_inline_items"]:
+                rendered = render_display_inline_result(item, colors)
+                messages.append(rendered)
     return messages, False, True, new_session_id
 
 
@@ -1237,12 +1242,9 @@ def handle_send_immediate(n_clicks, n_submit, message, history, theme, current_w
         is_new = (i == len(history) - 1)
         msg_response_time = m.get("response_time") if m["role"] == "assistant" else None
         messages.append(format_message(m["role"], m["content"], colors, STYLES, is_new=is_new, response_time=msg_response_time))
-        # Render tool calls stored with this message
+        # Order: tool calls -> todos -> thinking -> display inline items
         if m.get("tool_calls"):
-            # Extract and show display_inline results prominently
-            inline_results = extract_display_inline_results(m["tool_calls"], colors)
-            messages.extend(inline_results)
-            # Show collapsed tool calls section
+            # Show collapsed tool calls section first
             tool_calls_block = format_tool_calls_inline(m["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
@@ -1251,6 +1253,13 @@ def handle_send_immediate(n_clicks, n_submit, message, history, theme, current_w
             todos_block = format_todos_inline(m["todos"], colors)
             if todos_block:
                 messages.append(todos_block)
+        # Extract and show thinking from tool calls
+        if m.get("tool_calls"):
+            thinking_blocks = extract_thinking_from_tool_calls(m["tool_calls"], colors)
+            messages.extend(thinking_blocks)
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(m["tool_calls"], colors)
+            messages.extend(inline_results)
 
     messages.append(format_loading(colors))
 
@@ -1305,25 +1314,29 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
         for msg in history_items:
             msg_response_time = msg.get("response_time") if msg["role"] == "assistant" else None
             messages.append(format_message(msg["role"], msg["content"], colors, STYLES, response_time=msg_response_time))
-            # Render tool calls stored with this message
+            # Order: tool calls -> todos -> thinking -> display inline items
             if msg.get("tool_calls"):
-                # Extract and show display_inline results prominently
-                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
-                messages.extend(inline_results)
-                # Show collapsed tool calls section
+                # Show collapsed tool calls section first
                 tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
                 if tool_calls_block:
                     messages.append(tool_calls_block)
-            # Render display_inline items stored with this message
-            if msg.get("display_inline_items"):
-                for item in msg["display_inline_items"]:
-                    rendered = render_display_inline_result(item, colors)
-                    messages.append(rendered)
             # Render todos stored with this message
             if msg.get("todos"):
                 todos_block = format_todos_inline(msg["todos"], colors)
                 if todos_block:
                     messages.append(todos_block)
+            # Extract and show thinking from tool calls
+            if msg.get("tool_calls"):
+                thinking_blocks = extract_thinking_from_tool_calls(msg["tool_calls"], colors)
+                messages.extend(thinking_blocks)
+                # Extract and show display_inline results prominently
+                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+                messages.extend(inline_results)
+            # Render display_inline items stored with this message
+            if msg.get("display_inline_items"):
+                for item in msg["display_inline_items"]:
+                    rendered = render_display_inline_result(item, colors)
+                    messages.append(rendered)
         return messages
 
     # Check for interrupt (human-in-the-loop)
@@ -1331,30 +1344,30 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
         # Agent is paused waiting for user input
         messages = render_history_messages(history)
 
-        # Add current turn's thinking/tool_calls/todos before interrupt
-        if state["thinking"]:
-            thinking_block = format_thinking(state["thinking"], colors)
-            if thinking_block:
-                messages.append(thinking_block)
-
+        # Order: tool calls -> todos -> thinking -> display inline items
         if state.get("tool_calls"):
-            # Extract and show display_inline results prominently
-            inline_results = extract_display_inline_results(state["tool_calls"], colors)
-            messages.extend(inline_results)
-            # Show collapsed tool calls section
+            # Show collapsed tool calls section first
             tool_calls_block = format_tool_calls_inline(state["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
-
-        # Render any queued display_inline items (bypasses LangGraph serialization)
-        for item in display_inline_items:
-            rendered = render_display_inline_result(item, colors)
-            messages.append(rendered)
 
         if state["todos"]:
             todos_block = format_todos_inline(state["todos"], colors)
             if todos_block:
                 messages.append(todos_block)
+
+        if state.get("tool_calls"):
+            # Extract and show thinking from tool calls
+            thinking_blocks = extract_thinking_from_tool_calls(state["tool_calls"], colors)
+            messages.extend(thinking_blocks)
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(state["tool_calls"], colors)
+            messages.extend(inline_results)
+
+        # Render any queued display_inline items (bypasses LangGraph serialization)
+        for item in display_inline_items:
+            rendered = render_display_inline_result(item, colors)
+            messages.append(rendered)
 
         # Add interrupt UI
         interrupt_block = format_interrupt(state["interrupt"], colors)
@@ -1397,30 +1410,34 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
         history.append(assistant_msg)
 
         # Render all history (tool calls and todos are now part of history)
+        # Order: tool calls -> todos -> thinking -> display inline items
         final_messages = []
         for i, msg in enumerate(history):
             is_new = (i >= len(history) - 1)
             msg_response_time = msg.get("response_time") if msg["role"] == "assistant" else None
             final_messages.append(format_message(msg["role"], msg["content"], colors, STYLES, is_new=is_new, response_time=msg_response_time))
-            # Render tool calls stored with this message
+            # Show collapsed tool calls section first
             if msg.get("tool_calls"):
-                # Extract and show display_inline results prominently
-                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
-                final_messages.extend(inline_results)
-                # Show collapsed tool calls section
                 tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
                 if tool_calls_block:
                     final_messages.append(tool_calls_block)
-            # Render display_inline items stored with this message
-            if msg.get("display_inline_items"):
-                for item in msg["display_inline_items"]:
-                    rendered = render_display_inline_result(item, colors)
-                    final_messages.append(rendered)
             # Render todos stored with this message
             if msg.get("todos"):
                 todos_block = format_todos_inline(msg["todos"], colors)
                 if todos_block:
                     final_messages.append(todos_block)
+            # Extract and show thinking from tool calls
+            if msg.get("tool_calls"):
+                thinking_blocks = extract_thinking_from_tool_calls(msg["tool_calls"], colors)
+                final_messages.extend(thinking_blocks)
+                # Extract and show display_inline results prominently
+                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+                final_messages.extend(inline_results)
+            # Render display_inline items stored with this message
+            if msg.get("display_inline_items"):
+                for item in msg["display_inline_items"]:
+                    rendered = render_display_inline_result(item, colors)
+                    final_messages.append(rendered)
 
         # Render any NEW queued display_inline items only if not already saved to history
         # (avoids duplicate rendering)
@@ -1432,35 +1449,34 @@ def poll_agent_updates(n_intervals, history, pending_message, theme, session_id)
         # Disable polling, set skip flag to prevent display_initial_messages from re-rendering
         return final_messages, history, True, True
     else:
-        # Agent still running - show loading with current thinking/tool_calls/todos
+        # Agent still running - show loading with current tool_calls/todos/thinking
         messages = render_history_messages(history)
 
-        # Add current thinking if available
-        if state["thinking"]:
-            thinking_block = format_thinking(state["thinking"], colors)
-            if thinking_block:
-                messages.append(thinking_block)
-
-        # Add current tool calls if available
+        # Order: tool calls -> todos -> thinking -> display inline items
         if state.get("tool_calls"):
-            # Extract and show display_inline results prominently
-            inline_results = extract_display_inline_results(state["tool_calls"], colors)
-            messages.extend(inline_results)
-            # Show collapsed tool calls section
+            # Show collapsed tool calls section first
             tool_calls_block = format_tool_calls_inline(state["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
-
-        # Render any queued display_inline items (bypasses LangGraph serialization)
-        for item in display_inline_items:
-            rendered = render_display_inline_result(item, colors)
-            messages.append(rendered)
 
         # Add current todos if available
         if state["todos"]:
             todos_block = format_todos_inline(state["todos"], colors)
             if todos_block:
                 messages.append(todos_block)
+
+        if state.get("tool_calls"):
+            # Extract and show thinking from tool calls
+            thinking_blocks = extract_thinking_from_tool_calls(state["tool_calls"], colors)
+            messages.extend(thinking_blocks)
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(state["tool_calls"], colors)
+            messages.extend(inline_results)
+
+        # Render any queued display_inline items (bypasses LangGraph serialization)
+        for item in display_inline_items:
+            rendered = render_display_inline_result(item, colors)
+            messages.append(rendered)
 
         # Add loading indicator
         messages.append(format_loading(colors))
@@ -1507,28 +1523,33 @@ def handle_stop_button(n_clicks, history, theme, session_id):
     request_agent_stop(session_id)
 
     # Render current messages with a stopping indicator
+    # Order: tool calls -> todos -> thinking -> display inline items
     def render_history_messages(history):
         messages = []
         for i, msg in enumerate(history):
             msg_response_time = msg.get("response_time") if msg["role"] == "assistant" else None
             messages.append(format_message(msg["role"], msg["content"], colors, STYLES, is_new=False, response_time=msg_response_time))
             if msg.get("tool_calls"):
-                # Extract and show display_inline results prominently
-                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
-                messages.extend(inline_results)
-                # Show collapsed tool calls section
+                # Show collapsed tool calls section first
                 tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
                 if tool_calls_block:
                     messages.append(tool_calls_block)
+            if msg.get("todos"):
+                todos_block = format_todos_inline(msg["todos"], colors)
+                if todos_block:
+                    messages.append(todos_block)
+            if msg.get("tool_calls"):
+                # Extract and show thinking from tool calls
+                thinking_blocks = extract_thinking_from_tool_calls(msg["tool_calls"], colors)
+                messages.extend(thinking_blocks)
+                # Extract and show display_inline results prominently
+                inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+                messages.extend(inline_results)
             # Render display_inline items stored with this message
             if msg.get("display_inline_items"):
                 for item in msg["display_inline_items"]:
                     rendered = render_display_inline_result(item, colors)
                     messages.append(rendered)
-            if msg.get("todos"):
-                todos_block = format_todos_inline(msg["todos"], colors)
-                if todos_block:
-                    messages.append(todos_block)
         return messages
 
     messages = render_history_messages(history)
@@ -1604,29 +1625,33 @@ def handle_interrupt_response(approve_clicks, reject_clicks, edit_clicks, input_
     resume_agent_from_interrupt(decision, action, session_id=session_id)
 
     # Show loading state while agent resumes
+    # Order: tool calls -> todos -> thinking -> display inline items
     messages = []
     for msg in history:
         msg_response_time = msg.get("response_time") if msg["role"] == "assistant" else None
         messages.append(format_message(msg["role"], msg["content"], colors, STYLES, response_time=msg_response_time))
-        # Render tool calls stored with this message
         if msg.get("tool_calls"):
-            # Extract and show display_inline results prominently
-            inline_results = extract_display_inline_results(msg["tool_calls"], colors)
-            messages.extend(inline_results)
-            # Show collapsed tool calls section
+            # Show collapsed tool calls section first
             tool_calls_block = format_tool_calls_inline(msg["tool_calls"], colors)
             if tool_calls_block:
                 messages.append(tool_calls_block)
-        # Render display_inline items stored with this message
-        if msg.get("display_inline_items"):
-            for item in msg["display_inline_items"]:
-                rendered = render_display_inline_result(item, colors)
-                messages.append(rendered)
         # Render todos stored with this message
         if msg.get("todos"):
             todos_block = format_todos_inline(msg["todos"], colors)
             if todos_block:
                 messages.append(todos_block)
+        if msg.get("tool_calls"):
+            # Extract and show thinking from tool calls
+            thinking_blocks = extract_thinking_from_tool_calls(msg["tool_calls"], colors)
+            messages.extend(thinking_blocks)
+            # Extract and show display_inline results prominently
+            inline_results = extract_display_inline_results(msg["tool_calls"], colors)
+            messages.extend(inline_results)
+        # Render display_inline items stored with this message
+        if msg.get("display_inline_items"):
+            for item in msg["display_inline_items"]:
+                rendered = render_display_inline_result(item, colors)
+                messages.append(rendered)
 
     messages.append(format_loading(colors))
 
