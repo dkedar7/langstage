@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-02-01
+
+### Added
+- **display_inline tool**: Rich inline content rendering for images, DataFrames, CSV, HTML, JSON, and PDF files
+- **think_tool integration**: Agent reasoning is now visible in chat with collapsible thinking blocks
+- **"Add to Canvas" button**: Display inline results can be added to canvas directly from chat
+- **Sandboxed bash execution**: Virtual FS mode now supports safe bash commands using bubblewrap isolation (Linux only)
+- **CSV/TSV file preview**: File modal now shows tabular data with pagination
+- **Comprehensive test suite**: Added tests for CLI, run_app API, agent loading, config, and components
+
+### Changed
+- **Redesigned UI**: Minimal professional styling with improved visual hierarchy
+- **Loading indicator**: Replaced verbose "AGENT" + "Thinking" header with clean DMC dots loader
+- **Tool call rendering**: Simplified with CSS classes for better consistency
+
+### Fixed
+- **HITL interrupt handling**: Tool calls now correctly show status after human-in-the-loop approval
+- **Duplicate tool calls**: Fixed issue where tool calls appeared twice after resuming from interrupt
+- **Breadcrumb bar dark mode**: Fixed background color in dark theme
+- **Expanded folders during execution**: Fixed folders showing "Loading..." during agent runs
+
+### Platform
+- **Virtual FS restricted to Linux**: `--virtual-fs` flag now only works on Linux (shows warning on other platforms)
+- **CLI warning**: Added helpful message when `--virtual-fs` is used on non-Linux systems
+
 ## [0.1.9] - 2026-01-28
 
 ### Changed
@@ -146,6 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resizable split-pane interface
 - Upload/download functionality for files
 
+[0.2.0]: https://github.com/dkedar7/cowork-dash/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/dkedar7/cowork-dash/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/dkedar7/cowork-dash/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/dkedar7/cowork-dash/compare/v0.1.6...v0.1.7
