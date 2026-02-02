@@ -1078,3 +1078,83 @@ code {
 [data-mantine-color-scheme="dark"] details summary:hover {
     background: var(--bg-tertiary) !important;
 }
+
+/* Display inline collapsible styles */
+.display-inline-container {
+    border: 1px solid var(--mantine-color-default-border);
+    background: var(--mantine-color-body);
+}
+
+.display-inline-summary {
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 14px;
+    padding: 6px 10px;
+    padding-left: 24px;
+    border-radius: 5px;
+    list-style: none;
+    position: relative;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+
+.display-inline-summary::-webkit-details-marker {
+    display: none;
+}
+
+.display-inline-summary::before {
+    content: "▶";
+    font-size: 9px;
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    transition: transform 0.15s ease;
+    color: var(--mantine-color-dimmed);
+}
+
+details.display-inline-container[open] > .display-inline-summary::before {
+    transform: translateY(-50%) rotate(90deg);
+}
+
+.display-inline-summary:hover {
+    background: var(--mantine-color-gray-1);
+}
+
+[data-mantine-color-scheme="dark"] .display-inline-summary:hover {
+    background: var(--mantine-color-dark-5);
+}
+
+.display-inline-content {
+    padding: 0 10px 5px 10px;
+}
+
+.display-inline-image {
+    display: block;
+    margin: 0 auto;
+}
+
+/* Add to Canvas button in display inline header */
+.add-to-canvas-btn {
+    opacity: 0.5;
+    transition: opacity 0.15s ease, color 0.15s ease;
+    flex-shrink: 0;
+    margin-left: 8px;
+}
+
+.add-to-canvas-btn:hover {
+    opacity: 1;
+    color: var(--mantine-color-blue-6);
+}
+
+.display-inline-summary-row {
+    padding-right: 4px;
+}
+
+.display-inline-summary-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
