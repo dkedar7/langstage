@@ -431,6 +431,17 @@ def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: st
             # Resume from interrupt
             from langgraph.types import Command
             agent_input = Command(resume=resume_data)
+
+            # Rebuild tool_call_map from existing tool calls and mark pending ones as running
+            with state_lock:
+                for tc in current_state.get("tool_calls", []):
+                    tc_id = tc.get("id")
+                    if tc_id:
+                        tool_call_map[tc_id] = tc
+                        # Mark pending tool calls back to running since we're resuming
+                        if tc.get("status") == "pending":
+                            tc["status"] = "running"
+                current_state["last_update"] = time.time()
         else:
             # Inject workspace context into the message if available
             if workspace_path:
@@ -458,6 +469,10 @@ def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: st
                 with state_lock:
                     current_state["interrupt"] = interrupt_data
                     current_state["running"] = False  # Pause until user responds
+                    # Mark any "running" tool calls as "pending" since we're waiting for user approval
+                    for tc in current_state["tool_calls"]:
+                        if tc.get("status") == "running":
+                            tc["status"] = "pending"
                     current_state["last_update"] = time.time()
                 return  # Exit stream, wait for user to resume
 
@@ -471,14 +486,26 @@ def _run_agent_stream(message: str, resume_data: Dict = None, workspace_path: st
 
                             # Capture AIMessage tool_calls
                             if msg_type == 'AIMessage' and hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
-                                new_tool_calls = []
-                                for tc in last_msg.tool_calls:
-                                    serialized = _serialize_tool_call(tc)
-                                    tool_call_map[serialized["id"]] = serialized
-                                    new_tool_calls.append(serialized)
-
                                 with state_lock:
-                                    current_state["tool_calls"].extend(new_tool_calls)
+                                    # Get existing tool call IDs to avoid duplicates
+                                    existing_ids = {tc.get("id") for tc in current_state["tool_calls"]}
+
+                                    for tc in last_msg.tool_calls:
+                                        serialized = _serialize_tool_call(tc)
+                                        tc_id = serialized["id"]
+
+                                        # Only add if not already in the list (avoid duplicates on resume)
+                                        if tc_id not in existing_ids:
+                                            tool_call_map[tc_id] = serialized
+                                            current_state["tool_calls"].append(serialized)
+                                            existing_ids.add(tc_id)
+                                        else:
+                                            # Update the map to reference the existing tool call
+                                            for existing_tc in current_state["tool_calls"]:
+                                                if existing_tc.get("id") == tc_id:
+                                                    tool_call_map[tc_id] = existing_tc
+                                                    break
+
                                     current_state["last_update"] = time.time()
 
                             elif msg_type == 'ToolMessage' and hasattr(last_msg, 'name'):
