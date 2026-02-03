@@ -1158,3 +1158,14 @@ details.display-inline-container[open] > .display-inline-summary::before {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* Fullscreen button for HTML/PDF preview */
+.fullscreen-btn {
+    opacity: 0.7;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.fullscreen-btn:hover {
+    opacity: 1;
+    background-color: rgba(255,255,255,1) !important;
+}

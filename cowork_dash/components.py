@@ -356,16 +356,46 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
                 style={"color": "red", "padding": "10px"}
             )
         else:
-            content_element = html.Iframe(
-                srcDoc=data,
+            # Create fullscreen button
+            fullscreen_btn = html.Button(
+                DashIconify(icon="mdi:fullscreen", width=18),
+                id={"type": "fullscreen-btn", "index": item_id},
+                className="fullscreen-btn",
+                title="View fullscreen",
                 style={
-                    "width": "100%",
-                    "height": "400px",
-                    "border": "none",
-                    "borderRadius": "5px",
-                    "backgroundColor": "white",
+                    "position": "absolute",
+                    "top": "8px",
+                    "right": "8px",
+                    "background": "rgba(255,255,255,0.9)",
+                    "border": "1px solid #ddd",
+                    "borderRadius": "4px",
+                    "cursor": "pointer",
+                    "padding": "4px 6px",
+                    "display": "flex",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "zIndex": "10",
                 }
             )
+            # Store data for fullscreen modal
+            fullscreen_store = dcc.Store(
+                id={"type": "fullscreen-data", "index": item_id},
+                data={"type": "html", "content": data, "title": title or "HTML Preview"}
+            )
+            content_element = html.Div([
+                fullscreen_btn,
+                html.Iframe(
+                    srcDoc=data,
+                    style={
+                        "width": "100%",
+                        "height": "400px",
+                        "border": "none",
+                        "borderRadius": "5px",
+                        "backgroundColor": "white",
+                    }
+                ),
+                fullscreen_store,
+            ], style={"position": "relative"})
 
     elif display_type == "pdf":
         mime_type = result.get("mime_type", "application/pdf")
@@ -377,16 +407,46 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
             )
         else:
             data_url = f"data:{mime_type};base64,{data}"
-            # Use iframe instead of embed for better browser compatibility
-            content_element = html.Iframe(
-                src=data_url,
+            # Create fullscreen button
+            fullscreen_btn = html.Button(
+                DashIconify(icon="mdi:fullscreen", width=18),
+                id={"type": "fullscreen-btn", "index": item_id},
+                className="fullscreen-btn",
+                title="View fullscreen",
                 style={
-                    "width": "100%",
-                    "height": "400px",
-                    "border": "none",
-                    "borderRadius": "5px",
+                    "position": "absolute",
+                    "top": "8px",
+                    "right": "8px",
+                    "background": "rgba(255,255,255,0.9)",
+                    "border": "1px solid #ddd",
+                    "borderRadius": "4px",
+                    "cursor": "pointer",
+                    "padding": "4px 6px",
+                    "display": "flex",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "zIndex": "10",
                 }
             )
+            # Store data for fullscreen modal
+            fullscreen_store = dcc.Store(
+                id={"type": "fullscreen-data", "index": item_id},
+                data={"type": "pdf", "content": data_url, "title": title or "PDF Preview"}
+            )
+            # Use iframe instead of embed for better browser compatibility
+            content_element = html.Div([
+                fullscreen_btn,
+                html.Iframe(
+                    src=data_url,
+                    style={
+                        "width": "100%",
+                        "height": "400px",
+                        "border": "none",
+                        "borderRadius": "5px",
+                    }
+                ),
+                fullscreen_store,
+            ], style={"position": "relative"})
 
     elif display_type == "json":
         json_str = json.dumps(data, indent=2) if isinstance(data, (dict, list)) else str(data)

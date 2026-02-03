@@ -3285,6 +3285,76 @@ def add_display_inline_to_canvas(n_clicks_list, data_list, theme, collapsed_ids,
 
 
 # =============================================================================
+# FULLSCREEN PREVIEW CALLBACK - Open HTML/PDF in fullscreen modal
+# =============================================================================
+
+@app.callback(
+    [Output("fullscreen-preview-modal", "opened"),
+     Output("fullscreen-preview-modal", "title"),
+     Output("fullscreen-preview-content", "children")],
+    Input({"type": "fullscreen-btn", "index": ALL}, "n_clicks"),
+    State({"type": "fullscreen-data", "index": ALL}, "data"),
+    prevent_initial_call=True
+)
+def open_fullscreen_preview(n_clicks_list, data_list):
+    """Open fullscreen modal for HTML/PDF preview."""
+    if not n_clicks_list or not any(n_clicks_list):
+        raise PreventUpdate
+
+    # Find which button was clicked
+    triggered = ctx.triggered[0]
+    triggered_id = triggered["prop_id"]
+
+    try:
+        id_part = triggered_id.rsplit(".", 1)[0]
+        id_dict = json.loads(id_part)
+        clicked_index = id_dict.get("index")
+    except (json.JSONDecodeError, KeyError, AttributeError):
+        raise PreventUpdate
+
+    # Find the corresponding data
+    fullscreen_data = None
+    for i, data in enumerate(data_list):
+        if data and n_clicks_list[i]:
+            # Match by checking trigger
+            btn_ids = ctx.inputs_list[0]
+            if i < len(btn_ids) and btn_ids[i].get("id", {}).get("index") == clicked_index:
+                fullscreen_data = data
+                break
+
+    if not fullscreen_data:
+        raise PreventUpdate
+
+    content_type = fullscreen_data.get("type")
+    content = fullscreen_data.get("content")
+    title = fullscreen_data.get("title", "Preview")
+
+    if content_type == "html":
+        preview_content = html.Iframe(
+            srcDoc=content,
+            style={
+                "width": "100%",
+                "height": "100%",
+                "border": "none",
+                "backgroundColor": "white",
+            }
+        )
+    elif content_type == "pdf":
+        preview_content = html.Iframe(
+            src=content,
+            style={
+                "width": "100%",
+                "height": "100%",
+                "border": "none",
+            }
+        )
+    else:
+        preview_content = html.Div("Unsupported content type")
+
+    return True, title, preview_content
+
+
+# =============================================================================
 # THEME TOGGLE CALLBACK - Using DMC 2.4 forceColorScheme
 # =============================================================================
 

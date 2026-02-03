@@ -134,6 +134,22 @@ def create_layout(workspace_root, app_title, app_subtitle, colors, styles, agent
                 opened=False,
             ),
 
+            # Fullscreen preview modal for HTML/PDF
+            dmc.Modal(
+                id="fullscreen-preview-modal",
+                title="Preview",
+                size="100%",
+                children=[
+                    html.Div(id="fullscreen-preview-content", style={"height": "calc(100vh - 120px)"})
+                ],
+                opened=False,
+                styles={
+                    "content": {"height": "95vh", "maxHeight": "95vh"},
+                    "body": {"height": "calc(100% - 60px)", "padding": "0"},
+                },
+            ),
+            dcc.Store(id="fullscreen-preview-data", data=None),
+
             html.Div([
                 # Compact Header
                 html.Header([
