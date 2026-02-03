@@ -349,24 +349,23 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
         ])
 
     elif display_type == "html":
-        # Show preview thumbnail with expand button
-        preview_content = preview or data
-        if len(str(preview_content)) > 500:
-            preview_content = str(preview_content)[:500] + "..."
-
-        content_element = html.Details([
-            html.Summary("HTML Content", className="tool-call-summary"),
-            html.Iframe(
+        # Show HTML preview directly in iframe (like PDF)
+        if not data:
+            content_element = html.Div(
+                "Error: HTML content is empty or missing",
+                style={"color": "red", "padding": "10px"}
+            )
+        else:
+            content_element = html.Iframe(
                 srcDoc=data,
                 style={
                     "width": "100%",
-                    "height": "300px",
-                    "border": "1px solid #ddd",
+                    "height": "400px",
+                    "border": "none",
                     "borderRadius": "5px",
                     "backgroundColor": "white",
                 }
             )
-        ], className="display-inline-html")
 
     elif display_type == "pdf":
         mime_type = result.get("mime_type", "application/pdf")
