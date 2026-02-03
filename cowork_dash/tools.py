@@ -1089,6 +1089,9 @@ def _display_inline_impl(
         # Handle explicit display_type for strings
         if isinstance(content, str) and display_type:
             if display_type == "html":
+                # Check if it's a file path first
+                if _is_file_path(content, workspace_root):
+                    return _process_file_for_display(content, workspace_root, title, "html")
                 result["display_type"] = "html"
                 result["data"] = content
                 result["preview"] = content[:500] + "..." if len(content) > 500 else content
@@ -1098,6 +1101,9 @@ def _display_inline_impl(
                 result["data"] = content
                 return result
             elif display_type in ("csv", "dataframe"):
+                # Check if it's a file path first
+                if _is_file_path(content, workspace_root):
+                    return _process_file_for_display(content, workspace_root, title, "csv")
                 # Parse CSV string
                 try:
                     import pandas as pd
@@ -1109,6 +1115,9 @@ def _display_inline_impl(
                     result["error"] = f"Could not parse as CSV: {e}"
                     return result
             elif display_type == "json":
+                # Check if it's a file path first
+                if _is_file_path(content, workspace_root):
+                    return _process_file_for_display(content, workspace_root, title, "json")
                 result["display_type"] = "json"
                 try:
                     result["data"] = json.loads(content) if isinstance(content, str) else content
@@ -1123,6 +1132,9 @@ def _display_inline_impl(
                 result["data"] = content  # Assume base64
                 return result
             elif display_type == "plotly":
+                # Check if it's a file path first
+                if _is_file_path(content, workspace_root):
+                    return _process_file_for_display(content, workspace_root, title, "plotly")
                 result["display_type"] = "plotly"
                 if isinstance(content, str):
                     result["data"] = json.loads(content)
@@ -1406,14 +1418,18 @@ def _process_file_for_display(
                 result["error"] = f"Could not parse as CSV: {e}"
                 return result
 
-    # JSON files (check for Plotly)
-    if ext == '.json' or display_type == "json":
+    # JSON files (check for Plotly) or explicit plotly display_type
+    if ext == '.json' or display_type in ("json", "plotly"):
         content, is_text, error = read_file_content(workspace_root, file_path)
         if content:
             try:
                 data = json.loads(content)
-                # Check if it's Plotly JSON
-                if isinstance(data, dict) and 'data' in data and isinstance(data.get('data'), list):
+                # Force plotly if display_type is explicitly set, otherwise auto-detect
+                if display_type == "plotly":
+                    result["display_type"] = "plotly"
+                    result["data"] = data
+                # Check if it's Plotly JSON (auto-detect)
+                elif isinstance(data, dict) and 'data' in data and isinstance(data.get('data'), list):
                     result["display_type"] = "plotly"
                     result["data"] = data
                 else:
