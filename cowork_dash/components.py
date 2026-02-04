@@ -82,18 +82,108 @@ def format_loading(colors: Dict):
 
 
 def format_thinking(thinking_text: str, colors: Dict):
-    """Format thinking as an inline subordinate message."""
+    """Format thinking as an inline subordinate message (non-collapsible)."""
     if not thinking_text:
         return None
 
-    return html.Details([
-        html.Summary("Thinking", className="details-summary details-summary-thinking"),
-        html.Div(thinking_text, className="details-content details-content-thinking", style={
+    return html.Div([
+        html.Div("Thinking", style={
+            "fontSize": "12px",
+            "fontWeight": "500",
+            "color": colors.get("thinking", colors.get("text_muted", "#888")),
+            "marginBottom": "2px",
+        }),
+        html.Div(thinking_text, style={
             "whiteSpace": "pre-wrap",
+            "fontSize": "13px",
+            "color": colors.get("text_muted", "#666"),
+            "paddingLeft": "8px",
+            "borderLeft": f"2px solid {colors.get('thinking', '#7c4dff')}",
         })
-    ], open=True, className="chat-details", style={
+    ], style={
         "marginBottom": "4px",
     })
+
+
+def format_ai_text(text: str, colors: Dict, is_new: bool = False):
+    """Format AI text response (without the full message wrapper).
+
+    This is used when rendering ordered content items where thinking
+    and text are interleaved.
+    """
+    if not text:
+        return None
+
+    return dcc.Markdown(
+        text,
+        className="ai-text-block",
+        style={
+            "fontSize": "15px",
+            "lineHeight": "1.5",
+            "margin": "0",
+            "padding": "0",
+        }
+    )
+
+
+def render_ordered_content_items(content_items: List[Dict], colors: Dict, styles: Dict = None, response_time: float = None) -> List:
+    """Render content items in their original emission order.
+
+    Args:
+        content_items: List of {"type": "text"|"thinking"|"display_inline", "content": ...}
+        colors: Color scheme dict
+        styles: Optional styles dict
+        response_time: Optional response time to show after the last text item
+
+    Returns:
+        List of rendered Dash components in order
+    """
+    if not content_items:
+        return []
+
+    rendered = []
+    last_text_index = None
+
+    # Find the last text item index for response time display
+    for i, item in enumerate(content_items):
+        if item.get("type") == "text":
+            last_text_index = i
+
+    for i, item in enumerate(content_items):
+        item_type = item.get("type")
+        content = item.get("content", "")
+
+        if not content:
+            continue
+
+        if item_type == "thinking":
+            block = format_thinking(content, colors)
+            if block:
+                rendered.append(block)
+        elif item_type == "text":
+            # For the last text item, we might want to show response time
+            is_last_text = (i == last_text_index)
+            block = format_ai_text(content, colors)
+            if block:
+                rendered.append(block)
+                # Add response time after the last text block
+                if is_last_text and response_time is not None:
+                    time_display = f"{response_time:.1f}s" if response_time >= 1 else f"{response_time*1000:.0f}ms"
+                    rendered.append(html.Span(
+                        time_display,
+                        style={
+                            "fontSize": "11px",
+                            "color": colors.get("text_muted", "#888"),
+                            "marginLeft": "4px",
+                        }
+                    ))
+        elif item_type == "display_inline":
+            # content is the full display_inline item dict
+            block = render_display_inline_result(content, colors)
+            if block:
+                rendered.append(block)
+
+    return rendered
 
 
 def format_todos(todos, colors: Dict):
@@ -536,16 +626,38 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
         }
     )
 
+    # Create download button
+    download_btn = html.Button(
+        DashIconify(icon="mdi:download", width=16),
+        id={"type": "download-display-btn", "index": item_id},
+        className="download-display-btn",
+        title="Download",
+        style={
+            "background": "transparent",
+            "border": "none",
+            "cursor": "pointer",
+            "padding": "4px",
+            "borderRadius": "4px",
+            "display": "flex",
+            "alignItems": "center",
+            "justifyContent": "center",
+            "marginLeft": "4px",
+        }
+    )
+
     # Store the result data in a hidden div for the callback to retrieve
     result_store = dcc.Store(
         id={"type": "display-inline-data", "index": item_id},
         data=result
     )
 
-    # Build summary with text and button
+    # Build summary with text and buttons
     summary_content = html.Div([
         html.Span(summary_text, className="display-inline-summary-text"),
-        add_to_canvas_btn,
+        html.Div([
+            add_to_canvas_btn,
+            download_btn,
+        ], style={"display": "flex", "alignItems": "center"}),
     ], className="display-inline-summary-row", style={
         "display": "flex",
         "alignItems": "center",
