@@ -156,6 +156,15 @@ code, pre, .mono {
     line-height: 1.6;
 }
 
+/* Tighter spacing for consecutive AI text blocks */
+#chat-messages .ai-text-block p {
+    margin: 0;
+}
+
+#chat-messages .ai-text-block p:last-child {
+    margin-bottom: 0;
+}
+
 #chat-messages ul, #chat-messages ol {
     margin: 6px 0;
     padding-left: 20px;
