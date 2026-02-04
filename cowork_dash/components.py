@@ -82,18 +82,108 @@ def format_loading(colors: Dict):
 
 
 def format_thinking(thinking_text: str, colors: Dict):
-    """Format thinking as an inline subordinate message."""
+    """Format thinking as an inline subordinate message (non-collapsible)."""
     if not thinking_text:
         return None
 
-    return html.Details([
-        html.Summary("Thinking", className="details-summary details-summary-thinking"),
-        html.Div(thinking_text, className="details-content details-content-thinking", style={
+    return html.Div([
+        html.Div("Thinking", style={
+            "fontSize": "12px",
+            "fontWeight": "500",
+            "color": colors.get("thinking", colors.get("text_muted", "#888")),
+            "marginBottom": "2px",
+        }),
+        html.Div(thinking_text, style={
             "whiteSpace": "pre-wrap",
+            "fontSize": "13px",
+            "color": colors.get("text_muted", "#666"),
+            "paddingLeft": "8px",
+            "borderLeft": f"2px solid {colors.get('thinking', '#7c4dff')}",
         })
-    ], open=True, className="chat-details", style={
+    ], style={
         "marginBottom": "4px",
     })
+
+
+def format_ai_text(text: str, colors: Dict, is_new: bool = False):
+    """Format AI text response (without the full message wrapper).
+
+    This is used when rendering ordered content items where thinking
+    and text are interleaved.
+    """
+    if not text:
+        return None
+
+    return dcc.Markdown(
+        text,
+        className="ai-text-block",
+        style={
+            "fontSize": "15px",
+            "lineHeight": "1.5",
+            "margin": "0",
+            "padding": "0",
+        }
+    )
+
+
+def render_ordered_content_items(content_items: List[Dict], colors: Dict, styles: Dict = None, response_time: float = None) -> List:
+    """Render content items in their original emission order.
+
+    Args:
+        content_items: List of {"type": "text"|"thinking"|"display_inline", "content": ...}
+        colors: Color scheme dict
+        styles: Optional styles dict
+        response_time: Optional response time to show after the last text item
+
+    Returns:
+        List of rendered Dash components in order
+    """
+    if not content_items:
+        return []
+
+    rendered = []
+    last_text_index = None
+
+    # Find the last text item index for response time display
+    for i, item in enumerate(content_items):
+        if item.get("type") == "text":
+            last_text_index = i
+
+    for i, item in enumerate(content_items):
+        item_type = item.get("type")
+        content = item.get("content", "")
+
+        if not content:
+            continue
+
+        if item_type == "thinking":
+            block = format_thinking(content, colors)
+            if block:
+                rendered.append(block)
+        elif item_type == "text":
+            # For the last text item, we might want to show response time
+            is_last_text = (i == last_text_index)
+            block = format_ai_text(content, colors)
+            if block:
+                rendered.append(block)
+                # Add response time after the last text block
+                if is_last_text and response_time is not None:
+                    time_display = f"{response_time:.1f}s" if response_time >= 1 else f"{response_time*1000:.0f}ms"
+                    rendered.append(html.Span(
+                        time_display,
+                        style={
+                            "fontSize": "11px",
+                            "color": colors.get("text_muted", "#888"),
+                            "marginLeft": "4px",
+                        }
+                    ))
+        elif item_type == "display_inline":
+            # content is the full display_inline item dict
+            block = render_display_inline_result(content, colors)
+            if block:
+                rendered.append(block)
+
+    return rendered
 
 
 def format_todos(todos, colors: Dict):
@@ -349,24 +439,53 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
         ])
 
     elif display_type == "html":
-        # Show preview thumbnail with expand button
-        preview_content = preview or data
-        if len(str(preview_content)) > 500:
-            preview_content = str(preview_content)[:500] + "..."
-
-        content_element = html.Details([
-            html.Summary("HTML Content", className="tool-call-summary"),
-            html.Iframe(
-                srcDoc=data,
+        # Show HTML preview directly in iframe (like PDF)
+        if not data:
+            content_element = html.Div(
+                "Error: HTML content is empty or missing",
+                style={"color": "red", "padding": "10px"}
+            )
+        else:
+            # Create fullscreen button
+            fullscreen_btn = html.Button(
+                DashIconify(icon="mdi:fullscreen", width=18),
+                id={"type": "fullscreen-btn", "index": item_id},
+                className="fullscreen-btn",
+                title="View fullscreen",
                 style={
-                    "width": "100%",
-                    "height": "300px",
+                    "position": "absolute",
+                    "top": "8px",
+                    "right": "8px",
+                    "background": "rgba(255,255,255,0.9)",
                     "border": "1px solid #ddd",
-                    "borderRadius": "5px",
-                    "backgroundColor": "white",
+                    "borderRadius": "4px",
+                    "cursor": "pointer",
+                    "padding": "4px 6px",
+                    "display": "flex",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "zIndex": "10",
                 }
             )
-        ], className="display-inline-html")
+            # Store data for fullscreen modal
+            fullscreen_store = dcc.Store(
+                id={"type": "fullscreen-data", "index": item_id},
+                data={"type": "html", "content": data, "title": title or "HTML Preview"}
+            )
+            content_element = html.Div([
+                fullscreen_btn,
+                html.Iframe(
+                    srcDoc=data,
+                    style={
+                        "width": "100%",
+                        "height": "400px",
+                        "border": "none",
+                        "borderRadius": "5px",
+                        "backgroundColor": "white",
+                    }
+                ),
+                fullscreen_store,
+            ], style={"position": "relative"})
 
     elif display_type == "pdf":
         mime_type = result.get("mime_type", "application/pdf")
@@ -378,16 +497,46 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
             )
         else:
             data_url = f"data:{mime_type};base64,{data}"
-            # Use iframe instead of embed for better browser compatibility
-            content_element = html.Iframe(
-                src=data_url,
+            # Create fullscreen button
+            fullscreen_btn = html.Button(
+                DashIconify(icon="mdi:fullscreen", width=18),
+                id={"type": "fullscreen-btn", "index": item_id},
+                className="fullscreen-btn",
+                title="View fullscreen",
                 style={
-                    "width": "100%",
-                    "height": "400px",
-                    "border": "none",
-                    "borderRadius": "5px",
+                    "position": "absolute",
+                    "top": "8px",
+                    "right": "8px",
+                    "background": "rgba(255,255,255,0.9)",
+                    "border": "1px solid #ddd",
+                    "borderRadius": "4px",
+                    "cursor": "pointer",
+                    "padding": "4px 6px",
+                    "display": "flex",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                    "zIndex": "10",
                 }
             )
+            # Store data for fullscreen modal
+            fullscreen_store = dcc.Store(
+                id={"type": "fullscreen-data", "index": item_id},
+                data={"type": "pdf", "content": data_url, "title": title or "PDF Preview"}
+            )
+            # Use iframe instead of embed for better browser compatibility
+            content_element = html.Div([
+                fullscreen_btn,
+                html.Iframe(
+                    src=data_url,
+                    style={
+                        "width": "100%",
+                        "height": "400px",
+                        "border": "none",
+                        "borderRadius": "5px",
+                    }
+                ),
+                fullscreen_store,
+            ], style={"position": "relative"})
 
     elif display_type == "json":
         json_str = json.dumps(data, indent=2) if isinstance(data, (dict, list)) else str(data)
@@ -477,16 +626,38 @@ def render_display_inline_result(result: Dict, colors: Dict) -> html.Div:
         }
     )
 
+    # Create download button
+    download_btn = html.Button(
+        DashIconify(icon="mdi:download", width=16),
+        id={"type": "download-display-btn", "index": item_id},
+        className="download-display-btn",
+        title="Download",
+        style={
+            "background": "transparent",
+            "border": "none",
+            "cursor": "pointer",
+            "padding": "4px",
+            "borderRadius": "4px",
+            "display": "flex",
+            "alignItems": "center",
+            "justifyContent": "center",
+            "marginLeft": "4px",
+        }
+    )
+
     # Store the result data in a hidden div for the callback to retrieve
     result_store = dcc.Store(
         id={"type": "display-inline-data", "index": item_id},
         data=result
     )
 
-    # Build summary with text and button
+    # Build summary with text and buttons
     summary_content = html.Div([
         html.Span(summary_text, className="display-inline-summary-text"),
-        add_to_canvas_btn,
+        html.Div([
+            add_to_canvas_btn,
+            download_btn,
+        ], style={"display": "flex", "alignItems": "center"}),
     ], className="display-inline-summary-row", style={
         "display": "flex",
         "alignItems": "center",
