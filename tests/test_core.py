@@ -7,8 +7,11 @@ Tests the main entry points:
 - Agent loading (5 tests)
 - Config/platform behavior (4 tests)
 - Components rendering (6 tests)
+- Ordered content items (5 tests)
+- Display inline results (5 tests)
+- Format AI text (2 tests)
 
-Total: 29 tests
+Total: 41 tests
 """
 
 import os
@@ -23,10 +26,13 @@ from cowork_dash.components import (
     format_message,
     format_loading,
     format_thinking,
+    format_ai_text,
     format_todos_inline,
     format_tool_calls_inline,
     extract_thinking_from_tool_calls,
     extract_display_inline_results,
+    render_ordered_content_items,
+    render_display_inline_result,
 )
 
 
@@ -413,10 +419,10 @@ def test_format_thinking(test_colors):
     result = format_thinking("Let me think about this...", test_colors)
 
     assert result is not None
-    # Should be a details element
+    # Should be a Div element (non-collapsible)
     assert hasattr(result, 'children')
-    # Should be expanded by default
-    assert result.open is True
+    # Should have children (header and content)
+    assert len(result.children) >= 1
 
 
 def test_format_thinking_empty(test_colors):
@@ -509,3 +515,179 @@ def test_format_todos_inline(test_colors):
     assert result is not None
     # Should be a Details element
     assert hasattr(result, 'children')
+
+
+# =============================================================================
+# ORDERED CONTENT ITEMS TESTS (4 tests)
+# =============================================================================
+
+
+def test_render_ordered_content_items_text(test_colors, test_styles):
+    """Test render_ordered_content_items handles text items."""
+    content_items = [
+        {"type": "text", "content": "Hello world"},
+    ]
+
+    result = render_ordered_content_items(content_items, test_colors, test_styles)
+
+    assert result is not None
+    assert len(result) == 1
+
+
+def test_render_ordered_content_items_thinking(test_colors, test_styles):
+    """Test render_ordered_content_items handles thinking items."""
+    content_items = [
+        {"type": "thinking", "content": "Let me think..."},
+    ]
+
+    result = render_ordered_content_items(content_items, test_colors, test_styles)
+
+    assert result is not None
+    assert len(result) == 1
+
+
+def test_render_ordered_content_items_mixed(test_colors, test_styles):
+    """Test render_ordered_content_items maintains order of mixed content."""
+    content_items = [
+        {"type": "thinking", "content": "First thinking"},
+        {"type": "text", "content": "First text"},
+        {"type": "thinking", "content": "Second thinking"},
+        {"type": "text", "content": "Second text"},
+    ]
+
+    result = render_ordered_content_items(content_items, test_colors, test_styles)
+
+    assert result is not None
+    assert len(result) == 4
+
+
+def test_render_ordered_content_items_empty(test_colors, test_styles):
+    """Test render_ordered_content_items handles empty list."""
+    result = render_ordered_content_items([], test_colors, test_styles)
+
+    assert result is not None
+    assert len(result) == 0
+
+
+def test_render_ordered_content_items_with_display_inline(test_colors, test_styles):
+    """Test render_ordered_content_items handles display_inline items."""
+    content_items = [
+        {"type": "text", "content": "Here's an image:"},
+        {
+            "type": "display_inline",
+            "content": {
+                "display_type": "text",
+                "data": "Sample text content",
+                "title": "Test",
+            }
+        },
+        {"type": "text", "content": "End of content"},
+    ]
+
+    result = render_ordered_content_items(content_items, test_colors, test_styles)
+
+    assert result is not None
+    assert len(result) == 3
+
+
+# =============================================================================
+# DISPLAY INLINE RESULT TESTS (5 tests)
+# =============================================================================
+
+
+def test_render_display_inline_result_text(test_colors):
+    """Test render_display_inline_result handles text content."""
+    result_data = {
+        "display_type": "text",
+        "data": "Sample text content",
+        "title": "Test Text",
+    }
+
+    result = render_display_inline_result(result_data, test_colors)
+
+    assert result is not None
+    assert "display-inline-container" in result.className
+
+
+def test_render_display_inline_result_json(test_colors):
+    """Test render_display_inline_result handles JSON content."""
+    result_data = {
+        "display_type": "json",
+        "data": {"key": "value", "number": 42},
+        "title": "Test JSON",
+    }
+
+    result = render_display_inline_result(result_data, test_colors)
+
+    assert result is not None
+    assert "display-inline-container" in result.className
+
+
+def test_render_display_inline_result_image(test_colors):
+    """Test render_display_inline_result handles image content."""
+    # Minimal base64 PNG (1x1 transparent pixel)
+    import base64
+    pixel_data = base64.b64encode(b'\x89PNG\r\n\x1a\n').decode('utf-8')
+
+    result_data = {
+        "display_type": "image",
+        "data": pixel_data,
+        "mime_type": "image/png",
+        "title": "Test Image",
+    }
+
+    result = render_display_inline_result(result_data, test_colors)
+
+    assert result is not None
+    assert "display-inline-container" in result.className
+
+
+def test_render_display_inline_result_dataframe(test_colors):
+    """Test render_display_inline_result handles dataframe content."""
+    result_data = {
+        "display_type": "dataframe",
+        "data": "<table><tr><th>A</th></tr><tr><td>1</td></tr></table>",
+        "title": "Test DataFrame",
+    }
+
+    result = render_display_inline_result(result_data, test_colors)
+
+    assert result is not None
+    assert "display-inline-container" in result.className
+
+
+def test_render_display_inline_result_error(test_colors):
+    """Test render_display_inline_result handles error content."""
+    result_data = {
+        "display_type": "error",
+        "error": "Something went wrong",
+        "data": "",
+        "title": "Error",
+    }
+
+    result = render_display_inline_result(result_data, test_colors)
+
+    assert result is not None
+    assert "display-inline-container" in result.className
+
+
+# =============================================================================
+# FORMAT AI TEXT TESTS (2 tests)
+# =============================================================================
+
+
+def test_format_ai_text(test_colors):
+    """Test format_ai_text renders markdown text."""
+    result = format_ai_text("Hello **world**", test_colors)
+
+    assert result is not None
+    assert "ai-text-block" in result.className
+
+
+def test_format_ai_text_empty(test_colors):
+    """Test format_ai_text returns None for empty text."""
+    result = format_ai_text("", test_colors)
+    assert result is None
+
+    result = format_ai_text(None, test_colors)
+    assert result is None
