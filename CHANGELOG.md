@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-02-03
+
+### Added
+- **Collapsible sidebar**: New toggle button to collapse/expand the files/canvas panel
+- **Download buttons**: Each display_inline asset now has a download button
+- **Ordered content rendering**: AI messages, thinking blocks, and display_inline assets now appear in emission order
+- **Fullscreen preview**: HTML and PDF files can be previewed in fullscreen modal
+
+### Changed
+- **Non-collapsible thinking blocks**: Thinking is always visible with purple left border styling
+- **Reduced AI text spacing**: Tighter spacing between consecutive AI message blocks
+- **add_to_canvas/display_inline**: Now agent-only tools (removed from notebook namespace injection)
+
+### Fixed
+- **display_inline file content**: Fixed reading file content when display_type is explicitly set
+- **ctx undefined error**: Fixed NameError in fullscreen preview callback
+
 ## [0.2.0] - 2026-02-01
 
 ### Added
@@ -171,6 +188,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resizable split-pane interface
 - Upload/download functionality for files
 
+[0.2.1]: https://github.com/dkedar7/cowork-dash/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/dkedar7/cowork-dash/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/dkedar7/cowork-dash/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/dkedar7/cowork-dash/compare/v0.1.7...v0.1.8
