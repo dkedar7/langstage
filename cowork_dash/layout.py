@@ -53,6 +53,7 @@ def create_layout(workspace_root, app_title, app_subtitle, colors, styles, agent
             dcc.Store(id="theme-store", data="light", storage_type="local"),
             dcc.Store(id="current-workspace-path", data=""),  # Relative path from original workspace root
             dcc.Store(id="collapsed-canvas-items", data=[]),  # Track which canvas items are collapsed
+            dcc.Store(id="sidebar-collapsed", data=False),  # Track if sidebar is collapsed
             dcc.Download(id="file-download"),
 
             # Interval for polling agent updates (disabled by default)
@@ -280,6 +281,13 @@ def create_layout(workspace_root, app_title, app_subtitle, colors, styles, agent
                                 variant="default",
                                 size="md",
                             ),
+                            dmc.ActionIcon(
+                                DashIconify(icon="mdi:chevron-right", width=18),
+                                id="collapse-sidebar-btn",
+                                variant="subtle",
+                                size="md",
+                                **{"aria-label": "Collapse sidebar"},
+                            ),
                         ], id="files-actions", gap=5)
                     ], id="sidebar-header", style={
                         "display": "flex", "justifyContent": "space-between",
@@ -361,6 +369,23 @@ def create_layout(workspace_root, app_title, app_subtitle, colors, styles, agent
                     "flexDirection": "column",
                     "background": "var(--mantine-color-body)",
                     "borderLeft": "1px solid var(--mantine-color-default-border)",
+                }),
+
+                # Expand button (shown when sidebar is collapsed)
+                html.Div([
+                    dmc.ActionIcon(
+                        DashIconify(icon="mdi:chevron-left", width=18),
+                        id="expand-sidebar-btn",
+                        variant="subtle",
+                        size="md",
+                        **{"aria-label": "Expand sidebar"},
+                    ),
+                ], id="sidebar-expand-btn", style={
+                    "display": "none",
+                    "alignItems": "flex-start",
+                    "paddingTop": "10px",
+                    "borderLeft": "1px solid var(--mantine-color-default-border)",
+                    "background": "var(--mantine-color-body)",
                 }),
             ], id="main-container", style={"display": "flex", "flex": "1", "overflow": "hidden"}),
         ], id="app-container", style={"display": "flex", "flexDirection": "column", "height": "100vh"})
