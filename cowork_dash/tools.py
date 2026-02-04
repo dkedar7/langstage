@@ -230,37 +230,6 @@ except (ImportError, AttributeError):
         if VIRTUAL_FS:
             self._inject_virtual_fs_helpers()
 
-        # Inject add_to_canvas function that captures items
-        def _add_to_canvas_wrapper(content: Any) -> Dict[str, Any]:
-            """Add content to the canvas for visualization.
-
-            Supports: DataFrames, matplotlib figures, plotly figures,
-            PIL images, and markdown strings.
-            """
-            try:
-                # Use session's VirtualFilesystem in virtual FS mode, otherwise physical path
-                if VIRTUAL_FS and self._session_id:
-                    from .virtual_fs import get_session_manager
-                    workspace_root = get_session_manager().get_filesystem(self._session_id)
-                    if workspace_root is None:
-                        raise RuntimeError(f"Session {self._session_id} not found")
-                else:
-                    workspace_root = WORKSPACE_ROOT
-
-                parsed = parse_canvas_object(content, workspace_root=workspace_root)
-                self._canvas_items.append(parsed)
-                return parsed
-            except Exception as e:
-                error_result = {
-                    "type": "error",
-                    "data": f"Failed to add to canvas: {str(e)}",
-                    "error": str(e)
-                }
-                self._canvas_items.append(error_result)
-                return error_result
-
-        self._namespace["add_to_canvas"] = _add_to_canvas_wrapper
-
     def _inject_virtual_fs_helpers(self):
         """Inject virtual filesystem helper functions into the namespace."""
         from .virtual_fs import get_session_manager
