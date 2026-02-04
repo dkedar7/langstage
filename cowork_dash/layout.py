@@ -383,7 +383,9 @@ def create_layout(workspace_root, app_title, app_subtitle, colors, styles, agent
                 ], id="sidebar-expand-btn", style={
                     "display": "none",
                     "alignItems": "flex-start",
-                    "paddingTop": "10px",
+                    "paddingTop": "8px",
+                    "paddingLeft": "2px",
+                    "paddingRight": "2px",
                     "borderLeft": "1px solid var(--mantine-color-default-border)",
                     "background": "var(--mantine-color-body)",
                 }),

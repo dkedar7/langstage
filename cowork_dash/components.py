@@ -291,13 +291,23 @@ def format_tool_call(tool_call: Dict, colors: Dict, is_completed: bool = False):
 
     # Format args for display (truncate if too long)
     args_display = ""
+    args_preview = ""  # Short preview for header
     if tool_args:
         try:
+            # Compact JSON for preview (no indentation)
+            args_compact = json.dumps(tool_args, separators=(',', ':'))
+            if len(args_compact) > 100:
+                args_preview = args_compact[:100] + "..."
+            else:
+                args_preview = args_compact
+
+            # Full JSON for expanded view
             args_str = json.dumps(tool_args, indent=2)
             if len(args_str) > 500:
                 args_str = args_str[:500] + "..."
             args_display = args_str
         except:
+            args_preview = str(tool_args)[:100]
             args_display = str(tool_args)[:500]
 
     # Build inner content (shown when expanded)
@@ -325,11 +335,14 @@ def format_tool_call(tool_call: Dict, colors: Dict, is_completed: bool = False):
                 html.Pre(result_display, className="tool-call-result")
             ]))
 
+    # Build header text: tool_name(args_preview)
+    header_text = f"{tool_name}({args_preview})" if args_preview else tool_name
+
     # Wrap entire tool call in a details element
     return html.Details([
         html.Summary([
             html.Span(className="tool-call-status-dot"),
-            html.Span(tool_name, className="tool-call-name"),
+            html.Span(header_text, className="tool-call-name"),
         ], className="tool-call-header"),
         html.Div(inner_children, className="tool-call-body") if inner_children else None
     ], className=f"tool-call {status_class}")

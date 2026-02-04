@@ -2918,7 +2918,8 @@ def toggle_view(view_value):
     [Output("sidebar-panel", "style"),
      Output("sidebar-expand-btn", "style"),
      Output("resize-handle", "style"),
-     Output("sidebar-collapsed", "data")],
+     Output("sidebar-collapsed", "data"),
+     Output("chat-panel", "style")],
     [Input("collapse-sidebar-btn", "n_clicks"),
      Input("expand-sidebar-btn", "n_clicks")],
     [State("sidebar-collapsed", "data")],
@@ -2941,21 +2942,30 @@ def toggle_sidebar_collapse(collapse_clicks, expand_clicks, is_collapsed):
         raise PreventUpdate
 
     if new_collapsed:
-        # Collapsed state - hide sidebar, show expand button
+        # Collapsed state - hide sidebar, show expand button, expand chat panel
         return (
             {"display": "none"},  # Hide sidebar panel
-            {  # Show expand button
+            {  # Show expand button - minimal width
                 "display": "flex",
                 "alignItems": "flex-start",
-                "paddingTop": "10px",
+                "paddingTop": "8px",
+                "paddingLeft": "2px",
+                "paddingRight": "2px",
                 "borderLeft": "1px solid var(--mantine-color-default-border)",
                 "background": "var(--mantine-color-body)",
             },
             {"display": "none"},  # Hide resize handle
             True,  # Store collapsed state
+            {  # Expand chat panel to fill space
+                "flex": "1",
+                "display": "flex",
+                "flexDirection": "column",
+                "background": "var(--mantine-color-body)",
+                "minWidth": "0",
+            },
         )
     else:
-        # Expanded state - show sidebar, hide expand button
+        # Expanded state - show sidebar, hide expand button, restore chat panel
         return (
             {  # Show sidebar panel
                 "flex": "1",
@@ -2974,6 +2984,13 @@ def toggle_sidebar_collapse(collapse_clicks, expand_clicks, is_collapsed):
                 "flexShrink": "0",
             },
             False,  # Store expanded state
+            {  # Restore chat panel to original flex
+                "flex": "3",
+                "display": "flex",
+                "flexDirection": "column",
+                "background": "var(--mantine-color-body)",
+                "minWidth": "0",
+            },
         )
 
 
