@@ -1,0 +1,98 @@
+"""Tests for the FastAPI app and REST endpoints."""
+
+import pytest
+from unittest.mock import MagicMock, AsyncMock
+from pathlib import Path
+from httpx import AsyncClient, ASGITransport
+
+from cowork_dash.config import AppConfig
+from cowork_dash.server.main import create_fastapi_app
+
+
+@pytest.fixture
+def workspace(tmp_path):
+    (tmp_path / "hello.py").write_text("print('hello')")
+    (tmp_path / "data.csv").write_text("a,b\n1,2\n")
+    sub = tmp_path / "subdir"
+    sub.mkdir()
+    (sub / "nested.txt").write_text("nested content")
+    return tmp_path
+
+
+@pytest.fixture
+def mock_agent():
+    agent = MagicMock()
+    agent.checkpointer = MagicMock()
+    return agent
+
+
+@pytest.fixture
+def app(workspace, mock_agent):
+    config = AppConfig(
+        workspace=workspace,
+        title="Test App",
+        subtitle="Test Sub",
+        welcome_message="Welcome!",
+        theme="dark",
+    )
+    return create_fastapi_app(
+        agent=mock_agent,
+        workspace=workspace,
+        config=config,
+    )
+
+
+@pytest.fixture
+async def client(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@pytest.mark.asyncio
+async def test_config_endpoint(client):
+    resp = await client.get("/api/config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["title"] == "Test App"
+    assert data["subtitle"] == "Test Sub"
+    assert data["welcome_message"] == "Welcome!"
+    assert data["theme"] == "dark"
+
+
+@pytest.mark.asyncio
+async def test_files_tree(client):
+    resp = await client.get("/api/files/tree")
+    assert resp.status_code == 200
+    data = resp.json()
+    names = [e["name"] for e in data["entries"]]
+    assert "hello.py" in names
+
+
+@pytest.mark.asyncio
+async def test_files_read(client):
+    resp = await client.get("/api/files/read?path=/hello.py")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["content"] == "print('hello')"
+    assert data["language"] == "python"
+
+
+@pytest.mark.asyncio
+async def test_files_read_not_found(client):
+    resp = await client.get("/api/files/read?path=/nope.txt")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_canvas_empty(client):
+    resp = await client.get("/api/canvas/items")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_canvas_export_empty(client):
+    resp = await client.get("/api/canvas/export")
+    assert resp.status_code == 200
+    assert resp.json()["content"] == ""
