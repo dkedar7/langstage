@@ -212,7 +212,7 @@ cowork_dash/static/
 # Workspace / scratch files
 .canvas/
 *.png
-*.html
+/*.html
 *.pdf
 large_tool_results/
 folder/
