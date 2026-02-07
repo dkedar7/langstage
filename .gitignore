@@ -205,3 +205,27 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Built frontend assets (rebuilt from frontend/ source)
+cowork_dash/static/
+
+# Workspace / scratch files
+.canvas/
+*.png
+*.html
+*.pdf
+large_tool_results/
+folder/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Dev scripts / scratch
+build_frontend.py
+convert_md_to_pdf.py
+sample_notebook.py
+spec.md
+spec.pdf
+spec.html
