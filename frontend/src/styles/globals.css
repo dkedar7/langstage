@@ -45,8 +45,11 @@ html, body, #root {
 .markdown-content h2 { font-size: 1.2em; font-weight: 600; margin: 0.5em 0 0.25em; color: var(--color-text); }
 .markdown-content h3 { font-size: 1.05em; font-weight: 600; margin: 0.5em 0 0.25em; color: var(--color-text); }
 .markdown-content p { margin: 0.35em 0; line-height: 1.65; }
-.markdown-content ul, .markdown-content ol { margin: 0.35em 0; padding-left: 1.5em; }
+.markdown-content ul { margin: 0.35em 0; padding-left: 1.5em; list-style-type: disc; }
+.markdown-content ol { margin: 0.35em 0; padding-left: 1.5em; list-style-type: decimal; }
 .markdown-content li { margin: 0.15em 0; line-height: 1.65; }
+.markdown-content li > ul { list-style-type: circle; }
+.markdown-content li > ol { list-style-type: lower-alpha; }
 .markdown-content code {
   background: var(--color-surface-3);
   padding: 0.15em 0.4em;

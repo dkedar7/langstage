@@ -1,4 +1,4 @@
-import { Trash2, Download } from "lucide-react";
+import { Trash2, Download, Layers } from "lucide-react";
 import type { CanvasItem } from "../types";
 import { CanvasItemCard } from "./CanvasItem";
 
@@ -29,8 +29,16 @@ export function CanvasPanel({
 
   if (items.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-[var(--color-text-muted)]">
-        No canvas items yet
+      <div className="flex flex-col items-center justify-center h-full gap-3 px-6">
+        <div className="w-10 h-10 rounded-lg bg-[var(--color-surface-3)] flex items-center justify-center">
+          <Layers size={20} className="text-[var(--color-text-muted)]" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-medium text-[var(--color-text-secondary)]">No canvas items</p>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+            Charts, tables, and visualizations will be collected here
+          </p>
+        </div>
       </div>
     );
   }

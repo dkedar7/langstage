@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, ListChecks } from "lucide-react";
 import type { TodoItem } from "../types";
 
 interface TodoPanelProps {
@@ -8,8 +8,16 @@ interface TodoPanelProps {
 export function TodoPanel({ todos }: TodoPanelProps) {
   if (todos.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-[var(--color-text-muted)]">
-        No tasks yet
+      <div className="flex flex-col items-center justify-center h-full gap-3 px-6">
+        <div className="w-10 h-10 rounded-lg bg-[var(--color-surface-3)] flex items-center justify-center">
+          <ListChecks size={20} className="text-[var(--color-text-muted)]" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-medium text-[var(--color-text-secondary)]">No tasks yet</p>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+            Tasks will appear here as the agent works
+          </p>
+        </div>
       </div>
     );
   }

@@ -290,12 +290,21 @@ export function FileBrowser({
       {/* Tree */}
       <div className="flex-1 overflow-y-auto py-1">
         {loading && entries.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-[var(--color-text-muted)]">
-            Loading files...
+          <div className="flex flex-col items-center justify-center h-full gap-2">
+            <Folder size={20} className="text-[var(--color-text-muted)] animate-pulse" />
+            <span className="text-sm text-[var(--color-text-muted)]">Loading files...</span>
           </div>
         ) : entries.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-[var(--color-text-muted)]">
-            Workspace is empty
+          <div className="flex flex-col items-center justify-center h-full gap-3 px-6">
+            <div className="w-10 h-10 rounded-lg bg-[var(--color-surface-3)] flex items-center justify-center">
+              <Folder size={20} className="text-[var(--color-text-muted)]" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium text-[var(--color-text-secondary)]">Workspace is empty</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                Upload files or create folders to get started
+              </p>
+            </div>
           </div>
         ) : (
           entries.map((entry) => (
