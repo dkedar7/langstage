@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { ArrowUp, Square, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { ArrowUp, Square, Loader2, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../types";
@@ -9,6 +9,8 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   isStreaming: boolean;
   welcomeMessage: string;
+  agentName: string;
+  iconUrl?: string;
   onSend: (content: string) => void;
   onCancel: () => void;
 }
@@ -17,15 +19,26 @@ export function ChatPanel({
   messages,
   isStreaming,
   welcomeMessage,
+  agentName,
+  iconUrl,
   onSend,
   onCancel,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isNearBottomRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Consider "near bottom" if within 80px of the bottom
+    isNearBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (isNearBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
@@ -33,6 +46,7 @@ export function ChatPanel({
   const handleSubmit = () => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
+    isNearBottomRef.current = true;
     onSend(trimmed);
     setInput("");
     if (inputRef.current) {
@@ -57,16 +71,38 @@ export function ChatPanel({
   return (
     <div className="flex flex-col h-full bg-[var(--color-surface)]">
       {/* Message list */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-5 py-6 space-y-5">
-          {/* Welcome message */}
-          {messages.length === 0 && welcomeMessage && (
-            <div className="py-12">
-              <div className="text-sm text-[var(--color-text-secondary)] markdown-content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {welcomeMessage}
-                </ReactMarkdown>
-              </div>
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-5 py-6 space-y-5">
+          {/* Welcome state */}
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 gap-5">
+              {iconUrl ? (
+                <img
+                  src={iconUrl}
+                  alt=""
+                  className="w-12 h-12 rounded-xl object-cover shadow-sm"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-primary-dark)] flex items-center justify-center shadow-sm">
+                  <Sparkles size={22} className="text-white" />
+                </div>
+              )}
+              {welcomeMessage ? (
+                <div className="text-sm text-[var(--color-text-secondary)] markdown-content text-center max-w-md">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {welcomeMessage}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <p className="text-sm font-medium text-[var(--color-text)]">
+                    What can I help you with?
+                  </p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    Ask a question to get started
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -74,14 +110,19 @@ export function ChatPanel({
             <MessageBubble
               key={msg.id}
               message={msg}
+              agentName={agentName}
               showLabel={i === 0 || messages[i - 1].role !== msg.role}
             />
           ))}
 
-          {isStreaming && (
+          {isStreaming && messages.length > 0 && (
             <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-              <Loader2 size={12} className="animate-spin" />
-              Agent is working...
+              <span className="flex gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "300ms" }} />
+              </span>
+              {agentName} is working...
             </div>
           )}
         </div>
@@ -89,7 +130,7 @@ export function ChatPanel({
 
       {/* Input area */}
       <div className="border-t border-[var(--color-border)]">
-        <div className="max-w-2xl mx-auto px-5 py-3">
+        <div className="max-w-4xl mx-auto px-5 py-3">
           <div className="flex items-end gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 focus-within:border-[var(--color-text-muted)] transition-colors">
             <textarea
               ref={inputRef}
@@ -118,6 +159,11 @@ export function ChatPanel({
                 <ArrowUp size={14} strokeWidth={2.5} />
               </button>
             )}
+          </div>
+          <div className="text-center mt-1.5">
+            <span className="text-[10px] text-[var(--color-text-muted)]">
+              <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Shift+Enter</kbd> for new line
+            </span>
           </div>
         </div>
       </div>

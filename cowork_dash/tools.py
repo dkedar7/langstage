@@ -955,16 +955,6 @@ def display_inline(
         # Show an image file
         display_inline("analysis_results.png", title="Results Chart")
 
-        # Show a DataFrame
-        import pandas as pd
-        df = pd.read_csv("data.csv")
-        display_inline(df, title="Sales Data")
-
-        # Show a Plotly figure
-        import plotly.express as px
-        fig = px.bar(df, x="category", y="value")
-        display_inline(fig, title="Category Distribution")
-
         # Show HTML content
         display_inline("<h1>Hello</h1><p>World</p>", display_type="html")
 

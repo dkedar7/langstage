@@ -67,6 +67,7 @@ export function useAgentStream() {
         return updated;
       }
       // New assistant message
+      const now = Date.now();
       return [
         ...prev,
         {
@@ -75,6 +76,8 @@ export function useAgentStream() {
           content: buffered,
           toolCalls: [],
           isStreaming: true,
+          timestamp: now,
+          startedAt: now,
         },
       ];
     });
@@ -104,6 +107,7 @@ export function useAgentStream() {
               };
               return updated;
             }
+            const now = Date.now();
             return [
               ...prev,
               {
@@ -112,6 +116,8 @@ export function useAgentStream() {
                 content: "",
                 toolCalls: [tc],
                 isStreaming: true,
+                timestamp: now,
+                startedAt: now,
               },
             ];
           });
@@ -195,22 +201,28 @@ export function useAgentStream() {
           setInterrupt(event as InterruptEventMsg);
           break;
 
-        case "complete":
+        case "complete": {
           setIsStreaming(false);
+          const now = Date.now();
           setMessages((prev) => {
             if (prev.length === 0) return prev;
-            // Mark all streaming messages as done
+            // Mark all streaming messages as done and compute duration
             let changed = false;
             const updated = prev.map((msg) => {
               if (msg.isStreaming) {
                 changed = true;
-                return { ...msg, isStreaming: false };
+                return {
+                  ...msg,
+                  isStreaming: false,
+                  durationMs: msg.startedAt ? now - msg.startedAt : undefined,
+                };
               }
               return msg;
             });
             return changed ? updated : prev;
           });
           break;
+        }
 
         case "error":
           setIsStreaming(false);
@@ -221,6 +233,7 @@ export function useAgentStream() {
               role: "assistant",
               content: `Error: ${event.error}`,
               toolCalls: [],
+              timestamp: Date.now(),
             },
           ]);
           break;
@@ -244,6 +257,31 @@ export function useAgentStream() {
             return updated;
           });
           break;
+
+        case "cancelled": {
+          setIsStreaming(false);
+          const now = Date.now();
+          // Mark all streaming messages as done with duration
+          setMessages((prev) => {
+            const updated = prev.map((msg) =>
+              msg.isStreaming
+                ? { ...msg, isStreaming: false, durationMs: msg.startedAt ? now - msg.startedAt : undefined }
+                : msg
+            );
+            // Append termination notice
+            return [
+              ...updated,
+              {
+                id: nextId(),
+                role: "system" as const,
+                content: "Task terminated",
+                toolCalls: [],
+                timestamp: Date.now(),
+              },
+            ];
+          });
+          break;
+        }
 
         case "file_changed":
           setFileChanges((prev) => [
@@ -294,7 +332,7 @@ export function useAgentStream() {
 
       setMessages((prev) => [
         ...prev,
-        { id: nextId(), role: "user", content, toolCalls: [] },
+        { id: nextId(), role: "user", content, toolCalls: [], timestamp: Date.now() },
       ]);
       turnCounterRef.current += 1;
       const turn = turnCounterRef.current;
@@ -326,9 +364,11 @@ export function useAgentStream() {
   const cancelStream = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
+    // Flush any buffered content before cancelling
+    if (contentBufferRef.current) flushContentBuffer();
     wsRef.current.send(JSON.stringify({ type: "cancel" }));
-    setIsStreaming(false);
-  }, []);
+    // isStreaming will be set to false when the "cancelled" event arrives
+  }, [flushContentBuffer]);
 
   return {
     messages,

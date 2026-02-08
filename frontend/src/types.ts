@@ -14,7 +14,8 @@ export type AgentEvent =
   | CompleteEvent
   | ErrorEvent
   | StateUpdateEvent
-  | FileChangedEvent;
+  | FileChangedEvent
+  | CancelledEvent;
 
 export interface ContentEvent {
   type: "content";
@@ -95,6 +96,10 @@ export interface FileChangedEvent {
   path: string;
 }
 
+export interface CancelledEvent {
+  type: "cancelled";
+}
+
 // Client → Server messages
 export interface SendMessage {
   type: "message";
@@ -118,10 +123,13 @@ export interface Decision {
 // UI state types
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   toolCalls: ToolCall[];
   isStreaming?: boolean;
+  timestamp?: number;
+  startedAt?: number;
+  durationMs?: number;
 }
 
 export interface ToolCall {
@@ -179,6 +187,8 @@ export interface AppConfig {
   welcome_message: string;
   theme: "light" | "dark" | "auto";
   workspace_name: string;
+  agent_name: string;
+  icon_url: string;
 }
 
 export interface TokenUsage {

@@ -44,15 +44,24 @@ async def chat_websocket(
             msg_type = raw.get("type")
 
             if msg_type == "message":
-                await _handle_message(
-                    websocket, agent, session, parser, serializer,
-                    raw["content"], raw.get("cwd"),
+                # Cancel any existing stream before starting a new one
+                session.cancel_current_stream()
+                session.current_task = asyncio.create_task(
+                    _run_stream(
+                        _handle_message,
+                        websocket, agent, session, parser, serializer,
+                        raw["content"], raw.get("cwd"),
+                    )
                 )
 
             elif msg_type == "interrupt_response":
-                await _handle_interrupt_response(
-                    websocket, agent, session, parser, serializer,
-                    raw["decisions"],
+                session.cancel_current_stream()
+                session.current_task = asyncio.create_task(
+                    _run_stream(
+                        _handle_interrupt_response,
+                        websocket, agent, session, parser, serializer,
+                        raw["decisions"],
+                    )
                 )
 
             elif msg_type == "cancel":
@@ -65,6 +74,15 @@ async def chat_websocket(
     finally:
         file_watch_task.cancel()
         session_manager.remove(websocket)
+
+
+async def _run_stream(handler, websocket, *args):
+    """Run a streaming handler as a task; send 'cancelled' on cancellation."""
+    try:
+        await handler(websocket, *args)
+    except asyncio.CancelledError:
+        logger.info("Stream cancelled")
+        await websocket.send_json({"type": "cancelled"})
 
 
 async def _handle_message(

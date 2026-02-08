@@ -56,6 +56,15 @@ function normalizeTodos(data: unknown): TodoItem[] {
   });
 }
 
+function firstArgPreview(args: Record<string, unknown>): string | null {
+  const keys = Object.keys(args);
+  if (keys.length === 0) return null;
+  const val = args[keys[0]];
+  if (val == null) return null;
+  const str = typeof val === "string" ? val : JSON.stringify(val);
+  return str.length > 100 ? str.slice(0, 100) + "…" : str;
+}
+
 export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
   const Icon = TOOL_ICONS[toolCall.name] || Wrench;
@@ -93,9 +102,9 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         <span className="font-medium text-[var(--color-text-secondary)]">
           {toolCall.name}
         </span>
-        {toolCall.name === "execute" && "command" in toolCall.args && (
-          <code className="text-[11px] text-[var(--color-text-muted)] truncate max-w-[200px]">
-            {String(toolCall.args.command)}
+        {firstArgPreview(toolCall.args) && (
+          <code className="text-[11px] text-[var(--color-text-muted)] truncate max-w-[300px]">
+            ({firstArgPreview(toolCall.args)})
           </code>
         )}
         <span className="flex-1" />
@@ -147,7 +156,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
                 Result
               </div>
               <pre
-                className={`rounded p-2 text-xs overflow-x-auto whitespace-pre-wrap break-all ${
+                className={`rounded p-2 text-xs overflow-auto max-h-[400px] whitespace-pre-wrap break-all ${
                   toolCall.name === "execute" || toolCall.name === "bash" || toolCall.name === "execute_cell"
                     ? "bg-[#111827] text-emerald-400"
                     : "bg-[var(--color-surface-3)] text-[var(--color-text)]"
@@ -311,7 +320,7 @@ function InlineTodoList({ todos }: { todos: TodoItem[] }) {
           {todo.status === "completed" ? (
             <CheckCircle2 size={11} className="text-[var(--color-success)] flex-shrink-0" />
           ) : todo.status === "in_progress" ? (
-            <Loader2 size={11} className="text-[var(--color-primary)] animate-spin flex-shrink-0" />
+            <Circle size={11} className="text-[var(--color-primary)] fill-[var(--color-primary)] flex-shrink-0" />
           ) : (
             <Circle size={11} className="text-[var(--color-text-muted)] flex-shrink-0" />
           )}
