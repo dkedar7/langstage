@@ -83,6 +83,9 @@ function CanvasContent({ item }: { item: CanvasItemType }) {
         />
       );
 
+    case "plotly":
+      return <PlotlyIframe data={item.data} title={item.title} />;
+
     default:
       return (
         <pre className="text-xs bg-[var(--color-surface-3)] rounded p-3 overflow-x-auto">
@@ -133,6 +136,55 @@ function AutoResizeIframe({ html, title }: { html: string; title: string }) {
       ref={iframeRef}
       srcDoc={srcdoc}
       title={title || "HTML preview"}
+      sandbox="allow-scripts allow-same-origin"
+      className="w-full rounded border-0"
+      style={{ height: `${height}px` }}
+    />
+  );
+}
+
+function PlotlyIframe({ data, title }: { data: unknown; title: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(400);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.source === iframe.contentWindow && e.data?.type === "iframe-resize") {
+        const h = Math.max(200, Math.min(e.data.height, 600));
+        setHeight(h);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [data]);
+
+  const jsonStr = JSON.stringify(data);
+
+  const srcdoc = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>body{margin:0;padding:0;}</style>
+</head><body>
+<div id="chart" style="width:100%;"></div>
+<script>
+var spec=${jsonStr};
+var d=spec.data||[];
+var l=Object.assign({margin:{t:30,r:20,b:40,l:50},autosize:true},spec.layout||{});
+Plotly.newPlot('chart',d,l,{responsive:true,displayModeBar:false}).then(function(){
+  var h=document.getElementById('chart').offsetHeight;
+  window.parent.postMessage({type:'iframe-resize',height:h},'*');
+});
+</script></body></html>`;
+
+  return (
+    <iframe
+      ref={iframeRef}
+      srcDoc={srcdoc}
+      title={title || "Plotly chart"}
       sandbox="allow-scripts allow-same-origin"
       className="w-full rounded border-0"
       style={{ height: `${height}px` }}

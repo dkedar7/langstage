@@ -931,11 +931,6 @@ def display_inline(
     Args:
         content: The content to display. Can be:
             - str: File path (image, HTML, CSV, JSON) or raw content
-            - bytes: Binary image data (PNG, JPEG, etc.)
-            - pd.DataFrame: Rendered as an interactive table
-            - dict: If it looks like Plotly JSON, rendered as a chart
-            - matplotlib.figure.Figure: Rendered as an image
-            - plotly.graph_objects.Figure: Rendered as an interactive chart
         title: Optional title displayed above the content
         display_type: Optional hint for how to render the content. One of:
             - "image": Force image rendering (PNG, JPEG, GIF, etc.)
