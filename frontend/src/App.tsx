@@ -9,8 +9,10 @@ const DEFAULT_CONFIG: AppConfig = {
   title: "Cowork Dash",
   subtitle: "AI-Powered Workspace",
   welcome_message: "",
-  theme: "light",
+  theme: "auto",
   workspace_name: "",
+  agent_name: "Agent",
+  icon_url: "",
 };
 
 export default function App() {

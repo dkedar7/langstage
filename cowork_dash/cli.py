@@ -22,8 +22,10 @@ def main():
 @click.option("--subtitle", default=None, help="Subtitle below title")
 @click.option("--welcome-message", default=None, help="Chat welcome message (Markdown)")
 @click.option("--theme", default=None, type=click.Choice(["light", "dark", "auto"]), help="UI theme")
+@click.option("--agent-name", default=None, help="Display name for the agent (default: agent's .name)")
+@click.option("--icon-url", default=None, help="URL to a custom icon image for the header and welcome screen")
 @click.option("--no-browser", is_flag=True, default=False, help="Don't auto-open browser")
-def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, no_browser):
+def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, no_browser):
     """Start the Cowork Dash server."""
     app = CoworkApp(
         agent_spec=agent_spec,
@@ -35,6 +37,8 @@ def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_messa
         subtitle=subtitle,
         welcome_message=welcome_message,
         theme=theme,
+        agent_name=agent_name,
+        icon_url=icon_url,
     )
     app.run(open_browser=not no_browser)
 

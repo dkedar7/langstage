@@ -33,6 +33,8 @@ class CoworkApp:
         port: int | None = None,
         debug: bool | None = None,
         theme: str | None = None,
+        agent_name: str | None = None,
+        icon_url: str | None = None,
         stream_parser_config: dict | None = None,
     ):
         self.config = AppConfig.from_env().merge({
@@ -45,6 +47,8 @@ class CoworkApp:
             "subtitle": subtitle,
             "welcome_message": welcome_message,
             "theme": theme,
+            "agent_name": agent_name,
+            "icon_url": icon_url,
         })
 
         # Ensure workspace directory exists
@@ -52,6 +56,21 @@ class CoworkApp:
 
         self.agent = self._resolve_agent(agent)
         self.stream_parser_config = stream_parser_config or {}
+
+        # Default title and agent_name from the agent object's .name if not explicitly set
+        inferred_name = getattr(self.agent, "name", None)
+        if inferred_name:
+            if self.config.title == "Cowork Dash":
+                self.config.title = inferred_name
+            if self.config.agent_name == "Agent":
+                self.config.agent_name = inferred_name
+
+        # Resolve local icon_url to a serveable path
+        self._icon_local_path: str | None = None
+        if self.config.icon_url and not self.config.icon_url.startswith(("http://", "https://", "data:")):
+            self._icon_local_path, self.config.icon_url = _resolve_local_icon(
+                self.config.icon_url
+            )
 
         # Check for checkpointer
         if not _has_checkpointer(self.agent):
@@ -97,6 +116,7 @@ class CoworkApp:
             workspace=self.config.workspace.resolve(),
             config=self.config,
             stream_parser_config=self.stream_parser_config,
+            icon_local_path=self._icon_local_path,
         )
 
 
@@ -120,3 +140,23 @@ def run_app(
 def _has_checkpointer(agent) -> bool:
     """Check if an agent has a checkpointer configured."""
     return getattr(agent, "checkpointer", None) is not None
+
+
+def _resolve_local_icon(icon_path: str) -> tuple[str, str]:
+    """Resolve a local file path to an absolute path and a serveable URL.
+
+    Relative paths are resolved against the current working directory (where
+    the app is launched from), not the workspace directory. The icon is an
+    app-level config, not a workspace artifact.
+
+    Returns (absolute_path, url). The absolute path is stored so the server
+    can serve the file via /api/icon. Returns ("", "") if the file is not found.
+    """
+    p = Path(icon_path)
+    abs_path = p.resolve()
+
+    if not abs_path.is_file():
+        logger.warning("icon_url file not found: %s", abs_path)
+        return "", ""
+
+    return str(abs_path), "/api/icon"

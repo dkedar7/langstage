@@ -37,3 +37,5 @@ class AppConfigResponse(BaseModel):
     welcome_message: str
     theme: str
     workspace_name: str
+    agent_name: str
+    icon_url: str

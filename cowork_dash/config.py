@@ -19,7 +19,9 @@ class AppConfig:
     title: str = "Cowork Dash"
     subtitle: str = "AI-Powered Workspace"
     welcome_message: str = ""
-    theme: str = "light"  # "light" | "dark" | "auto"
+    theme: str = "auto"  # "light" | "dark" | "auto"
+    agent_name: str = "Agent"
+    icon_url: str = ""
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -33,7 +35,9 @@ class AppConfig:
             title=os.getenv("DEEPAGENT_TITLE", "Cowork Dash"),
             subtitle=os.getenv("DEEPAGENT_SUBTITLE", "AI-Powered Workspace"),
             welcome_message=os.getenv("DEEPAGENT_WELCOME_MESSAGE", ""),
-            theme=os.getenv("DEEPAGENT_THEME", "light"),
+            theme=os.getenv("DEEPAGENT_THEME", "auto"),
+            agent_name=os.getenv("DEEPAGENT_AGENT_NAME", "Agent"),
+            icon_url=os.getenv("DEEPAGENT_ICON_URL", ""),
         )
 
     def merge(self, overrides: dict) -> "AppConfig":
@@ -49,6 +53,8 @@ class AppConfig:
             "subtitle": self.subtitle,
             "welcome_message": self.welcome_message,
             "theme": self.theme,
+            "agent_name": self.agent_name,
+            "icon_url": self.icon_url,
         }
         current.update(updates)
         return AppConfig(**current)
@@ -61,4 +67,6 @@ class AppConfig:
             "welcome_message": self.welcome_message,
             "theme": self.theme,
             "workspace_name": self.workspace.name,
+            "agent_name": self.agent_name,
+            "icon_url": self.icon_url,
         }

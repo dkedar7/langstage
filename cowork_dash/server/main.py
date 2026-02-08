@@ -22,6 +22,7 @@ def create_fastapi_app(
     workspace: Path,
     config: AppConfig,
     stream_parser_config: dict | None = None,
+    icon_local_path: str | None = None,
 ) -> FastAPI:
     """Create a FastAPI app with WebSocket, REST, and static file serving."""
     app = FastAPI(title=config.title, version="2.0.0")
@@ -38,6 +39,12 @@ def create_fastapi_app(
     app.include_router(create_config_router(config))
     app.include_router(create_files_router(file_manager))
     app.include_router(create_canvas_router(canvas_manager))
+
+    # Serve local icon file if configured
+    if icon_local_path:
+        @app.get("/api/icon")
+        async def get_icon():
+            return FileResponse(icon_local_path)
 
     # WebSocket endpoint
     @app.websocket("/ws/chat")

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import { FolderTree, Palette, ListTodo, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { FolderTree, Palette, ListTodo, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
 import type {
   ChatMessage,
   TodoItem,
@@ -57,7 +57,7 @@ interface LayoutProps {
 }
 
 export function Layout(props: LayoutProps) {
-  const [activeTab, setActiveTab] = useState<RightTab>("files");
+  const [activeTab, setActiveTab] = useState<RightTab>("tasks");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
@@ -65,11 +65,22 @@ export function Layout(props: LayoutProps) {
       {/* Header */}
       <header className="flex items-center justify-between px-5 h-11 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="flex items-center gap-2.5">
+          {props.config.icon_url ? (
+            <img
+              src={props.config.icon_url}
+              alt=""
+              className="w-6 h-6 rounded-md object-cover"
+            />
+          ) : (
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-primary-dark)] flex items-center justify-center">
+              <Sparkles size={13} className="text-white" />
+            </div>
+          )}
           <h1 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
             {props.config.title}
           </h1>
           {props.config.subtitle && (
-            <span className="text-xs text-[var(--color-text-muted)] hidden sm:inline">
+            <span className="text-[11px] text-[var(--color-text-muted)] hidden sm:inline border-l border-[var(--color-border)] pl-2.5">
               {props.config.subtitle}
             </span>
           )}
@@ -105,6 +116,8 @@ export function Layout(props: LayoutProps) {
               messages={props.messages}
               isStreaming={props.isStreaming}
               welcomeMessage={props.config.welcome_message}
+              agentName={props.config.agent_name}
+              iconUrl={props.config.icon_url}
               onSend={props.onSend}
               onCancel={props.onCancel}
             />
@@ -115,15 +128,20 @@ export function Layout(props: LayoutProps) {
               {/* Tab bar */}
               <div className="flex items-center h-10 border-b border-[var(--color-border)]">
                 <button
-                  onClick={() => setActiveTab("files")}
+                  onClick={() => setActiveTab("tasks")}
                   className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                    activeTab === "files"
+                    activeTab === "tasks"
                       ? "border-[var(--color-text)] text-[var(--color-text)]"
                       : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                   }`}
                 >
-                  <FolderTree size={13} />
-                  Files
+                  <ListTodo size={13} />
+                  Tasks
+                  {props.todos.length > 0 && (
+                    <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
+                      {props.todos.length}
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={() => setActiveTab("canvas")}
@@ -136,30 +154,36 @@ export function Layout(props: LayoutProps) {
                   <Palette size={13} />
                   Canvas
                   {props.canvasItems.length > 0 && (
-                    <span className="ml-1 text-[10px] tabular-nums text-[var(--color-text-muted)]">
+                    <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
                       {props.canvasItems.length}
                     </span>
                   )}
                 </button>
                 <button
-                  onClick={() => setActiveTab("tasks")}
+                  onClick={() => setActiveTab("files")}
                   className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                    activeTab === "tasks"
+                    activeTab === "files"
                       ? "border-[var(--color-text)] text-[var(--color-text)]"
                       : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
                   }`}
                 >
-                  <ListTodo size={13} />
-                  Tasks
-                  {props.todos.length > 0 && (
-                    <span className="ml-1 text-[10px] tabular-nums text-[var(--color-text-muted)]">
-                      {props.todos.length}
-                    </span>
-                  )}
+                  <FolderTree size={13} />
+                  Files
                 </button>
               </div>
 
               <div className="flex-1 overflow-hidden">
+                {activeTab === "tasks" && (
+                  <TodoPanel todos={props.todos} />
+                )}
+                {activeTab === "canvas" && (
+                  <CanvasPanel
+                    items={props.canvasItems}
+                    onDelete={props.onDeleteCanvasItem}
+                    onClearAll={props.onClearCanvas}
+                    onExport={props.onExportCanvas}
+                  />
+                )}
                 {activeTab === "files" && (
                   props.selectedFile ? (
                     <FileViewer
@@ -180,17 +204,6 @@ export function Layout(props: LayoutProps) {
                       onDelete={props.onDeletePath}
                     />
                   )
-                )}
-                {activeTab === "canvas" && (
-                  <CanvasPanel
-                    items={props.canvasItems}
-                    onDelete={props.onDeleteCanvasItem}
-                    onClearAll={props.onClearCanvas}
-                    onExport={props.onExportCanvas}
-                  />
-                )}
-                {activeTab === "tasks" && (
-                  <TodoPanel todos={props.todos} />
                 )}
               </div>
             </div>

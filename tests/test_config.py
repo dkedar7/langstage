@@ -12,7 +12,7 @@ def test_defaults():
     assert cfg.debug is False
     assert cfg.title == "Cowork Dash"
     assert cfg.subtitle == "AI-Powered Workspace"
-    assert cfg.theme == "light"
+    assert cfg.theme == "auto"
     assert cfg.welcome_message == ""
     assert cfg.agent_spec is None
 
