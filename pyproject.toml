@@ -35,9 +35,11 @@ dev = [
 [project.scripts]
 cowork-dash = "cowork_dash.cli:main"
 
+[tool.hatch.build]
+artifacts = ["cowork_dash/static/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["cowork_dash"]
-artifacts = ["cowork_dash/static/**"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
