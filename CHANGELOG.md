@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-02-08
+
+Fix wheel build to include frontend static assets.
+
 ## 0.2.0 — 2026-02-06
 
 Initial release of `cowork-dash`.
