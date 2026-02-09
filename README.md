@@ -2,6 +2,8 @@
 
 Web UI for [LangGraph](https://github.com/langchain-ai/langgraph) and [deepagents](https://github.com/dkedar7/deepagents) agents. Provides a chat interface with real-time streaming, a workspace file browser, and a canvas for visualizations.
 
+![Cowork Dash](assets/cover.png)
+
 **Stack**: Python (FastAPI + WebSocket) backend, React (TypeScript + Vite) frontend.
 
 ## Features
