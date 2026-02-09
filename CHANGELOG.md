@@ -1,8 +1,13 @@
 # Changelog
 
-## 0.2.1 — 2026-02-08
+## 0.3.0 — 2026-02-08
 
-Fix wheel build to include frontend static assets.
+- Fix wheel build to include frontend static assets
+- Inline HTML and Plotly chart rendering via sandboxed iframes
+- Icon customization, agent name inference, auto theme, favicon
+- Streaming improvements: cancel support, tool previews, scroll anchoring, message timing
+- Token usage chart with per-turn breakdown
+- File browser, canvas, todo panel, and dark mode style polish
 
 ## 0.2.0 — 2026-02-06
 
