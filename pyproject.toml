@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cowork-dash"
-version = "2.0.0"
+version = "0.2.0"
 description = "Web UI for deepagents — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
