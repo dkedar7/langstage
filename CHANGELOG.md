@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.1 — 2026-02-09
+
+### Added
+
+- Session persistence across page refresh (messages, todos, token usage saved to localStorage)
+- HITL interrupt tests for single and multi-interrupt serialization
+
+### Fixed
+
+- Fix HITL interrupt dialog showing blank (no tool name or args displayed)
+- Fix interrupt approval sending empty decisions (`{"decisions": []}`)
+- Fix `Decision` type for edit case to use `edited_action` matching backend format
+- Fix display_inline crash and blank screen rendering (records vs data format mismatch)
+- Add error boundary around inline display to prevent white-screen crashes
+- Rename `display_inline` parameter from `content` to `file_path` to clarify filepath-only usage
+
 ## 0.3.0 — 2026-02-08
 
 - Fix wheel build to include frontend static assets
