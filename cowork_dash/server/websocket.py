@@ -119,6 +119,11 @@ async def _handle_message(
 
     async for event in parser.aparse(stream):
         msg = serializer.serialize(event)
+        if msg.get("type") == "interrupt":
+            logger.debug(
+                "Sending interrupt event: action_requests=%s",
+                msg.get("action_requests"),
+            )
         await websocket.send_json(msg)
 
 

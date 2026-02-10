@@ -61,6 +61,7 @@ export interface ActionRequest {
   tool: string;
   tool_call_id?: string;
   args: Record<string, unknown>;
+  description?: string;
 }
 
 export interface ReviewConfig {
@@ -123,7 +124,8 @@ export interface SendCancel {
 
 export interface Decision {
   type: "approve" | "reject" | "edit";
-  args?: Record<string, unknown>;
+  edited_action?: { name: string; args: Record<string, unknown> };
+  message?: string;
 }
 
 // UI state types
