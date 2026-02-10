@@ -29,7 +29,12 @@ def create_fastapi_app(
     app = FastAPI(title=config.title, version="2.0.0")
 
     # Middleware
-    add_middleware(app, debug=config.debug)
+    add_middleware(
+        app,
+        debug=config.debug,
+        auth_username=config.auth_username,
+        auth_password=config.auth_password,
+    )
 
     # Shared services
     session_manager = SessionManager()

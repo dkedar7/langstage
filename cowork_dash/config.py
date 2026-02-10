@@ -22,6 +22,8 @@ class AppConfig:
     theme: str = "auto"  # "light" | "dark" | "auto"
     agent_name: str = "Agent"
     icon_url: str = ""
+    auth_username: str = ""
+    auth_password: str = ""
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -38,6 +40,8 @@ class AppConfig:
             theme=os.getenv("DEEPAGENT_THEME", "auto"),
             agent_name=os.getenv("DEEPAGENT_AGENT_NAME", "Agent"),
             icon_url=os.getenv("DEEPAGENT_ICON_URL", ""),
+            auth_username=os.getenv("DEEPAGENT_AUTH_USERNAME", ""),
+            auth_password=os.getenv("DEEPAGENT_AUTH_PASSWORD", ""),
         )
 
     def merge(self, overrides: dict) -> "AppConfig":
@@ -55,6 +59,8 @@ class AppConfig:
             "theme": self.theme,
             "agent_name": self.agent_name,
             "icon_url": self.icon_url,
+            "auth_username": self.auth_username,
+            "auth_password": self.auth_password,
         }
         current.update(updates)
         return AppConfig(**current)
