@@ -24,8 +24,10 @@ def main():
 @click.option("--theme", default=None, type=click.Choice(["light", "dark", "auto"]), help="UI theme")
 @click.option("--agent-name", default=None, help="Display name for the agent (default: agent's .name)")
 @click.option("--icon-url", default=None, help="URL to a custom icon image for the header and welcome screen")
+@click.option("--auth-username", default=None, help="Basic auth username (default: admin)")
+@click.option("--auth-password", default=None, help="Basic auth password (enables auth when set)")
 @click.option("--no-browser", is_flag=True, default=False, help="Don't auto-open browser")
-def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, no_browser):
+def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, no_browser):
     """Start the Cowork Dash server."""
     app = CoworkApp(
         agent_spec=agent_spec,
@@ -39,6 +41,8 @@ def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_messa
         theme=theme,
         agent_name=agent_name,
         icon_url=icon_url,
+        auth_username=auth_username,
+        auth_password=auth_password,
     )
     app.run(open_browser=not no_browser)
 

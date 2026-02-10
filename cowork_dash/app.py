@@ -35,6 +35,8 @@ class CoworkApp:
         theme: str | None = None,
         agent_name: str | None = None,
         icon_url: str | None = None,
+        auth_username: str | None = None,
+        auth_password: str | None = None,
         stream_parser_config: dict | None = None,
     ):
         self.config = AppConfig.from_env().merge({
@@ -49,6 +51,8 @@ class CoworkApp:
             "theme": theme,
             "agent_name": agent_name,
             "icon_url": icon_url,
+            "auth_username": auth_username,
+            "auth_password": auth_password,
         })
 
         # Ensure workspace directory exists
