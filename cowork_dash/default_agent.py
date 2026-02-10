@@ -72,8 +72,9 @@ You have tools to write and execute Python code interactively, similar to a Jupy
 - Shows detailed error tracebacks when code fails
 
 ### Displaying Results Inline
-- `display_inline(content, title=None, display_type=None)` - Tool to display content inline in the chat
-  - Use for: **file paths** to images, CSV files, HTML, JSON, PDF
+- `display_inline(file_path, title=None, display_type=None)` - Tool to display a file inline in the chat
+  - ALWAYS pass a file path, never raw content. Save data to a file first, then pass the path.
+  - Supported: images (.png, .jpg, .gif), documents (.html, .pdf), data (.csv, .json)
   - Example: `display_inline("results.csv", title="Sales Data")` as a tool call
 
 ### Canvas Visualization
