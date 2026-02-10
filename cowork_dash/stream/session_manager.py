@@ -1,4 +1,4 @@
-"""Per-WebSocket-connection session state management."""
+"""Per-connection session state management with persistence across reconnects."""
 
 import asyncio
 import uuid
@@ -8,7 +8,7 @@ from fastapi import WebSocket
 
 
 class AgentSession:
-    """Per-WebSocket-connection state. One per browser tab."""
+    """Session state. Survives WebSocket disconnects so page refresh can resume."""
 
     def __init__(self):
         self.thread_id: str = str(uuid.uuid4())
@@ -22,25 +22,54 @@ class AgentSession:
 
 
 class SessionManager:
-    """Manages active chat sessions. Thread-safe for concurrent connections."""
+    """Manages chat sessions. Sessions persist across WebSocket reconnects."""
 
     def __init__(self):
-        self._sessions: dict[int, AgentSession] = {}
+        # session_id (== thread_id) → AgentSession
+        self._sessions: dict[str, AgentSession] = {}
+        # id(websocket) → session_id
+        self._ws_to_session: dict[int, str] = {}
 
-    def create_session(self, websocket: WebSocket) -> AgentSession:
-        """Always creates a new session. Each tab = new thread."""
-        session = AgentSession()
-        self._sessions[id(websocket)] = session
+    def get_or_create(
+        self, websocket: WebSocket, session_id: str | None = None
+    ) -> AgentSession:
+        """Resume an existing session or create a new one.
+
+        If session_id is provided and exists, reuse it. Otherwise create fresh.
+        Links the websocket to the session for later lookup.
+        """
+        if session_id and session_id in self._sessions:
+            session = self._sessions[session_id]
+        else:
+            session = AgentSession()
+            self._sessions[session.thread_id] = session
+
+        self._ws_to_session[id(websocket)] = session.thread_id
         return session
 
     def get_session(self, websocket: WebSocket) -> AgentSession | None:
-        return self._sessions.get(id(websocket))
+        session_id = self._ws_to_session.get(id(websocket))
+        if session_id:
+            return self._sessions.get(session_id)
+        return None
 
     def remove(self, websocket: WebSocket) -> None:
-        session = self._sessions.pop(id(websocket), None)
+        """Unlink websocket but keep session alive for reconnection."""
+        session_id = self._ws_to_session.pop(id(websocket), None)
+        if session_id:
+            session = self._sessions.get(session_id)
+            if session:
+                session.cancel_current_stream()
+
+    def delete_session(self, session_id: str) -> bool:
+        """Permanently delete a session. Returns True if found."""
+        session = self._sessions.pop(session_id, None)
         if session:
             session.cancel_current_stream()
+            return True
+        return False
 
     @property
     def active_count(self) -> int:
-        return len(self._sessions)
+        """Number of sessions with active websocket connections."""
+        return len(self._ws_to_session)

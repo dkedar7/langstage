@@ -26,7 +26,15 @@ async def chat_websocket(
     """Handle a single WebSocket connection for chat streaming."""
     await websocket.accept()
 
-    session = session_manager.create_session(websocket)
+    # Resume existing session or create new one
+    session_id = websocket.query_params.get("session_id")
+    session = session_manager.get_or_create(websocket, session_id)
+
+    # Tell the client which session it's connected to
+    await websocket.send_json({
+        "type": "session_init",
+        "session_id": session.thread_id,
+    })
     serializer = EventSerializer()
     parser = StreamParser(
         stream_mode=DUAL_STREAM_MODE,

@@ -15,7 +15,8 @@ export type AgentEvent =
   | ErrorEvent
   | StateUpdateEvent
   | FileChangedEvent
-  | CancelledEvent;
+  | CancelledEvent
+  | SessionInitEvent;
 
 export interface ContentEvent {
   type: "content";
@@ -98,6 +99,11 @@ export interface FileChangedEvent {
 
 export interface CancelledEvent {
   type: "cancelled";
+}
+
+export interface SessionInitEvent {
+  type: "session_init";
+  session_id: string;
 }
 
 // Client → Server messages

@@ -96,3 +96,11 @@ async def test_canvas_export_empty(client):
     resp = await client.get("/api/canvas/export")
     assert resp.status_code == 200
     assert resp.json()["content"] == ""
+
+
+@pytest.mark.asyncio
+async def test_delete_session_endpoint(client):
+    """DELETE /api/session/{id} returns ok even for nonexistent sessions."""
+    resp = await client.delete("/api/session/fake-session-id")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}

@@ -1,6 +1,7 @@
 /**
  * WebSocket connection + event dispatch hook.
  * Handles buffered content streaming with requestAnimationFrame batching.
+ * Persists session state to localStorage for survival across page refresh.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -16,32 +17,108 @@ import type {
   ConnectionStatus,
 } from "../types";
 
+const STORAGE_KEY = "cowork-dash-session";
+
+interface PersistedState {
+  sessionId: string | null;
+  messages: ChatMessage[];
+  todos: TodoItem[];
+  tokenUsage: TokenUsage;
+  usageHistory: TurnUsage[];
+  turnCounter: number;
+}
+
+function loadPersistedState(): PersistedState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedState;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(state: PersistedState): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // localStorage full or unavailable — silently ignore
+  }
+}
+
 let messageIdCounter = 0;
 function nextId() {
   return `msg-${++messageIdCounter}`;
 }
 
 export function useAgentStream() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Restore persisted state on first render
+  const persisted = useRef(loadPersistedState());
+  const initial = persisted.current;
+
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initial?.messages ?? []
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [interrupt, setInterrupt] = useState<InterruptEventMsg | null>(null);
-  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>(initial?.todos ?? []);
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting");
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage>({
-    input: 0,
-    output: 0,
-    total: 0,
-  });
-  const [usageHistory, setUsageHistory] = useState<TurnUsage[]>([]);
-  const turnCounterRef = useRef(0);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage>(
+    initial?.tokenUsage ?? { input: 0, output: 0, total: 0 }
+  );
+  const [usageHistory, setUsageHistory] = useState<TurnUsage[]>(
+    initial?.usageHistory ?? []
+  );
+  const turnCounterRef = useRef(initial?.turnCounter ?? 0);
   const [fileChanges, setFileChanges] = useState<
     { event: string; path: string }[]
   >([]);
 
+  // Session ID for backend thread continuity
+  const sessionIdRef = useRef<string | null>(initial?.sessionId ?? null);
+
+  // Reconnect key — changing this re-runs the WebSocket useEffect
+  const [reconnectKey, setReconnectKey] = useState(0);
+
   const wsRef = useRef<WebSocket | null>(null);
   const contentBufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
+
+  // Sync messageIdCounter to avoid collisions with restored messages
+  if (initial?.messages?.length) {
+    const maxId = initial.messages.reduce((max, m) => {
+      const num = parseInt(m.id.replace("msg-", ""), 10);
+      return isNaN(num) ? max : Math.max(max, num);
+    }, 0);
+    if (maxId > messageIdCounter) messageIdCounter = maxId;
+  }
+
+  // --- Debounced localStorage persistence ---
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isStreamingRef = useRef(false);
+  isStreamingRef.current = isStreaming;
+
+  useEffect(() => {
+    // Don't persist while streaming — wait until stream completes
+    if (isStreaming) return;
+
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      savePersistedState({
+        sessionId: sessionIdRef.current,
+        messages,
+        todos,
+        tokenUsage,
+        usageHistory,
+        turnCounter: turnCounterRef.current,
+      });
+    }, 500);
+
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    };
+  }, [messages, todos, tokenUsage, usageHistory, isStreaming]);
 
   const flushContentBuffer = useCallback(() => {
     const buffered = contentBufferRef.current;
@@ -86,6 +163,10 @@ export function useAgentStream() {
   const dispatch = useCallback(
     (event: AgentEvent) => {
       switch (event.type) {
+        case "session_init":
+          sessionIdRef.current = event.session_id;
+          break;
+
         case "tool_start":
           // Flush content before tool events
           if (contentBufferRef.current) flushContentBuffer();
@@ -296,7 +377,11 @@ export function useAgentStream() {
 
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat`);
+    let url = `${protocol}//${window.location.host}/ws/chat`;
+    if (sessionIdRef.current) {
+      url += `?session_id=${encodeURIComponent(sessionIdRef.current)}`;
+    }
+    const ws = new WebSocket(url);
 
     ws.onopen = () => setConnectionStatus("connected");
     ws.onclose = () => setConnectionStatus("disconnected");
@@ -324,7 +409,7 @@ export function useAgentStream() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       ws.close();
     };
-  }, [dispatch, flushContentBuffer]);
+  }, [dispatch, flushContentBuffer, reconnectKey]);
 
   const sendMessage = useCallback(
     (content: string, meta?: { cwd?: string }) => {
@@ -370,6 +455,40 @@ export function useAgentStream() {
     // isStreaming will be set to false when the "cancelled" event arrives
   }, [flushContentBuffer]);
 
+  const resetSession = useCallback(() => {
+    // Clean up backend session
+    const oldSessionId = sessionIdRef.current;
+    if (oldSessionId) {
+      fetch(`/api/session/${encodeURIComponent(oldSessionId)}`, {
+        method: "DELETE",
+      }).catch(() => {});
+    }
+
+    // Close current WebSocket
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    // Clear persisted state
+    localStorage.removeItem(STORAGE_KEY);
+
+    // Reset all state
+    sessionIdRef.current = null;
+    setMessages([]);
+    setTodos([]);
+    setTokenUsage({ input: 0, output: 0, total: 0 });
+    setUsageHistory([]);
+    turnCounterRef.current = 0;
+    setIsStreaming(false);
+    setInterrupt(null);
+    setFileChanges([]);
+    contentBufferRef.current = "";
+
+    // Reconnect with a fresh session
+    setReconnectKey((k) => k + 1);
+  }, []);
+
   return {
     messages,
     isStreaming,
@@ -382,5 +501,6 @@ export function useAgentStream() {
     sendMessage,
     respondToInterrupt,
     cancelStream,
+    resetSession,
   };
 }
