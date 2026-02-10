@@ -133,7 +133,7 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
 
       {extraction?.extracted_type === "display_inline" && (
         <div className="border-t border-[var(--color-border)]">
-          <InlineDisplay data={extraction.data as Record<string, unknown>} />
+          <SafeInlineDisplay data={extraction.data as Record<string, unknown>} />
         </div>
       )}
 
@@ -185,12 +185,25 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   );
 }
 
+function SafeInlineDisplay({ data }: { data: Record<string, unknown> }) {
+  try {
+    return <InlineDisplay data={data} />;
+  } catch (err) {
+    return (
+      <div className="px-3 py-2 flex items-start gap-2 text-xs text-[var(--color-error)]">
+        <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+        <span>Display error: {String(err)}</span>
+      </div>
+    );
+  }
+}
+
 function InlineDisplay({ data }: { data: Record<string, unknown> }) {
-  const displayType = data.display_type as string;
-  const title = data.title as string | null;
-  const content = data.data;
-  const status = data.status as string;
-  const error = data.error as string | null;
+  const displayType = data?.display_type as string | undefined;
+  const title = data?.title as string | null;
+  const content = data?.data;
+  const status = data?.status as string;
+  const error = data?.error as string | null;
 
   if (status === "error") {
     return (
@@ -232,7 +245,7 @@ function InlineDisplay({ data }: { data: Record<string, unknown> }) {
         <HtmlIframe html={String(content)} title={title} />
       )}
 
-      {displayType === "plotly" && (
+      {displayType === "plotly" && content != null && (
         <PlotlyIframe data={content} title={title} />
       )}
 
@@ -240,40 +253,7 @@ function InlineDisplay({ data }: { data: Record<string, unknown> }) {
         !!content &&
         typeof content === "object" &&
         "columns" in (content as Record<string, unknown>) && (
-          <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr>
-                  {(
-                    (content as Record<string, unknown>).columns as string[]
-                  ).map((col) => (
-                    <th
-                      key={col}
-                      className="border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2 py-1 text-left font-medium text-[var(--color-text-secondary)]"
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(
-                  (content as Record<string, unknown>).data as unknown[][]
-                ).map((row, i) => (
-                  <tr key={i}>
-                    {(row as unknown[]).map((cell, j) => (
-                      <td
-                        key={j}
-                        className="border border-[var(--color-border)] px-2 py-1 text-[var(--color-text)]"
-                      >
-                        {String(cell ?? "")}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataFrameTable content={content as Record<string, unknown>} />
         )}
 
       {displayType === "pdf" && typeof content === "string" && (
@@ -297,6 +277,64 @@ function InlineDisplay({ data }: { data: Record<string, unknown> }) {
           {String(content)}
         </pre>
       )}
+
+      {/* Fallback for unrecognized display types */}
+      {displayType && !["image", "html", "plotly", "dataframe", "csv", "pdf", "json", "text"].includes(displayType) && (
+        <pre className="bg-[var(--color-surface-3)] rounded p-2 text-xs overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-text)]">
+          {typeof content === "string"
+            ? content
+            : JSON.stringify(content, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function DataFrameTable({ content }: { content: Record<string, unknown> }) {
+  const columns = content.columns as string[];
+  // Backend sends "records" (array of objects) not "data" (array of arrays)
+  const records = content.records as Record<string, unknown>[] | undefined;
+  const dataArrays = content.data as unknown[][] | undefined;
+
+  if (!columns || !Array.isArray(columns)) return null;
+
+  // Build rows from either records or data arrays
+  const rows: unknown[][] = records
+    ? records.map((rec) => columns.map((col) => rec[col]))
+    : Array.isArray(dataArrays)
+      ? dataArrays
+      : [];
+
+  return (
+    <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr>
+            {columns.map((col) => (
+              <th
+                key={col}
+                className="border border-[var(--color-border)] bg-[var(--color-surface-3)] px-2 py-1 text-left font-medium text-[var(--color-text-secondary)]"
+              >
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i}>
+              {(row as unknown[]).map((cell, j) => (
+                <td
+                  key={j}
+                  className="border border-[var(--color-border)] px-2 py-1 text-[var(--color-text)]"
+                >
+                  {String(cell ?? "")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

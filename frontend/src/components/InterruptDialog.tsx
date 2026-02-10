@@ -15,20 +15,33 @@ export function InterruptDialog({ interrupt, onRespond }: InterruptDialogProps) 
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editedArgs, setEditedArgs] = useState("");
   const allowed = new Set(interrupt.allowed_decisions);
+  const hasActions = interrupt.action_requests.length > 0;
 
   const handleApproveAll = () => {
-    onRespond(interrupt.action_requests.map(() => ({ type: "approve" })));
+    if (hasActions) {
+      onRespond(interrupt.action_requests.map(() => ({ type: "approve" })));
+    } else {
+      // Fallback: send a single approve decision
+      onRespond([{ type: "approve" }]);
+    }
   };
 
   const handleRejectAll = () => {
-    onRespond(interrupt.action_requests.map(() => ({ type: "reject" })));
+    if (hasActions) {
+      onRespond(interrupt.action_requests.map(() => ({ type: "reject" })));
+    } else {
+      onRespond([{ type: "reject" }]);
+    }
   };
 
   const handleEditSubmit = (idx: number) => {
     try {
       const parsed = JSON.parse(editedArgs);
+      const action = interrupt.action_requests[idx];
       const decisions: Decision[] = interrupt.action_requests.map((_, i) =>
-        i === idx ? { type: "edit" as const, args: parsed } : { type: "approve" as const }
+        i === idx
+          ? { type: "edit" as const, edited_action: { name: action.tool, args: parsed } }
+          : { type: "approve" as const }
       );
       onRespond(decisions);
     } catch {
@@ -45,57 +58,70 @@ export function InterruptDialog({ interrupt, onRespond }: InterruptDialogProps) 
             Action Requires Approval
           </h3>
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-            The agent wants to perform the following action{interrupt.action_requests.length > 1 ? "s" : ""}
+            {hasActions
+              ? `The agent wants to perform the following action${interrupt.action_requests.length > 1 ? "s" : ""}`
+              : "The agent needs your approval to continue"}
           </p>
         </div>
 
         {/* Actions */}
         <div className="px-5 py-4 space-y-3">
-          {interrupt.action_requests.map((action, idx) => (
-            <div
-              key={idx}
-              className="border border-[var(--color-border)] rounded p-3"
-            >
-              <div className="mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
-                  {action.tool}
-                </span>
-              </div>
-              <pre className="bg-[var(--color-surface-3)] rounded p-2 text-xs overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-text)]">
-                {JSON.stringify(action.args, null, 2)}
-              </pre>
-
-              {editingIdx === idx && (
-                <div className="mt-2">
-                  <textarea
-                    value={editedArgs}
-                    onChange={(e) => setEditedArgs(e.target.value)}
-                    className="w-full h-24 p-2 text-xs font-mono bg-[var(--color-surface-3)] border border-[var(--color-border)] rounded resize-none focus:outline-none focus:border-[var(--color-text-muted)] text-[var(--color-text)]"
-                    placeholder="Edit args JSON..."
-                  />
-                  <div className="flex gap-2 mt-1">
-                    <button
-                      onClick={() => handleEditSubmit(idx)}
-                      className="px-3 py-1 text-xs font-medium bg-[var(--color-text)] text-[var(--color-surface)] rounded hover:opacity-80 transition-opacity"
-                    >
-                      Submit
-                    </button>
-                    <button
-                      onClick={() => setEditingIdx(null)}
-                      className="px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+          {hasActions ? (
+            interrupt.action_requests.map((action, idx) => (
+              <div
+                key={idx}
+                className="border border-[var(--color-border)] rounded p-3"
+              >
+                <div className="mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                    {action.tool}
+                  </span>
                 </div>
-              )}
+                {action.description && (
+                  <p className="text-xs text-[var(--color-text-secondary)] mb-2 leading-relaxed whitespace-pre-wrap">
+                    {action.description}
+                  </p>
+                )}
+                <pre className="bg-[var(--color-surface-3)] rounded p-2 text-xs overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-text)]">
+                  {JSON.stringify(action.args, null, 2)}
+                </pre>
+
+                {editingIdx === idx && (
+                  <div className="mt-2">
+                    <textarea
+                      value={editedArgs}
+                      onChange={(e) => setEditedArgs(e.target.value)}
+                      className="w-full h-24 p-2 text-xs font-mono bg-[var(--color-surface-3)] border border-[var(--color-border)] rounded resize-none focus:outline-none focus:border-[var(--color-text-muted)] text-[var(--color-text)]"
+                      placeholder="Edit args JSON..."
+                    />
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        onClick={() => handleEditSubmit(idx)}
+                        className="px-3 py-1 text-xs font-medium bg-[var(--color-text)] text-[var(--color-surface)] rounded hover:opacity-80 transition-opacity"
+                      >
+                        Submit
+                      </button>
+                      <button
+                        onClick={() => setEditingIdx(null)}
+                        className="px-3 py-1 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="text-xs text-[var(--color-text-muted)] italic">
+              No action details available.
             </div>
-          ))}
+          )}
         </div>
 
         {/* Buttons */}
         <div className="px-5 py-3 border-t border-[var(--color-border)] flex justify-end gap-2">
-          {allowed.has("edit") && (
+          {allowed.has("edit") && hasActions && (
             <button
               onClick={() => {
                 setEditingIdx(0);

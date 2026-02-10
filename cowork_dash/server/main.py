@@ -11,6 +11,7 @@ from cowork_dash.server.middleware import add_middleware
 from cowork_dash.server.routes_config import create_config_router
 from cowork_dash.server.routes_files import create_files_router
 from cowork_dash.server.routes_canvas import create_canvas_router
+from cowork_dash.server.routes_session import create_session_router
 from cowork_dash.server.websocket import chat_websocket
 from cowork_dash.stream.session_manager import SessionManager
 from cowork_dash.workspace.file_manager import FileManager
@@ -39,6 +40,7 @@ def create_fastapi_app(
     app.include_router(create_config_router(config))
     app.include_router(create_files_router(file_manager))
     app.include_router(create_canvas_router(canvas_manager))
+    app.include_router(create_session_router(session_manager))
 
     # Serve local icon file if configured
     if icon_local_path:

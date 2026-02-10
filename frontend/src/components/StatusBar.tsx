@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Zap } from "lucide-react";
+import { Loader2, RotateCcw, Zap } from "lucide-react";
 import type { ConnectionStatus, TokenUsage, TurnUsage } from "../types";
 import { TokenUsageChart } from "./TokenUsageChart";
 
@@ -14,6 +14,7 @@ interface StatusBarProps {
   isStreaming: boolean;
   tokenUsage: TokenUsage;
   usageHistory: TurnUsage[];
+  onNewSession: () => void;
 }
 
 export function StatusBar({
@@ -21,6 +22,7 @@ export function StatusBar({
   isStreaming,
   tokenUsage,
   usageHistory,
+  onNewSession,
 }: StatusBarProps) {
   const [showChart, setShowChart] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -46,6 +48,19 @@ export function StatusBar({
 
   return (
     <div className="flex items-center gap-2.5 text-[11px]">
+      <button
+        onClick={() => {
+          if (window.confirm("Start a new session? This will clear all messages and cannot be undone.")) {
+            onNewSession();
+          }
+        }}
+        disabled={isStreaming}
+        className="flex items-center gap-1 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        title="New session"
+      >
+        <RotateCcw size={10} />
+        New
+      </button>
       {isStreaming && (
         <span className="flex items-center gap-1 text-[var(--color-text-secondary)]">
           <Loader2 size={10} className="animate-spin" />

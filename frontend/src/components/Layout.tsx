@@ -54,6 +54,7 @@ interface LayoutProps {
   onDeleteCanvasItem: (id: string) => void;
   onClearCanvas: () => void;
   onExportCanvas: () => Promise<string>;
+  onNewSession: () => void;
 }
 
 export function Layout(props: LayoutProps) {
@@ -91,6 +92,7 @@ export function Layout(props: LayoutProps) {
             isStreaming={props.isStreaming}
             tokenUsage={props.tokenUsage}
             usageHistory={props.usageHistory}
+            onNewSession={props.onNewSession}
           />
           <div className="w-px h-4 bg-[var(--color-border)]" />
           <ThemeToggle initialTheme={props.config.theme} />

@@ -45,6 +45,7 @@ export default function App() {
     sendMessage,
     respondToInterrupt,
     cancelStream,
+    resetSession,
   } = useAgentStream();
 
   const {
@@ -111,6 +112,7 @@ export default function App() {
       onDeleteCanvasItem={deleteItem}
       onClearCanvas={clearAll}
       onExportCanvas={exportMarkdown}
+      onNewSession={resetSession}
     />
   );
 }

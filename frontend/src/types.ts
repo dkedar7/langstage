@@ -15,7 +15,8 @@ export type AgentEvent =
   | ErrorEvent
   | StateUpdateEvent
   | FileChangedEvent
-  | CancelledEvent;
+  | CancelledEvent
+  | SessionInitEvent;
 
 export interface ContentEvent {
   type: "content";
@@ -60,6 +61,7 @@ export interface ActionRequest {
   tool: string;
   tool_call_id?: string;
   args: Record<string, unknown>;
+  description?: string;
 }
 
 export interface ReviewConfig {
@@ -100,6 +102,11 @@ export interface CancelledEvent {
   type: "cancelled";
 }
 
+export interface SessionInitEvent {
+  type: "session_init";
+  session_id: string;
+}
+
 // Client → Server messages
 export interface SendMessage {
   type: "message";
@@ -117,7 +124,8 @@ export interface SendCancel {
 
 export interface Decision {
   type: "approve" | "reject" | "edit";
-  args?: Record<string, unknown>;
+  edited_action?: { name: string; args: Record<string, unknown> };
+  message?: string;
 }
 
 // UI state types
