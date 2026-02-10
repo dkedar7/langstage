@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — 2026-02-10
+
+### Added
+
+- Optional HTTP Basic Auth (Dash-style) — enable with `DEEPAGENT_AUTH_PASSWORD` env var, `--auth-password` CLI flag, or `auth_password` Python kwarg
+- Username defaults to `admin` when only password is set; customize via `DEEPAGENT_AUTH_USERNAME`
+- Protects all HTTP and WebSocket endpoints with timing-safe credential comparison
+
 ## 0.3.1 — 2026-02-09
 
 ### Added
