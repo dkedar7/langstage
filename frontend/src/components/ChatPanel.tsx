@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../types";
 import { MessageBubble } from "./MessageBubble";
+import { useSlashCommands } from "../hooks/useSlashCommands";
+import { SlashCommandMenu } from "./SlashCommandMenu";
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -11,6 +13,8 @@ interface ChatPanelProps {
   welcomeMessage: string;
   agentName: string;
   iconUrl?: string;
+  saveWorkflowPrompt?: string;
+  runWorkflowPrompt?: string;
   onSend: (content: string) => void;
   onCancel: () => void;
 }
@@ -21,6 +25,8 @@ export function ChatPanel({
   welcomeMessage,
   agentName,
   iconUrl,
+  saveWorkflowPrompt,
+  runWorkflowPrompt,
   onSend,
   onCancel,
 }: ChatPanelProps) {
@@ -28,6 +34,7 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
+  const slashCommands = useSlashCommands({ saveWorkflowPrompt, runWorkflowPrompt });
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -43,18 +50,40 @@ export function ChatPanel({
     }
   }, [messages]);
 
+  const sendAndReset = (message: string) => {
+    isNearBottomRef.current = true;
+    onSend(message);
+    setInput("");
+    slashCommands.reset();
+    if (inputRef.current) inputRef.current.style.height = "auto";
+  };
+
   const handleSubmit = () => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
-    isNearBottomRef.current = true;
-    onSend(trimmed);
-    setInput("");
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
+    const expanded = slashCommands.tryExecute(trimmed);
+    sendAndReset(expanded ?? trimmed);
+  };
+
+  const handleSlashSelect = (index: number) => {
+    const { expanded, newInput } = slashCommands.handleSelect(index);
+    if (expanded) {
+      sendAndReset(expanded);
+    } else if (newInput !== null) {
+      setInput(newInput);
+      inputRef.current?.focus();
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Slash command menu gets first dibs on navigation keys
+    if (slashCommands.handleKeyDown(e)) {
+      // Enter/Tab consumed by menu → execute selection
+      if (e.key === "Enter" || e.key === "Tab") {
+        handleSlashSelect(slashCommands.selectedIndex);
+      }
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -62,7 +91,9 @@ export function ChatPanel({
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
+    const val = e.target.value;
+    setInput(val);
+    slashCommands.handleInputChange(val);
     const el = e.target;
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
@@ -129,8 +160,18 @@ export function ChatPanel({
       </div>
 
       {/* Input area */}
-      <div className="border-t border-[var(--color-border)]">
-        <div className="max-w-4xl mx-auto px-5 py-3">
+      <div data-print-hide className="border-t border-[var(--color-border)]">
+        <div className="max-w-4xl mx-auto px-5 py-3 relative">
+          <SlashCommandMenu
+            showCommandMenu={slashCommands.showCommandMenu}
+            filteredCommands={slashCommands.filteredCommands}
+            showWorkflowPicker={slashCommands.showWorkflowPicker}
+            filteredWorkflowFiles={slashCommands.filteredWorkflowFiles}
+            isLoadingWorkflows={slashCommands.isLoadingWorkflows}
+            selectedIndex={slashCommands.selectedIndex}
+            onSelect={handleSlashSelect}
+            onHover={slashCommands.setSelectedIndex}
+          />
           <div className="flex items-end gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 focus-within:border-[var(--color-text-muted)] transition-colors">
             <textarea
               ref={inputRef}
@@ -162,7 +203,7 @@ export function ChatPanel({
           </div>
           <div className="text-center mt-1.5">
             <span className="text-[10px] text-[var(--color-text-muted)]">
-              <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Shift+Enter</kbd> for new line
+              <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Shift+Enter</kbd> for new line, <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">/</kbd> for commands
             </span>
           </div>
         </div>
