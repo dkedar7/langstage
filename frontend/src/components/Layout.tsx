@@ -64,7 +64,7 @@ export function Layout(props: LayoutProps) {
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)]">
       {/* Header */}
-      <header className="flex items-center justify-between px-5 h-11 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <header data-print-hide className="flex items-center justify-between px-5 h-11 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="flex items-center gap-2.5">
           {props.config.icon_url ? (
             <img
@@ -120,13 +120,15 @@ export function Layout(props: LayoutProps) {
               welcomeMessage={props.config.welcome_message}
               agentName={props.config.agent_name}
               iconUrl={props.config.icon_url}
+              saveWorkflowPrompt={props.config.save_workflow_prompt}
+              runWorkflowPrompt={props.config.run_workflow_prompt}
               onSend={props.onSend}
               onCancel={props.onCancel}
             />
           </Allotment.Pane>
 
           <Allotment.Pane minSize={250} visible={sidebarOpen}>
-            <div className="flex flex-col h-full bg-[var(--color-surface)]">
+            <div data-print-hide className="flex flex-col h-full bg-[var(--color-surface)]">
               {/* Tab bar */}
               <div className="flex items-center h-10 border-b border-[var(--color-border)]">
                 <button

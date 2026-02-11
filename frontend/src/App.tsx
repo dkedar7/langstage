@@ -13,6 +13,8 @@ const DEFAULT_CONFIG: AppConfig = {
   workspace_name: "",
   agent_name: "Agent",
   icon_url: "",
+  save_workflow_prompt: "",
+  run_workflow_prompt: "",
 };
 
 export default function App() {

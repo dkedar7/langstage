@@ -37,6 +37,8 @@ class CoworkApp:
         icon_url: str | None = None,
         auth_username: str | None = None,
         auth_password: str | None = None,
+        save_workflow_prompt: str | None = None,
+        run_workflow_prompt: str | None = None,
         stream_parser_config: dict | None = None,
     ):
         self.config = AppConfig.from_env().merge({
@@ -53,6 +55,8 @@ class CoworkApp:
             "icon_url": icon_url,
             "auth_username": auth_username,
             "auth_password": auth_password,
+            "save_workflow_prompt": save_workflow_prompt,
+            "run_workflow_prompt": run_workflow_prompt,
         })
 
         # Ensure workspace directory exists

@@ -99,3 +99,23 @@ html, body, #root {
   background: var(--color-border) !important;
 }
 
+/* Print styles — show only chat messages */
+@media print {
+  /* Force light colors */
+  :root { --color-text: #111827; --color-surface: #fff; --color-surface-2: #f9fafb; --color-surface-3: #f3f4f6; --color-border: #e5e7eb; }
+  /* Hide marked elements: header, sidebar, chat input */
+  [data-print-hide] { display: none !important; }
+  /* Flatten layout so all messages flow naturally */
+  html, body, #root, #root > * { height: auto !important; overflow: visible !important; }
+  #root * { position: static !important; overflow: visible !important; height: auto !important; }
+  /* Restore flex for message spacing */
+  .space-y-5 { display: block !important; }
+  .space-y-5 > * { margin-bottom: 1.25rem; page-break-inside: avoid; }
+  /* Hide iframes (charts/HTML that won't render in print) */
+  iframe { display: none !important; }
+  /* Hide streaming indicator */
+  .animate-bounce { display: none !important; }
+  /* Clean margins */
+  .max-w-4xl { max-width: none !important; }
+}
+

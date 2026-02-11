@@ -26,8 +26,10 @@ def main():
 @click.option("--icon-url", default=None, help="URL to a custom icon image for the header and welcome screen")
 @click.option("--auth-username", default=None, help="Basic auth username (default: admin)")
 @click.option("--auth-password", default=None, help="Basic auth password (enables auth when set)")
+@click.option("--save-workflow-prompt", default=None, help="Custom prompt template for /save-workflow command")
+@click.option("--run-workflow-prompt", default=None, help="Custom prompt template for /run-workflow command (use {filename} placeholder)")
 @click.option("--no-browser", is_flag=True, default=False, help="Don't auto-open browser")
-def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, no_browser):
+def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, no_browser):
     """Start the Cowork Dash server."""
     app = CoworkApp(
         agent_spec=agent_spec,
@@ -43,6 +45,8 @@ def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_messa
         icon_url=icon_url,
         auth_username=auth_username,
         auth_password=auth_password,
+        save_workflow_prompt=save_workflow_prompt,
+        run_workflow_prompt=run_workflow_prompt,
     )
     app.run(open_browser=not no_browser)
 
