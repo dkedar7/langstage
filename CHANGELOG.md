@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.4 — 2026-02-10
+
+### Added
+
+- `/create-workflow` slash command with two-step text input flow for creating workflows from scratch
+- `create_workflow_prompt` configurable via Python API, CLI (`--create-workflow-prompt`), and env var (`DEEPAGENT_CREATE_WORKFLOW_PROMPT`)
+- README documentation for slash commands, authentication, and workflow prompt configuration
+
+### Changed
+
+- Refactored slash command `hasArg` boolean to `secondStep` union type (`"none"` | `"file-picker"` | `"text"`) for extensibility
+- Generalized `tryExecute` and `handleInputChange` to work with any command definition
+
 ## 0.3.3 — 2026-02-10
 
 ### Added
