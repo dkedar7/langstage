@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3 — 2026-02-10
+
+### Added
+
+- Print/export conversation via browser Print dialog with print-optimized CSS
+- `/save-workflow` slash command to capture conversations as reusable workflow markdown files
+- `/run-workflow` slash command with autocomplete dropdown listing `.md` files from `./workflows/`
+- Configurable workflow prompts via Python API (`save_workflow_prompt`, `run_workflow_prompt`), CLI flags, and env vars
+
 ## 0.3.2 — 2026-02-10
 
 ### Added
