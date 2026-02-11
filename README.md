@@ -17,7 +17,10 @@ Web UI for [LangGraph](https://github.com/langchain-ai/langgraph) and [deepagent
 - **File browser** — workspace file tree with syntax-highlighted viewer and live file change detection
 - **Task tracking** — sidebar todo list with progress bar, synced with agent `write_todos` calls
 - **Human-in-the-loop** — interrupt dialog for reviewing and approving agent actions
+- **Slash commands** — `/save-workflow`, `/create-workflow`, and `/run-workflow` with autocomplete
+- **Print / export** — print conversations via browser Print dialog with optimized CSS
 - **Token usage** — cumulative counter with per-turn breakdown chart
+- **Authentication** — optional HTTP Basic Auth for all endpoints
 - **Theming** — light, dark, and system-auto modes
 - **Customization** — title, subtitle, welcome message, agent name, and custom icon
 
@@ -77,6 +80,31 @@ Configuration priority: **Python args > CLI args > environment variables > defau
 | Theme | `--theme` | `DEEPAGENT_THEME` | `auto` |
 | Agent name | `--agent-name` | `DEEPAGENT_AGENT_NAME` | Agent's `.name` or `"Agent"` |
 | Icon URL | `--icon-url` | `DEEPAGENT_ICON_URL` | _(none)_ |
+| Auth username | `--auth-username` | `DEEPAGENT_AUTH_USERNAME` | `admin` |
+| Auth password | `--auth-password` | `DEEPAGENT_AUTH_PASSWORD` | _(none — auth disabled)_ |
+| Save workflow prompt | `--save-workflow-prompt` | `DEEPAGENT_SAVE_WORKFLOW_PROMPT` | _(built-in)_ |
+| Run workflow prompt | `--run-workflow-prompt` | `DEEPAGENT_RUN_WORKFLOW_PROMPT` | _(built-in, use `{filename}`)_ |
+| Create workflow prompt | `--create-workflow-prompt` | `DEEPAGENT_CREATE_WORKFLOW_PROMPT` | _(built-in)_ |
+
+## Slash Commands
+
+Type `/` in the chat input to access built-in commands:
+
+| Command | Description |
+|---------|-------------|
+| `/save-workflow` | Capture the current conversation as a reusable workflow in `./workflows/` |
+| `/create-workflow` | Create a new workflow from scratch — prompts for a topic description |
+| `/run-workflow` | Execute a saved workflow — shows an autocomplete dropdown of `.md` files from `./workflows/` |
+
+All commands support inline arguments:
+
+```
+/save-workflow focus on the data cleaning steps
+/create-workflow daily sales report pipeline
+/run-workflow etl-pipeline.md skip step 3
+```
+
+The prompt templates behind each command are configurable via Python API, CLI flags, or environment variables (see Configuration table above).
 
 ## Stream Parser Config
 
