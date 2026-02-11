@@ -122,6 +122,7 @@ export function Layout(props: LayoutProps) {
               iconUrl={props.config.icon_url}
               saveWorkflowPrompt={props.config.save_workflow_prompt}
               runWorkflowPrompt={props.config.run_workflow_prompt}
+              createWorkflowPrompt={props.config.create_workflow_prompt}
               onSend={props.onSend}
               onCancel={props.onCancel}
             />

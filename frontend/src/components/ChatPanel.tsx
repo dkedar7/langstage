@@ -15,6 +15,7 @@ interface ChatPanelProps {
   iconUrl?: string;
   saveWorkflowPrompt?: string;
   runWorkflowPrompt?: string;
+  createWorkflowPrompt?: string;
   onSend: (content: string) => void;
   onCancel: () => void;
 }
@@ -27,6 +28,7 @@ export function ChatPanel({
   iconUrl,
   saveWorkflowPrompt,
   runWorkflowPrompt,
+  createWorkflowPrompt,
   onSend,
   onCancel,
 }: ChatPanelProps) {
@@ -34,7 +36,7 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
-  const slashCommands = useSlashCommands({ saveWorkflowPrompt, runWorkflowPrompt });
+  const slashCommands = useSlashCommands({ saveWorkflowPrompt, runWorkflowPrompt, createWorkflowPrompt });
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
