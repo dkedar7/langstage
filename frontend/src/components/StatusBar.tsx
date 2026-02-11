@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, RotateCcw, Zap } from "lucide-react";
+import { Loader2, Printer, RotateCcw, Zap } from "lucide-react";
 import type { ConnectionStatus, TokenUsage, TurnUsage } from "../types";
 import { TokenUsageChart } from "./TokenUsageChart";
 
@@ -60,6 +60,14 @@ export function StatusBar({
       >
         <RotateCcw size={10} />
         New
+      </button>
+      <button
+        onClick={() => window.print()}
+        className="flex items-center gap-1 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors cursor-pointer"
+        title="Print conversation"
+      >
+        <Printer size={10} />
+        Print
       </button>
       {isStreaming && (
         <span className="flex items-center gap-1 text-[var(--color-text-secondary)]">
