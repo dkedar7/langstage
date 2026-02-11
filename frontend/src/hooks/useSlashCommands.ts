@@ -5,13 +5,15 @@ export interface SlashCommandDefinition {
   name: string;
   label: string;
   description: string;
-  hasArg: boolean;
+  /** "none" = fire immediately, "file-picker" = show workflow picker, "text" = prompt for free-text input */
+  secondStep: "none" | "file-picker" | "text";
   expandMessage: (arg?: string) => string;
 }
 
 interface SlashCommandsOptions {
   saveWorkflowPrompt?: string;
   runWorkflowPrompt?: string;
+  createWorkflowPrompt?: string;
 }
 
 const DEFAULT_SAVE_PROMPT =
@@ -20,21 +22,32 @@ const DEFAULT_SAVE_PROMPT =
 const DEFAULT_RUN_PROMPT =
   "Please read and follow the workflow defined in ./workflows/{filename}. Execute each step as described in the workflow file.";
 
-function buildCommands(savePrompt: string, runPrompt: string): SlashCommandDefinition[] {
+const DEFAULT_CREATE_PROMPT =
+  "Please create a new workflow markdown file in the ./workflows/ directory. Include: a title, description of the goal, step-by-step instructions to execute the workflow, any configuration or parameters needed, and expected outputs.";
+
+function buildCommands(savePrompt: string, runPrompt: string, createPrompt: string): SlashCommandDefinition[] {
   return [
     {
       name: "save-workflow",
       label: "/save-workflow",
       description: "Save this conversation as a reusable workflow",
-      hasArg: false,
+      secondStep: "none",
       expandMessage: (arg?: string) =>
         arg ? `${savePrompt}\n\nAdditional instructions: ${arg}` : savePrompt,
+    },
+    {
+      name: "create-workflow",
+      label: "/create-workflow",
+      description: "Create a new workflow — type a description after selecting",
+      secondStep: "text",
+      expandMessage: (arg?: string) =>
+        arg ? `${createPrompt}\n\nWorkflow topic: ${arg}` : createPrompt,
     },
     {
       name: "run-workflow",
       label: "/run-workflow",
       description: "Execute a saved workflow from ./workflows/",
-      hasArg: true,
+      secondStep: "file-picker",
       expandMessage: (arg?: string) => {
         const parts = arg?.match(/^(\S+\.md)\s*(.*)$/);
         if (parts) {
@@ -52,8 +65,9 @@ export function useSlashCommands(options: SlashCommandsOptions = {}) {
     () => buildCommands(
       options.saveWorkflowPrompt || DEFAULT_SAVE_PROMPT,
       options.runWorkflowPrompt || DEFAULT_RUN_PROMPT,
+      options.createWorkflowPrompt || DEFAULT_CREATE_PROMPT,
     ),
-    [options.saveWorkflowPrompt, options.runWorkflowPrompt],
+    [options.saveWorkflowPrompt, options.runWorkflowPrompt, options.createWorkflowPrompt],
   );
 
   const [showCommandMenu, setShowCommandMenu] = useState(false);
@@ -108,11 +122,14 @@ export function useSlashCommands(options: SlashCommandsOptions = {}) {
         return;
       }
 
-      // Case 2: starts with "/run-workflow " → workflow picker
-      if (value.startsWith("/run-workflow ") || value === "/run-workflow") {
+      // Case 2: starts with a file-picker command (e.g. "/run-workflow ") → workflow picker
+      const filePickerCmd = commands.find(
+        (c) => c.secondStep === "file-picker" && (value.startsWith(`/${c.name} `) || value === `/${c.name}`),
+      );
+      if (filePickerCmd) {
         setShowCommandMenu(false);
         setShowWorkflowPicker(true);
-        const filter = value.replace(/^\/run-workflow\s*/, "").toLowerCase();
+        const filter = value.replace(new RegExp(`^\\/${filePickerCmd.name}\\s*`), "").toLowerCase();
         fetchWorkflowFiles().then((files) => {
           const filtered = filter
             ? files.filter((f) => f.toLowerCase().includes(filter))
@@ -171,17 +188,23 @@ export function useSlashCommands(options: SlashCommandsOptions = {}) {
       if (showCommandMenu) {
         const cmd = filteredCommands[index];
         if (!cmd) return { expanded: null, newInput: null };
-        if (!cmd.hasArg) {
+        if (cmd.secondStep === "none") {
           return { expanded: cmd.expandMessage(), newInput: null };
         }
-        // /run-workflow → switch to file picker
+        if (cmd.secondStep === "text") {
+          // Dismiss menu, fill input with command prefix for free-text typing
+          setShowCommandMenu(false);
+          setShowWorkflowPicker(false);
+          return { expanded: null, newInput: `/${cmd.name} ` };
+        }
+        // file-picker: switch to workflow file picker
         setShowCommandMenu(false);
         setShowWorkflowPicker(true);
         setSelectedIndex(0);
         fetchWorkflowFiles().then((files) => {
           setFilteredWorkflowFiles(files);
         });
-        return { expanded: null, newInput: "/run-workflow " };
+        return { expanded: null, newInput: `/${cmd.name} ` };
       }
 
       if (showWorkflowPicker) {
@@ -198,15 +221,15 @@ export function useSlashCommands(options: SlashCommandsOptions = {}) {
 
   const tryExecute = useCallback((input: string): string | null => {
     const trimmed = input.trim();
-    // /save-workflow [optional instructions]
-    const saveMatch = trimmed.match(/^\/save-workflow(?:\s+(.+))?$/);
-    if (saveMatch) {
-      return commands[0].expandMessage(saveMatch[1]?.trim());
-    }
-    // /run-workflow <file> [optional instructions]
-    const runMatch = trimmed.match(/^\/run-workflow\s+(.+)$/);
-    if (runMatch) {
-      return commands[1].expandMessage(runMatch[1].trim());
+    for (const cmd of commands) {
+      // Commands with a second step require an argument; others accept an optional one
+      const re = cmd.secondStep !== "none"
+        ? new RegExp(`^\\/${cmd.name}\\s+(.+)$`)
+        : new RegExp(`^\\/${cmd.name}(?:\\s+(.+))?$`);
+      const match = trimmed.match(re);
+      if (match) {
+        return cmd.expandMessage(match[1]?.trim());
+      }
     }
     return null;
   }, [commands]);

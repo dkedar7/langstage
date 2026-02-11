@@ -26,6 +26,7 @@ class AppConfig:
     auth_password: str = ""
     save_workflow_prompt: str = "Please capture this conversation as a detailed workflow markdown file in the ./workflows/ directory. Include: a title, description of the goal, step-by-step instructions that could be followed to reproduce this workflow, any configuration or parameters needed, and expected outputs."
     run_workflow_prompt: str = "Please read and follow the workflow defined in ./workflows/{filename}. Execute each step as described in the workflow file."
+    create_workflow_prompt: str = "Please create a new workflow markdown file in the ./workflows/ directory. Include: a title, description of the goal, step-by-step instructions to execute the workflow, any configuration or parameters needed, and expected outputs."
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -46,6 +47,7 @@ class AppConfig:
             auth_password=os.getenv("DEEPAGENT_AUTH_PASSWORD", ""),
             save_workflow_prompt=os.getenv("DEEPAGENT_SAVE_WORKFLOW_PROMPT", AppConfig.save_workflow_prompt),
             run_workflow_prompt=os.getenv("DEEPAGENT_RUN_WORKFLOW_PROMPT", AppConfig.run_workflow_prompt),
+            create_workflow_prompt=os.getenv("DEEPAGENT_CREATE_WORKFLOW_PROMPT", AppConfig.create_workflow_prompt),
         )
 
     def merge(self, overrides: dict) -> "AppConfig":
@@ -67,6 +69,7 @@ class AppConfig:
             "auth_password": self.auth_password,
             "save_workflow_prompt": self.save_workflow_prompt,
             "run_workflow_prompt": self.run_workflow_prompt,
+            "create_workflow_prompt": self.create_workflow_prompt,
         }
         current.update(updates)
         return AppConfig(**current)
@@ -83,4 +86,5 @@ class AppConfig:
             "icon_url": self.icon_url,
             "save_workflow_prompt": self.save_workflow_prompt,
             "run_workflow_prompt": self.run_workflow_prompt,
+            "create_workflow_prompt": self.create_workflow_prompt,
         }

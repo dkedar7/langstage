@@ -15,6 +15,7 @@ const DEFAULT_CONFIG: AppConfig = {
   icon_url: "",
   save_workflow_prompt: "",
   run_workflow_prompt: "",
+  create_workflow_prompt: "",
 };
 
 export default function App() {

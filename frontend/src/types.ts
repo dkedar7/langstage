@@ -199,6 +199,7 @@ export interface AppConfig {
   icon_url: string;
   save_workflow_prompt: string;
   run_workflow_prompt: string;
+  create_workflow_prompt: string;
 }
 
 export interface TokenUsage {
