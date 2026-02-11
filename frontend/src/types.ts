@@ -197,6 +197,8 @@ export interface AppConfig {
   workspace_name: string;
   agent_name: string;
   icon_url: string;
+  save_workflow_prompt: string;
+  run_workflow_prompt: string;
 }
 
 export interface TokenUsage {
