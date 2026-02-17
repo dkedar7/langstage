@@ -16,7 +16,10 @@ export type AgentEvent =
   | StateUpdateEvent
   | FileChangedEvent
   | CancelledEvent
-  | SessionInitEvent;
+  | SessionInitEvent
+  | BrowserFrameEvent
+  | BrowserStatusEvent
+  | BrowserUrlEvent;
 
 export interface ContentEvent {
   type: "content";
@@ -105,6 +108,23 @@ export interface CancelledEvent {
 export interface SessionInitEvent {
   type: "session_init";
   session_id: string;
+}
+
+export interface BrowserFrameEvent {
+  type: "browser_frame";
+  data: string;
+  width: number;
+  height: number;
+}
+
+export interface BrowserStatusEvent {
+  type: "browser_status";
+  status: "running" | "navigating" | "stopped";
+}
+
+export interface BrowserUrlEvent {
+  type: "browser_url";
+  url: string;
 }
 
 // Client → Server messages
@@ -216,3 +236,11 @@ export interface TurnUsage {
 }
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
+
+export interface BrowserViewState {
+  status: "idle" | "running" | "navigating" | "stopped";
+  currentUrl: string;
+  latestFrame: string | null;
+  frameWidth: number;
+  frameHeight: number;
+}

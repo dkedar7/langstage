@@ -24,7 +24,14 @@ from cowork_dash.tools import (
     modify_cell,
     reset_notebook,
     display_inline,
-    think_tool
+    think_tool,
+    browser_navigate,
+    browser_click,
+    browser_type,
+    browser_screenshot,
+    browser_get_text,
+    browser_scroll,
+    browser_close,
 )
 
 SYSTEM_PROMPT = """You are a helpful AI assistant with access to a filesystem workspace and a Python code execution environment.
@@ -86,6 +93,23 @@ You have tools to write and execute Python code interactively, similar to a Jupy
 - `display_inline`: For showing **saved files** (images, CSV, JSON) inline in chat
 - `add_to_canvas`: For longer-term notes, sketches, charts
 
+### Browser Control (Playwright)
+You have tools to control a headless Chromium browser for web automation tasks:
+
+- `browser_navigate(url)` - Navigate to a URL. The browser launches automatically on first use.
+- `browser_click(selector)` - Click an element by CSS selector
+- `browser_type(selector, text)` - Type text into an input field
+- `browser_screenshot()` - Take a screenshot (returns base64 PNG for your vision)
+- `browser_get_text(selector="")` - Get text content from the page or a specific element
+- `browser_scroll(direction="down", amount=500)` - Scroll the page
+- `browser_close()` - Close the browser when done
+
+**Key Features:**
+- The browser persists across tool calls — navigate once, then interact freely
+- Live frames stream to the user's Browser tab automatically
+- Use `browser_screenshot()` to see what's on the page for decision-making
+- The browser starts headless Chromium on first `browser_navigate()` call
+
 ## Workflow Guidelines
 
 ### For Code Tasks
@@ -133,9 +157,16 @@ AGENT_TOOLS = [
     execute_all_cells,
     get_script,
     get_variables,
-    reset_notebook, 
+    reset_notebook,
     display_inline,
-    think_tool
+    think_tool,
+    browser_navigate,
+    browser_click,
+    browser_type,
+    browser_screenshot,
+    browser_get_text,
+    browser_scroll,
+    browser_close,
 ]
 
 # Global agent for physical filesystem mode

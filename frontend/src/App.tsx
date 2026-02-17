@@ -45,6 +45,7 @@ export default function App() {
     usageHistory,
     connectionStatus,
     fileChanges,
+    browserState,
     sendMessage,
     respondToInterrupt,
     cancelStream,
@@ -116,6 +117,7 @@ export default function App() {
       onClearCanvas={clearAll}
       onExportCanvas={exportMarkdown}
       onNewSession={resetSession}
+      browserState={browserState}
     />
   );
 }

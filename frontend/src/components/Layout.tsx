@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import { FolderTree, Palette, ListTodo, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
+import { FolderTree, Palette, ListTodo, Globe, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
 import type {
   ChatMessage,
   TodoItem,
@@ -14,17 +14,19 @@ import type {
   FilePreview,
   ConnectionStatus,
   AppConfig,
+  BrowserViewState,
 } from "../types";
 import { ChatPanel } from "./ChatPanel";
 import { FileBrowser } from "./FileBrowser";
 import { FileViewer } from "./FileViewer";
 import { CanvasPanel } from "./CanvasPanel";
 import { TodoPanel } from "./TodoPanel";
+import { BrowserPanel } from "./BrowserPanel";
 import { InterruptDialog } from "./InterruptDialog";
 import { ThemeToggle } from "./ThemeToggle";
 import { StatusBar } from "./StatusBar";
 
-type RightTab = "files" | "canvas" | "tasks";
+type RightTab = "files" | "canvas" | "tasks" | "browser";
 
 interface LayoutProps {
   config: AppConfig;
@@ -55,11 +57,23 @@ interface LayoutProps {
   onClearCanvas: () => void;
   onExportCanvas: () => Promise<string>;
   onNewSession: () => void;
+  browserState: BrowserViewState;
 }
 
 export function Layout(props: LayoutProps) {
   const [activeTab, setActiveTab] = useState<RightTab>("tasks");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const prevBrowserStatusRef = useRef(props.browserState.status);
+
+  // Auto-switch to browser tab when browser becomes active
+  useEffect(() => {
+    const prev = prevBrowserStatusRef.current;
+    const curr = props.browserState.status;
+    prevBrowserStatusRef.current = curr;
+    if (prev !== "running" && prev !== "navigating" && (curr === "running" || curr === "navigating")) {
+      setActiveTab("browser");
+    }
+  }, [props.browserState.status]);
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)]">
@@ -175,6 +189,20 @@ export function Layout(props: LayoutProps) {
                   <FolderTree size={13} />
                   Files
                 </button>
+                <button
+                  onClick={() => setActiveTab("browser")}
+                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
+                    activeTab === "browser"
+                      ? "border-[var(--color-text)] text-[var(--color-text)]"
+                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  }`}
+                >
+                  <Globe size={13} />
+                  Browser
+                  {(props.browserState.status === "running" || props.browserState.status === "navigating") && (
+                    <span className="w-2 h-2 rounded-full bg-[var(--color-success)] animate-pulse" />
+                  )}
+                </button>
               </div>
 
               <div className="flex-1 overflow-hidden">
@@ -209,6 +237,9 @@ export function Layout(props: LayoutProps) {
                       onDelete={props.onDeletePath}
                     />
                   )
+                )}
+                {activeTab === "browser" && (
+                  <BrowserPanel browser={props.browserState} />
                 )}
               </div>
             </div>

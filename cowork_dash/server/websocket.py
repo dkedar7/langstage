@@ -13,6 +13,12 @@ from cowork_dash.stream.session_manager import SessionManager
 from cowork_dash.stream.websocket_adapter import DUAL_STREAM_MODE
 from cowork_dash.workspace.file_manager import FileManager
 
+try:
+    from cowork_dash.browser import BrowserStreamManager
+    _HAS_BROWSER = True
+except ImportError:
+    _HAS_BROWSER = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +41,10 @@ async def chat_websocket(
         "type": "session_init",
         "session_id": session.thread_id,
     })
+
+    # Register browser frame routing for this session
+    if _HAS_BROWSER:
+        BrowserStreamManager.get_instance().register(session.thread_id, websocket)
     serializer = EventSerializer()
     parser = StreamParser(
         stream_mode=DUAL_STREAM_MODE,
@@ -80,6 +90,8 @@ async def chat_websocket(
     except Exception:
         logger.exception("WebSocket error: thread=%s", session.thread_id)
     finally:
+        if _HAS_BROWSER:
+            BrowserStreamManager.get_instance().unregister(session.thread_id)
         file_watch_task.cancel()
         session_manager.remove(websocket)
 

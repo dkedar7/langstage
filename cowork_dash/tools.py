@@ -1596,3 +1596,173 @@ def think_tool(reflection: str) -> str:
         str: The recorded reflection
     """
     return reflection
+
+
+# ---------------------------------------------------------------------------
+# Browser tools (optional — requires playwright)
+# ---------------------------------------------------------------------------
+
+try:
+    from .browser import get_browser_state, BrowserStreamManager
+    _HAS_BROWSER = True
+except ImportError:
+    _HAS_BROWSER = False
+
+
+def _browser_not_installed() -> dict:
+    return {
+        "status": "error",
+        "error": (
+            "Browser tools require playwright. "
+            "Install with: pip install 'cowork-dash[browser]' && playwright install chromium"
+        ),
+    }
+
+
+async def browser_navigate(url: str) -> dict:
+    """Navigate the browser to a URL. Opens a browser if one is not already running.
+
+    Args:
+        url: The URL to navigate to (must include protocol, e.g. https://)
+
+    Returns:
+        Dictionary with page title, URL, and HTTP status code.
+    """
+    if not _HAS_BROWSER:
+        return _browser_not_installed()
+
+    session_id = get_tool_session_context()
+    state = get_browser_state(session_id)
+
+    # Wire up frame callback if not already done
+    if state._frame_callback is None and session_id:
+        mgr = BrowserStreamManager.get_instance()
+        state.set_frame_callback(lambda frame: mgr.send_frame(session_id, frame))
+
+    # Notify frontend of navigation start
+    if session_id:
+        mgr = BrowserStreamManager.get_instance()
+        await mgr.send_status(session_id, "navigating")
+
+    result = await state.navigate(url)
+
+    # Notify frontend of URL change and status
+    if session_id:
+        await mgr.send_url(session_id, state.current_url)
+        await mgr.send_status(session_id, "running")
+
+    return result
+
+
+async def browser_click(selector: str) -> dict:
+    """Click an element on the current page.
+
+    Args:
+        selector: CSS selector for the element to click.
+
+    Returns:
+        Dictionary with status and current URL.
+    """
+    if not _HAS_BROWSER:
+        return _browser_not_installed()
+
+    session_id = get_tool_session_context()
+    state = get_browser_state(session_id)
+    result = await state.click(selector)
+
+    if session_id:
+        mgr = BrowserStreamManager.get_instance()
+        await mgr.send_url(session_id, state.current_url)
+
+    return result
+
+
+async def browser_type(selector: str, text: str) -> dict:
+    """Type text into an input element on the current page.
+
+    Args:
+        selector: CSS selector for the input element.
+        text: Text to type into the element.
+
+    Returns:
+        Dictionary with status.
+    """
+    if not _HAS_BROWSER:
+        return _browser_not_installed()
+
+    session_id = get_tool_session_context()
+    state = get_browser_state(session_id)
+    return await state.type_text(selector, text)
+
+
+async def browser_screenshot() -> str:
+    """Take a screenshot of the current browser page.
+
+    Returns the screenshot as a base64-encoded PNG string for vision analysis.
+    """
+    if not _HAS_BROWSER:
+        return "Error: " + _browser_not_installed()["error"]
+
+    import base64
+    session_id = get_tool_session_context()
+    state = get_browser_state(session_id)
+    img_bytes = await state.screenshot()
+    return base64.b64encode(img_bytes).decode("utf-8")
+
+
+async def browser_get_text(selector: str = "") -> str:
+    """Get text content from the current page or a specific element.
+
+    Args:
+        selector: Optional CSS selector. If empty, returns all visible body text.
+
+    Returns:
+        The text content as a string.
+    """
+    if not _HAS_BROWSER:
+        return "Error: " + _browser_not_installed()["error"]
+
+    session_id = get_tool_session_context()
+    state = get_browser_state(session_id)
+    return await state.get_text(selector or None)
+
+
+async def browser_scroll(direction: str = "down", amount: int = 500) -> dict:
+    """Scroll the page up or down.
+
+    Args:
+        direction: "up" or "down" (default: "down")
+        amount: Pixels to scroll (default: 500)
+
+    Returns:
+        Dictionary with status.
+    """
+    if not _HAS_BROWSER:
+        return _browser_not_installed()
+
+    session_id = get_tool_session_context()
+    state = get_browser_state(session_id)
+    return await state.scroll(direction, amount)
+
+
+async def browser_close() -> dict:
+    """Close the browser and stop the live stream.
+
+    Releases all browser resources. A new browser will be started
+    automatically if you call browser_navigate again.
+
+    Returns:
+        Dictionary with status.
+    """
+    if not _HAS_BROWSER:
+        return _browser_not_installed()
+
+    session_id = get_tool_session_context()
+    state = get_browser_state(session_id)
+    result = await state.close()
+
+    if session_id:
+        mgr = BrowserStreamManager.get_instance()
+        await mgr.send_status(session_id, "stopped")
+
+    return result

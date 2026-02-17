@@ -15,6 +15,7 @@ import type {
   InterruptEventMsg,
   Decision,
   ConnectionStatus,
+  BrowserViewState,
 } from "../types";
 
 const STORAGE_KEY = "cowork-dash-session";
@@ -74,6 +75,14 @@ export function useAgentStream() {
   const [fileChanges, setFileChanges] = useState<
     { event: string; path: string }[]
   >([]);
+  const defaultBrowserState: BrowserViewState = {
+    status: "idle",
+    currentUrl: "",
+    latestFrame: null,
+    frameWidth: 1280,
+    frameHeight: 720,
+  };
+  const [browserState, setBrowserState] = useState<BrowserViewState>(defaultBrowserState);
 
   // Session ID for backend thread continuity
   const sessionIdRef = useRef<string | null>(initial?.sessionId ?? null);
@@ -370,6 +379,29 @@ export function useAgentStream() {
             { event: event.event, path: event.path },
           ]);
           break;
+
+        case "browser_frame":
+          setBrowserState((prev) => ({
+            ...prev,
+            latestFrame: event.data,
+            frameWidth: event.width,
+            frameHeight: event.height,
+          }));
+          break;
+
+        case "browser_status":
+          setBrowserState((prev) => ({
+            ...prev,
+            status: event.status,
+          }));
+          break;
+
+        case "browser_url":
+          setBrowserState((prev) => ({
+            ...prev,
+            currentUrl: event.url,
+          }));
+          break;
       }
     },
     [flushContentBuffer]
@@ -483,6 +515,7 @@ export function useAgentStream() {
     setIsStreaming(false);
     setInterrupt(null);
     setFileChanges([]);
+    setBrowserState(defaultBrowserState);
     contentBufferRef.current = "";
 
     // Reconnect with a fresh session
@@ -498,6 +531,7 @@ export function useAgentStream() {
     usageHistory,
     connectionStatus,
     fileChanges,
+    browserState,
     sendMessage,
     respondToInterrupt,
     cancelStream,
