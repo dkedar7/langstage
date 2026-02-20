@@ -40,6 +40,7 @@ class CoworkApp:
         save_workflow_prompt: str | None = None,
         run_workflow_prompt: str | None = None,
         create_workflow_prompt: str | None = None,
+        custom_css: str | None = None,
         stream_parser_config: dict | None = None,
     ):
         self.config = AppConfig.from_env().merge({
@@ -59,6 +60,7 @@ class CoworkApp:
             "save_workflow_prompt": save_workflow_prompt,
             "run_workflow_prompt": run_workflow_prompt,
             "create_workflow_prompt": create_workflow_prompt,
+            "custom_css": custom_css,
         })
 
         # Ensure workspace directory exists
@@ -81,6 +83,15 @@ class CoworkApp:
             self._icon_local_path, self.config.icon_url = _resolve_local_icon(
                 self.config.icon_url
             )
+
+        # Read custom CSS file content if configured
+        self._custom_css_content: str | None = None
+        if self.config.custom_css:
+            css_path = Path(self.config.custom_css).resolve()
+            if css_path.is_file():
+                self._custom_css_content = css_path.read_text()
+            else:
+                logger.warning("custom_css file not found: %s", css_path)
 
         # Check for checkpointer
         if not _has_checkpointer(self.agent):
@@ -127,6 +138,7 @@ class CoworkApp:
             config=self.config,
             stream_parser_config=self.stream_parser_config,
             icon_local_path=self._icon_local_path,
+            custom_css_content=self._custom_css_content,
         )
 
 

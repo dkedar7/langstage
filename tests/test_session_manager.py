@@ -133,3 +133,47 @@ def test_active_count_tracks_websockets_not_sessions():
 
     mgr.remove(ws2)
     assert mgr.active_count == 0  # 0 websockets, 2 sessions still in memory
+
+
+def test_get_session_by_id():
+    """get_session_by_id returns session by its thread_id."""
+    mgr = SessionManager()
+    ws = MagicMock()
+    session = mgr.get_or_create(ws)
+    assert mgr.get_session_by_id(session.thread_id) is session
+
+
+def test_get_session_by_id_not_found():
+    """get_session_by_id returns None for unknown ID."""
+    mgr = SessionManager()
+    assert mgr.get_session_by_id("nonexistent") is None
+
+
+def test_get_websocket():
+    """get_websocket returns the WS connected to a session."""
+    mgr = SessionManager()
+    ws = MagicMock()
+    session = mgr.get_or_create(ws)
+    assert mgr.get_websocket(session.thread_id) is ws
+
+
+def test_get_websocket_after_remove():
+    """get_websocket returns None after WS disconnects."""
+    mgr = SessionManager()
+    ws = MagicMock()
+    session = mgr.get_or_create(ws)
+    mgr.remove(ws)
+    assert mgr.get_websocket(session.thread_id) is None
+
+
+def test_get_websocket_after_reconnect():
+    """get_websocket returns the NEW websocket after reconnection."""
+    mgr = SessionManager()
+    ws1 = MagicMock()
+    session = mgr.get_or_create(ws1)
+    sid = session.thread_id
+    mgr.remove(ws1)
+
+    ws2 = MagicMock()
+    mgr.get_or_create(ws2, session_id=sid)
+    assert mgr.get_websocket(sid) is ws2

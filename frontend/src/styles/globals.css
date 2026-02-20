@@ -41,6 +41,7 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
 
 /* Markdown content styles */
+.markdown-content { color: var(--color-text); }
 .markdown-content h1 { font-size: 1.375em; font-weight: 600; margin: 0.5em 0 0.25em; color: var(--color-text); }
 .markdown-content h2 { font-size: 1.2em; font-weight: 600; margin: 0.5em 0 0.25em; color: var(--color-text); }
 .markdown-content h3 { font-size: 1.05em; font-weight: 600; margin: 0.5em 0 0.25em; color: var(--color-text); }

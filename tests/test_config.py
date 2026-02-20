@@ -45,3 +45,26 @@ def test_to_client_dict():
     assert d["welcome_message"] == "Hi"
     assert d["theme"] == "dark"
     assert "workspace_name" in d
+
+
+def test_custom_css_default():
+    cfg = AppConfig()
+    assert cfg.custom_css == ""
+
+
+def test_custom_css_from_env(monkeypatch):
+    monkeypatch.setenv("DEEPAGENT_CUSTOM_CSS", "/path/to/theme.css")
+    cfg = AppConfig.from_env()
+    assert cfg.custom_css == "/path/to/theme.css"
+
+
+def test_custom_css_merge():
+    cfg = AppConfig()
+    merged = cfg.merge({"custom_css": "my-theme.css"})
+    assert merged.custom_css == "my-theme.css"
+
+
+def test_custom_css_not_in_client_dict():
+    cfg = AppConfig(custom_css="theme.css")
+    d = cfg.to_client_dict()
+    assert "custom_css" not in d

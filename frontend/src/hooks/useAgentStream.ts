@@ -370,6 +370,26 @@ export function useAgentStream() {
             { event: event.event, path: event.path },
           ]);
           break;
+
+        case "user_message":
+          // Injected message from REST endpoint — display as a user bubble
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "user",
+              content: event.content,
+              toolCalls: [],
+              timestamp: Date.now(),
+            },
+          ]);
+          turnCounterRef.current += 1;
+          setUsageHistory((prev) => [
+            ...prev,
+            { turn: turnCounterRef.current, input: 0, output: 0, total: 0 },
+          ]);
+          setIsStreaming(true);
+          break;
       }
     },
     [flushContentBuffer]

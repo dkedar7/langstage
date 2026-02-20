@@ -113,8 +113,13 @@ export function InterruptDialog({ interrupt, onRespond }: InterruptDialogProps) 
               </div>
             ))
           ) : (
-            <div className="text-xs text-[var(--color-text-muted)] italic">
-              No action details available.
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--color-text-muted)] italic">
+                The agent needs your approval to continue.
+              </p>
+              <pre className="bg-[var(--color-surface-3)] rounded p-2 text-xs overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-text-muted)]">
+                {JSON.stringify(interrupt, null, 2)}
+              </pre>
             </div>
           )}
         </div>

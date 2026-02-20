@@ -29,8 +29,9 @@ def main():
 @click.option("--save-workflow-prompt", default=None, help="Custom prompt template for /save-workflow command")
 @click.option("--run-workflow-prompt", default=None, help="Custom prompt template for /run-workflow command (use {filename} placeholder)")
 @click.option("--create-workflow-prompt", default=None, help="Custom prompt template for /create-workflow command")
+@click.option("--custom-css", default=None, type=click.Path(exists=True), help="Path to custom CSS file for theming")
 @click.option("--no-browser", is_flag=True, default=False, help="Don't auto-open browser")
-def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, create_workflow_prompt, no_browser):
+def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, create_workflow_prompt, custom_css, no_browser):
     """Start the Cowork Dash server."""
     app = CoworkApp(
         agent_spec=agent_spec,
@@ -49,6 +50,7 @@ def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_messa
         save_workflow_prompt=save_workflow_prompt,
         run_workflow_prompt=run_workflow_prompt,
         create_workflow_prompt=create_workflow_prompt,
+        custom_css=custom_css,
     )
     app.run(open_browser=not no_browser)
 
