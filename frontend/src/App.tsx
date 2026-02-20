@@ -22,7 +22,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [configLoaded, setConfigLoaded] = useState(false);
 
-  // Fetch app config from server
+  // Fetch app config and custom CSS from server
   useEffect(() => {
     fetch("/api/config")
       .then((res) => res.json())
@@ -33,6 +33,26 @@ export default function App() {
       .catch(() => {
         setConfigLoaded(true);
       });
+
+    // Load custom CSS theme if configured
+    fetch("/api/custom-css")
+      .then((res) => {
+        if (!res.ok) return;
+        return res.text();
+      })
+      .then((css) => {
+        if (!css) return;
+        const style = document.createElement("style");
+        style.id = "custom-theme";
+        style.textContent = css;
+        document.head.appendChild(style);
+      })
+      .catch(() => {});
+
+    return () => {
+      const el = document.getElementById("custom-theme");
+      if (el) el.remove();
+    };
   }, []);
 
   // Core hooks

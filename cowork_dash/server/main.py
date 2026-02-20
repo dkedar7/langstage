@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from cowork_dash.config import AppConfig
 from cowork_dash.server.middleware import add_middleware
@@ -24,6 +24,7 @@ def create_fastapi_app(
     config: AppConfig,
     stream_parser_config: dict | None = None,
     icon_local_path: str | None = None,
+    custom_css_content: str | None = None,
 ) -> FastAPI:
     """Create a FastAPI app with WebSocket, REST, and static file serving."""
     app = FastAPI(title=config.title, version="2.0.0")
@@ -45,7 +46,21 @@ def create_fastapi_app(
     app.include_router(create_config_router(config))
     app.include_router(create_files_router(file_manager))
     app.include_router(create_canvas_router(canvas_manager))
-    app.include_router(create_session_router(session_manager))
+    app.include_router(create_session_router(
+        session_manager,
+        agent=agent,
+        stream_parser_config=stream_parser_config,
+    ))
+
+    # Expose session_manager for testing
+    app.state.session_manager = session_manager
+
+    # Serve custom CSS (always register so it returns 404 instead of SPA catch-all)
+    @app.get("/api/custom-css")
+    async def get_custom_css():
+        if not custom_css_content:
+            return Response(status_code=404)
+        return Response(content=custom_css_content, media_type="text/css")
 
     # Serve local icon file if configured
     if icon_local_path:
