@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from langgraph_stream_parser import StreamParser, create_resume_input
+from langgraph_stream_parser import StreamParser, create_resume_input, prepare_agent_input
 
 from cowork_dash.stream.event_serializer import EventSerializer
 from cowork_dash.stream.session_manager import SessionManager
@@ -93,6 +93,30 @@ async def _run_stream(handler, websocket, *args):
         await websocket.send_json({"type": "cancelled"})
 
 
+async def run_injected_message(
+    websocket: WebSocket,
+    agent,
+    session,
+    content: str,
+    cwd: str | None = None,
+    stream_parser_config: dict | None = None,
+):
+    """Run agent for an externally-injected message, streaming events to the given websocket.
+
+    Creates its own StreamParser and EventSerializer (lightweight per-stream objects).
+    Called by the REST inject endpoint.
+    """
+    serializer = EventSerializer()
+    parser = StreamParser(
+        stream_mode=DUAL_STREAM_MODE,
+        **(stream_parser_config or {}),
+    )
+    await _run_stream(
+        _handle_message,
+        websocket, agent, session, parser, serializer, content, cwd,
+    )
+
+
 async def _handle_message(
     websocket: WebSocket,
     agent,
@@ -103,13 +127,11 @@ async def _handle_message(
     cwd: str | None = None,
 ):
     """Stream agent response for a user message."""
-    # Inject current time and working directory context
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    prefix_parts = [f"[Current time: {now}]"]
+    context_parts = [f"[Current time: {now}]"]
     if cwd:
-        prefix_parts.append(f"[Working directory: {cwd}]")
-    enriched = "\n".join(prefix_parts) + "\n\n" + content
-    input_data = {"messages": [{"role": "user", "content": enriched}]}
+        context_parts.append(f"[Working directory: {cwd}]")
+    input_data = prepare_agent_input(message=content, context_parts=context_parts)
 
     stream = agent.astream(
         input_data,
