@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.5 — 2026-02-19
+
+### Added
+
+- Custom CSS theming support via `--custom-css` CLI flag, `custom_css` Python API param, or `DEEPAGENT_CUSTOM_CSS` env var
+- `/api/custom-css` endpoint serves theme file at runtime; frontend injects it dynamically
+- `POST /api/session/{id}/inject` REST endpoint for fire-and-forget message injection from external apps
+- `GET /api/sessions` endpoint to list all sessions with connection status
+- `inject.py` convenience script for programmatic message injection
+- Theme reference documentation (`docs/CUSTOM_THEME_REFERENCE.md`)
+
+### Fixed
+
+- Dark mode text color in canvas markdown content (`.markdown-content` missing base `color`)
+- Interrupt dialog diagnostics for empty `action_requests`
+
 ## 0.3.4 — 2026-02-10
 
 ### Added
