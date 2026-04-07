@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
@@ -12,7 +12,7 @@ from cowork_dash.server.routes_config import create_config_router
 from cowork_dash.server.routes_files import create_files_router
 from cowork_dash.server.routes_canvas import create_canvas_router
 from cowork_dash.server.routes_session import create_session_router
-from cowork_dash.server.websocket import chat_websocket
+from cowork_dash.server.routes_chat import create_chat_router
 from cowork_dash.stream.session_manager import SessionManager
 from cowork_dash.workspace.file_manager import FileManager
 from cowork_dash.workspace.canvas_manager import CanvasManager
@@ -26,7 +26,7 @@ def create_fastapi_app(
     icon_local_path: str | None = None,
     custom_css_content: str | None = None,
 ) -> FastAPI:
-    """Create a FastAPI app with WebSocket, REST, and static file serving."""
+    """Create a FastAPI app with SSE streaming, REST, and static file serving."""
     app = FastAPI(title=config.title, version="2.0.0")
 
     # Middleware
@@ -46,9 +46,11 @@ def create_fastapi_app(
     app.include_router(create_config_router(config))
     app.include_router(create_files_router(file_manager))
     app.include_router(create_canvas_router(canvas_manager))
-    app.include_router(create_session_router(
+    app.include_router(create_session_router(session_manager, agent=agent, stream_parser_config=stream_parser_config))
+    app.include_router(create_chat_router(
         session_manager,
         agent=agent,
+        file_manager=file_manager,
         stream_parser_config=stream_parser_config,
     ))
 
@@ -67,17 +69,6 @@ def create_fastapi_app(
         @app.get("/api/icon")
         async def get_icon():
             return FileResponse(icon_local_path)
-
-    # WebSocket endpoint
-    @app.websocket("/ws/chat")
-    async def ws_chat(websocket: WebSocket):
-        await chat_websocket(
-            websocket=websocket,
-            agent=agent,
-            session_manager=session_manager,
-            file_manager=file_manager,
-            stream_parser_config=stream_parser_config,
-        )
 
     # Static file serving (pre-built React app)
     static_dir = Path(__file__).parent.parent / "static"
@@ -104,9 +95,10 @@ def create_fastapi_app(
         async def placeholder():
             return {
                 "message": "Cowork Dash v2 backend is running.",
-                "websocket": "/ws/chat",
+                "sse": "/api/stream?session_id=...",
                 "api": {
                     "config": "/api/config",
+                    "chat": "/api/chat",
                     "files": "/api/files/tree",
                     "canvas": "/api/canvas/items",
                 },

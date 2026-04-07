@@ -43,9 +43,9 @@ async def test_inject_session_not_found(app):
 
 @pytest.mark.asyncio
 async def test_inject_no_browser_connected(app):
-    """POST inject when session exists but no WS connected returns 409."""
+    """POST inject when session exists but no SSE connected returns 409."""
     mgr = app.state.session_manager
-    # Create session without linking a websocket
+    # Create session without marking SSE as connected
     session = AgentSession()
     mgr._sessions[session.thread_id] = session
 
@@ -61,14 +61,13 @@ async def test_inject_no_browser_connected(app):
 
 @pytest.mark.asyncio
 async def test_inject_returns_202(app):
-    """POST inject with valid session + connected WS returns 202."""
+    """POST inject with valid session + connected SSE returns 202."""
     mgr = app.state.session_manager
     session = AgentSession()
-    ws_mock = AsyncMock()
+    session.sse_connected = True
     mgr._sessions[session.thread_id] = session
-    mgr._session_to_ws[session.thread_id] = ws_mock
 
-    with patch("cowork_dash.server.routes_session.run_injected_message", new_callable=AsyncMock):
+    with patch("cowork_dash.server.routes_session.run_agent_stream", new_callable=AsyncMock):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             resp = await c.post(
@@ -81,11 +80,12 @@ async def test_inject_returns_202(app):
     assert data["status"] == "accepted"
     assert data["session_id"] == session.thread_id
 
-    # Verify user_message was sent to the websocket
-    ws_mock.send_json.assert_called_once_with({
+    # Verify user_message was pushed to the event queue
+    event = session.event_queue.get_nowait()
+    assert event == {
         "type": "user_message",
         "content": "hello from outside",
-    })
+    }
 
 
 @pytest.mark.asyncio
@@ -93,9 +93,8 @@ async def test_inject_missing_content(app):
     """POST inject without content field returns 422."""
     mgr = app.state.session_manager
     session = AgentSession()
-    ws_mock = AsyncMock()
+    session.sse_connected = True
     mgr._sessions[session.thread_id] = session
-    mgr._session_to_ws[session.thread_id] = ws_mock
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -121,9 +120,8 @@ async def test_list_sessions_with_connected(app):
     """GET /api/sessions shows sessions with connection status."""
     mgr = app.state.session_manager
     session = AgentSession()
-    ws_mock = AsyncMock()
+    session.sse_connected = True
     mgr._sessions[session.thread_id] = session
-    mgr._session_to_ws[session.thread_id] = ws_mock
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -141,7 +139,7 @@ async def test_list_sessions_disconnected(app):
     mgr = app.state.session_manager
     session = AgentSession()
     mgr._sessions[session.thread_id] = session
-    # No entry in _session_to_ws → disconnected
+    # sse_connected defaults to False
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:

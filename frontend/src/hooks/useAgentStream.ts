@@ -1,5 +1,8 @@
 /**
- * WebSocket connection + event dispatch hook.
+ * SSE connection + event dispatch hook.
+ * Replaces WebSocket with EventSource (Server-Sent Events) for streaming
+ * and fetch() for sending messages/interrupts/cancellations.
+ *
  * Handles buffered content streaming with requestAnimationFrame batching.
  * Persists session state to localStorage for survival across page refresh.
  */
@@ -78,10 +81,10 @@ export function useAgentStream() {
   // Session ID for backend thread continuity
   const sessionIdRef = useRef<string | null>(initial?.sessionId ?? null);
 
-  // Reconnect key — changing this re-runs the WebSocket useEffect
+  // Reconnect key — changing this re-runs the SSE useEffect
   const [reconnectKey, setReconnectKey] = useState(0);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const contentBufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
 
@@ -395,19 +398,21 @@ export function useAgentStream() {
     [flushContentBuffer]
   );
 
+  // --- SSE Connection ---
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    let url = `${protocol}//${window.location.host}/ws/chat`;
+    let url = `/api/stream`;
     if (sessionIdRef.current) {
       url += `?session_id=${encodeURIComponent(sessionIdRef.current)}`;
     }
-    const ws = new WebSocket(url);
+    const es = new EventSource(url);
 
-    ws.onopen = () => setConnectionStatus("connected");
-    ws.onclose = () => setConnectionStatus("disconnected");
-    ws.onerror = () => setConnectionStatus("error");
+    es.onopen = () => setConnectionStatus("connected");
+    es.onerror = () => {
+      // EventSource auto-reconnects; mark status while it's retrying
+      setConnectionStatus("disconnected");
+    };
 
-    ws.onmessage = (e) => {
+    es.onmessage = (e) => {
       const event: AgentEvent = JSON.parse(e.data);
 
       if (event.type === "content") {
@@ -424,16 +429,17 @@ export function useAgentStream() {
       }
     };
 
-    wsRef.current = ws;
+    eventSourceRef.current = es;
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      ws.close();
+      es.close();
     };
   }, [dispatch, flushContentBuffer, reconnectKey]);
 
+  // --- Actions via fetch POST ---
   const sendMessage = useCallback(
     (content: string, meta?: { cwd?: string }) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      if (!sessionIdRef.current) return;
 
       setMessages((prev) => [
         ...prev,
@@ -445,34 +451,62 @@ export function useAgentStream() {
         ...prev,
         { turn, input: 0, output: 0, total: 0 },
       ]);
-      wsRef.current.send(
-        JSON.stringify({ type: "message", content, cwd: meta?.cwd })
-      );
       setIsStreaming(true);
+
+      fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionIdRef.current,
+          content,
+          cwd: meta?.cwd,
+        }),
+      }).catch((err) => {
+        console.error("Failed to send message:", err);
+        setIsStreaming(false);
+      });
     },
     []
   );
 
   const respondToInterrupt = useCallback(
     (decisions: Decision[]) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      if (!sessionIdRef.current) return;
 
-      wsRef.current.send(
-        JSON.stringify({ type: "interrupt_response", decisions })
-      );
       setInterrupt(null);
       setIsStreaming(true);
+
+      fetch("/api/chat/interrupt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionIdRef.current,
+          decisions,
+        }),
+      }).catch((err) => {
+        console.error("Failed to send interrupt response:", err);
+        setIsStreaming(false);
+      });
     },
     []
   );
 
   const cancelStream = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (!sessionIdRef.current) return;
 
     // Flush any buffered content before cancelling
     if (contentBufferRef.current) flushContentBuffer();
-    wsRef.current.send(JSON.stringify({ type: "cancel" }));
-    // isStreaming will be set to false when the "cancelled" event arrives
+
+    fetch("/api/chat/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionIdRef.current,
+      }),
+    }).catch((err) => {
+      console.error("Failed to cancel stream:", err);
+    });
+    // isStreaming will be set to false when the "cancelled" event arrives via SSE
   }, [flushContentBuffer]);
 
   const resetSession = useCallback(() => {
@@ -484,10 +518,10 @@ export function useAgentStream() {
       }).catch(() => {});
     }
 
-    // Close current WebSocket
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    // Close current EventSource
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
 
     // Clear persisted state

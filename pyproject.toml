@@ -12,7 +12,6 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "websockets>=12",
     "langgraph-stream-parser>=0.1.0",
     "watchfiles>=1.0",
     "click>=8.0",
