@@ -1,1 +1,1 @@
-"""Stream processing layer — event serialization, sessions, WebSocket adapter."""
+"""Stream processing layer — event serialization, sessions, SSE adapter."""

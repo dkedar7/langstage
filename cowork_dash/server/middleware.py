@@ -23,7 +23,7 @@ class BasicAuthMiddleware:
         self._password = password
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] not in ("http", "websocket"):
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
@@ -32,12 +32,6 @@ class BasicAuthMiddleware:
 
         if self._check_credentials(auth_header):
             await self.app(scope, receive, send)
-            return
-
-        if scope["type"] == "websocket":
-            # Reject WebSocket upgrade with 403
-            response = Response("Forbidden", status_code=403)
-            await response(scope, receive, send)
             return
 
         # HTTP: send 401 to trigger browser login prompt
