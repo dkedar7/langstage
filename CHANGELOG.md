@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.6 — 2026-04-07
+
+### Changed
+
+- Replace WebSocket streaming with Server-Sent Events (SSE) for reliable operation behind reverse proxies and with `host=0.0.0.0`
+- Frontend `useAgentStream` hook now uses `EventSource` + `fetch()` instead of `WebSocket`
+- Session manager uses async event queues instead of WebSocket references
+- Authentication middleware simplified (no more WebSocket-specific handling)
+
+### Added
+
+- `GET /api/stream` SSE endpoint with 30s keepalive and `X-Accel-Buffering: no` header for nginx compatibility
+- `POST /api/chat` endpoint to send user messages
+- `POST /api/chat/interrupt` endpoint to respond to HITL interrupts
+- `POST /api/chat/cancel` endpoint to cancel running streams
+
+### Removed
+
+- `websockets` dependency (no longer needed)
+- WebSocket endpoint (`/ws/chat`) replaced by SSE + REST
+
 ## 0.3.5 — 2026-02-19
 
 ### Added
