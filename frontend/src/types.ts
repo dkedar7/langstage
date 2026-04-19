@@ -167,11 +167,14 @@ export interface TodoItem {
 
 export interface CanvasItem {
   id: string;
-  type: "dataframe" | "plotly" | "matplotlib" | "mermaid" | "image" | "html" | "markdown";
+  type: "dataframe" | "plotly" | "matplotlib" | "mermaid" | "image" | "html" | "markdown" | "section";
   title: string;
   data: unknown;
   file?: string;
   created_at: string;
+  level?: number;
+  source_cell?: number;
+  execution_count?: number;
 }
 
 export interface FileEntry {
@@ -206,6 +209,8 @@ export interface AppConfig {
   save_workflow_prompt: string;
   run_workflow_prompt: string;
   create_workflow_prompt: string;
+  show_canvas: boolean;
+  show_files: boolean;
 }
 
 export interface TokenUsage {

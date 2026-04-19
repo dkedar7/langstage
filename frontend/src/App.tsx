@@ -16,6 +16,8 @@ const DEFAULT_CONFIG: AppConfig = {
   save_workflow_prompt: "",
   run_workflow_prompt: "",
   create_workflow_prompt: "",
+  show_canvas: true,
+  show_files: true,
 };
 
 export default function App() {

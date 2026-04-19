@@ -12,6 +12,33 @@ interface CanvasItemProps {
 export function CanvasItemCard({ item, onDelete }: CanvasItemProps) {
   const [collapsed, setCollapsed] = useState(false);
 
+  // Sections render as plain headings, not cards.
+  if (item.type === "section") {
+    const level = Math.min(Math.max(item.level ?? 1, 1), 6);
+    const text = typeof item.data === "string" ? item.data : "";
+    const sizeClass =
+      level === 1
+        ? "text-xl font-semibold"
+        : level === 2
+          ? "text-lg font-semibold"
+          : "text-base font-medium";
+    const HeadingTag = `h${level}` as keyof React.JSX.IntrinsicElements;
+    return (
+      <div className="group flex items-baseline justify-between border-b border-[var(--color-border)] pb-1 pt-2">
+        <HeadingTag className={`${sizeClass} text-[var(--color-text)]`}>
+          {text}
+        </HeadingTag>
+        <button
+          onClick={() => onDelete(item.id)}
+          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--color-surface-3)] transition"
+          aria-label="Delete section"
+        >
+          <X size={14} className="text-[var(--color-text-secondary)]" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)]">
       {/* Header — click to toggle */}
@@ -32,6 +59,18 @@ export function CanvasItemCard({ item, onDelete }: CanvasItemProps) {
           <span className="text-sm font-medium text-[var(--color-text)]">
             {item.title}
           </span>
+          {typeof item.source_cell === "number" && (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-surface-3)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
+              title={
+                typeof item.execution_count === "number"
+                  ? `Produced by cell ${item.source_cell} (execution #${item.execution_count})`
+                  : `Produced by cell ${item.source_cell}`
+              }
+            >
+              cell {item.source_cell}
+            </span>
+          )}
         </div>
         <button
           onClick={(e) => {

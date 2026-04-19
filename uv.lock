@@ -241,7 +241,7 @@ wheels = [
 
 [[package]]
 name = "cowork-dash"
-version = "0.3.4"
+version = "0.3.7"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -252,7 +252,6 @@ dependencies = [
     { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchfiles" },
-    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -281,7 +280,6 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "watchfiles", specifier = ">=1.0" },
-    { name = "websockets", specifier = ">=12" },
 ]
 provides-extras = ["deepagents", "dev"]
 

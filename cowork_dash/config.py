@@ -2,7 +2,24 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 import os
+
+
+def _parse_optional_bool(value: Optional[str]) -> Optional[bool]:
+    """Parse an env-var string into an optional bool.
+
+    Returns True for '1'/'true'/'yes', False for '0'/'false'/'no', and
+    None for empty/unset (auto-detect mode).
+    """
+    if value is None or value == "":
+        return None
+    lowered = value.strip().lower()
+    if lowered in ("1", "true", "yes"):
+        return True
+    if lowered in ("0", "false", "no"):
+        return False
+    return None
 
 # Module-level constants used by tools.py and agent.py
 WORKSPACE_ROOT = Path(os.getenv("DEEPAGENT_WORKSPACE_ROOT", os.getcwd()))
@@ -28,6 +45,10 @@ class AppConfig:
     run_workflow_prompt: str = "Please read and follow the workflow defined in ./workflows/{filename}. Execute each step as described in the workflow file."
     create_workflow_prompt: str = "Please create a new workflow markdown file in the ./workflows/ directory. Include: a title, description of the goal, step-by-step instructions to execute the workflow, any configuration or parameters needed, and expected outputs."
     custom_css: str = ""
+    # Tab visibility — None means auto-resolve (canvas auto-detects middleware;
+    # files defaults to True). Explicit True/False overrides auto-detection.
+    show_canvas: Optional[bool] = None
+    show_files: Optional[bool] = None
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -50,6 +71,8 @@ class AppConfig:
             run_workflow_prompt=os.getenv("DEEPAGENT_RUN_WORKFLOW_PROMPT", AppConfig.run_workflow_prompt),
             create_workflow_prompt=os.getenv("DEEPAGENT_CREATE_WORKFLOW_PROMPT", AppConfig.create_workflow_prompt),
             custom_css=os.getenv("DEEPAGENT_CUSTOM_CSS", ""),
+            show_canvas=_parse_optional_bool(os.getenv("DEEPAGENT_SHOW_CANVAS")),
+            show_files=_parse_optional_bool(os.getenv("DEEPAGENT_SHOW_FILES")),
         )
 
     def merge(self, overrides: dict) -> "AppConfig":
@@ -73,12 +96,19 @@ class AppConfig:
             "run_workflow_prompt": self.run_workflow_prompt,
             "create_workflow_prompt": self.create_workflow_prompt,
             "custom_css": self.custom_css,
+            "show_canvas": self.show_canvas,
+            "show_files": self.show_files,
         }
         current.update(updates)
         return AppConfig(**current)
 
     def to_client_dict(self) -> dict:
-        """Return config values needed by the frontend."""
+        """Return config values needed by the frontend.
+
+        Unresolved show_* flags (None) are surfaced as True so the UI stays
+        permissive — the resolver in CoworkApp is responsible for turning
+        None into a concrete bool before the config reaches the client.
+        """
         return {
             "title": self.title,
             "subtitle": self.subtitle,
@@ -90,4 +120,6 @@ class AppConfig:
             "save_workflow_prompt": self.save_workflow_prompt,
             "run_workflow_prompt": self.run_workflow_prompt,
             "create_workflow_prompt": self.create_workflow_prompt,
+            "show_canvas": True if self.show_canvas is None else self.show_canvas,
+            "show_files": True if self.show_files is None else self.show_files,
         }

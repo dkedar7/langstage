@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.7 — 2026-04-18
+
+### Added
+
+- `CanvasMiddleware` — opt-in LangChain agent middleware that injects canvas tools and report-building guidance into any `create_deep_agent` call. Downstream users enable the canvas feature via `middleware=[CanvasMiddleware()]` without touching tool lists or system prompts.
+- Canvas **section** item type (`add_canvas_section(title, level=1)`) — structural headings that render as `h1`–`h6` in the UI for report organization.
+- `reorder_canvas(item_ids)` tool — rewrite canvas items in a new order.
+- **Provenance**: canvas items now record `source_cell` and `execution_count` from the most recent notebook cell execution; surfaced as a "cell N" pill in the UI.
+- **Tab visibility controls**: `show_canvas` / `show_files` on `CoworkApp`, `--show-canvas/--no-show-canvas` and `--show-files/--no-show-files` CLI flags, `DEEPAGENT_SHOW_CANVAS` / `DEEPAGENT_SHOW_FILES` env vars. Canvas tab defaults to auto-detect (on when `CanvasMiddleware` is attached, off otherwise); files tab defaults to on.
+- `agent_uses_canvas_middleware(agent)` helper for downstream detection.
+- Integration tests for the SSE streaming pipe (`tests/test_sse_adapter.py`) using a conformant fake agent — catches API drift in `langgraph-stream-parser` before it hangs the UI.
+- API contract guards for `prepare_agent_input` and `create_resume_input` signatures.
+- `demo/plain_agent.py` — minimal example of a custom agent without canvas middleware.
+
+### Fixed
+
+- Agent streaming hung silently when `prepare_agent_input()` was called with an unsupported `context_parts=` kwarg. Context is now prepended to the user message directly.
+- `CanvasMiddleware.awrap_model_call` async variant — the sync-only `wrap_model_call` crashed with `NotImplementedError` under `agent.astream()`.
+- `run_agent_stream` / `run_interrupt_response` now wrap the full function body in a try/except and emit `error` events for uncaught exceptions instead of dying silently in the background task.
+
+### Changed
+
+- Canvas tools are no longer baked into `AGENT_TOOLS` — they are injected exclusively via `CanvasMiddleware` to avoid double-registration.
+- Default-agent system prompt no longer embeds canvas guidance; the prompt is appended at call time by `CanvasMiddleware`.
+
+### Removed
+
+- Dead `NotebookState._canvas_items` list and `get_canvas_items` / `clear_canvas_items` methods (never populated; replaced by file-backed canvas state).
+- Dead `create_session_agent` factory that imported a non-existent `cowork_dash.backends` module.
+
 ## 0.3.6 — 2026-04-07
 
 ### Changed

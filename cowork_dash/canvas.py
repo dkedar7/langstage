@@ -149,7 +149,9 @@ def parse_canvas_object(
     obj: Any,
     workspace_root: AnyRoot,
     title: Optional[str] = None,
-    item_id: Optional[str] = None
+    item_id: Optional[str] = None,
+    source_cell: Optional[int] = None,
+    execution_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Parse Python objects into canvas-renderable format.
 
@@ -158,6 +160,8 @@ def parse_canvas_object(
         workspace_root: Path to the workspace root directory (Path or VirtualFilesystem)
         title: Optional title for the canvas item
         item_id: Optional ID for the canvas item (auto-generated if not provided)
+        source_cell: Optional cell index that produced this item
+        execution_count: Optional execution count at the time of creation
 
     Supports:
     - pd.DataFrame (inline in markdown)
@@ -180,11 +184,23 @@ def parse_canvas_object(
         result["created_at"] = created_at
         if title:
             result["title"] = title
+        if source_cell is not None:
+            result["source_cell"] = int(source_cell)
+        if execution_count is not None:
+            result["execution_count"] = int(execution_count)
         return result
 
     # Ensure .canvas directory exists
     canvas_dir = _get_path(workspace_root, ".canvas")
     canvas_dir.mkdir(exist_ok=True)
+
+    # Section header — structural item for report organization
+    if isinstance(obj, dict) and obj.get("__canvas_kind__") == "section":
+        return add_metadata({
+            "type": "section",
+            "data": obj.get("text", ""),
+            "level": int(obj.get("level", 1)),
+        })
 
     # Pandas DataFrame - keep inline
     if module.startswith('pandas') and obj_type == 'DataFrame':
@@ -344,6 +360,10 @@ def export_canvas_to_markdown(
             metadata["created_at"] = created_at
         if "title" in parsed:
             metadata["title"] = parsed["title"]
+        if "source_cell" in parsed:
+            metadata["source_cell"] = parsed["source_cell"]
+        if "execution_count" in parsed:
+            metadata["execution_count"] = parsed["execution_count"]
         lines.append(f"\n<!-- canvas-item: {json.dumps(metadata)} -->")
 
         # Add title if present
@@ -352,6 +372,11 @@ def export_canvas_to_markdown(
 
         if item_type == "markdown":
             lines.append(f"\n{parsed.get('data', '')}\n")
+
+        elif item_type == "section":
+            level = max(1, min(int(parsed.get("level", 1)), 6))
+            hashes = "#" * level
+            lines.append(f"\n{hashes} {parsed.get('data', '')}\n")
 
         elif item_type == "mermaid":
             lines.append(f"\n```mermaid\n{parsed.get('data', '')}\n```\n")
@@ -463,6 +488,10 @@ def _parse_item_content(
         item["title"] = metadata["title"]
     if "created_at" in metadata:
         item["created_at"] = metadata["created_at"]
+    if "source_cell" in metadata:
+        item["source_cell"] = metadata["source_cell"]
+    if "execution_count" in metadata:
+        item["execution_count"] = metadata["execution_count"]
 
     # Remove title heading if present (we already have it in metadata)
     if "title" in metadata:
@@ -518,6 +547,17 @@ def _parse_item_content(
         if match:
             item["html"] = match.group(0)
             return item
+
+    elif item_type == "section":
+        match = re.search(r'^(#{1,6})\s+(.+?)\s*$', content.strip(), re.MULTILINE)
+        if match:
+            item["level"] = len(match.group(1))
+            item["data"] = match.group(2).strip()
+            return item
+        # Fallback: treat whole content as section text
+        item["level"] = 1
+        item["data"] = content.strip()
+        return item
 
     elif item_type == "markdown":
         # Clean up the content

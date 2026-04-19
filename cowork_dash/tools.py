@@ -125,9 +125,16 @@ class NotebookState:
         self._namespace: Dict[str, Any] = {}
         self._execution_count: int = 0
         self._ipython_shell = None
-        self._canvas_items: List[Dict[str, Any]] = []  # Collected canvas items
         self._session_id = session_id
+        # Tracks the most recently executed cell so canvas items added right
+        # after a cell execution can record their provenance.
+        self._last_executed_cell: Optional[Dict[str, int]] = None
         self._initialize_namespace()
+
+    @property
+    def last_executed_cell(self) -> Optional[Dict[str, int]]:
+        """Return `{cell_index, execution_count}` for the last executed cell."""
+        return self._last_executed_cell
 
     def _initialize_namespace(self):
         """Initialize the namespace with common imports and utilities."""
@@ -383,9 +390,6 @@ except (ImportError, AttributeError):
         self._execution_count += 1
         cell["execution_count"] = self._execution_count
 
-        # Track canvas items added during this cell's execution
-        canvas_count_before = len(self._canvas_items)
-
         # Capture stdout and stderr
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
@@ -399,7 +403,6 @@ except (ImportError, AttributeError):
             "result": None,
             "error": None,
             "status": "success",
-            "canvas_items": []  # Canvas items added during execution
         }
 
         try:
@@ -457,13 +460,16 @@ except (ImportError, AttributeError):
             result["stdout"] = stdout_capture.getvalue()
             result["stderr"] = stderr_capture.getvalue()
 
-        # Capture any canvas items added during this cell's execution
-        canvas_items_added = self._canvas_items[canvas_count_before:]
-        result["canvas_items"] = canvas_items_added
-
         # Store outputs in cell
         cell["outputs"] = [result]
         cell["status"] = result["status"]
+
+        # Record provenance: if this cell ran (success or error), it's the
+        # most recent cell context for any canvas items added right after.
+        self._last_executed_cell = {
+            "cell_index": cell_index,
+            "execution_count": self._execution_count,
+        }
 
         return result
 
@@ -502,22 +508,11 @@ except (ImportError, AttributeError):
                 user_vars[name] = f"{type(value).__name__}: <unable to repr>"
         return user_vars
 
-    def get_canvas_items(self) -> List[Dict[str, Any]]:
-        """Get all canvas items collected during execution."""
-        return self._canvas_items.copy()
-
-    def clear_canvas_items(self) -> Dict[str, Any]:
-        """Clear collected canvas items."""
-        count = len(self._canvas_items)
-        self._canvas_items = []
-        return {"cleared": count}
-
     def reset(self):
         """Reset the notebook state (clear all cells and namespace)."""
         self._cells = []
         self._namespace = {}
         self._execution_count = 0
-        self._canvas_items = []
         self._initialize_namespace()
         return {"status": "reset", "message": "Notebook state cleared"}
 
@@ -763,7 +758,28 @@ def reset_notebook() -> Dict[str, Any]:
 # CANVAS TOOLS
 # =============================================================================
 
-def add_to_canvas(content: Any, title: Optional[str] = None, item_id: Optional[str] = None) -> str:
+def _resolve_source_cell(
+    source_cell: Optional[int],
+    execution_count: Optional[int],
+) -> tuple[Optional[int], Optional[int]]:
+    """Fill in provenance from the most recently executed notebook cell if unset."""
+    if source_cell is not None:
+        return source_cell, execution_count
+
+    session_id = get_tool_session_context()
+    state = get_notebook_state(session_id)
+    last = state.last_executed_cell
+    if last is None:
+        return None, execution_count
+    return last.get("cell_index"), execution_count if execution_count is not None else last.get("execution_count")
+
+
+def add_to_canvas(
+    content: Any,
+    title: Optional[str] = None,
+    item_id: Optional[str] = None,
+    source_cell: Optional[int] = None,
+) -> str:
     """Add an item to the canvas for visualization. Canvas is like a note-taking tool where
     you can store charts, dataframes, images, and markdown text for the user to see.
 
@@ -776,6 +792,8 @@ def add_to_canvas(content: Any, title: Optional[str] = None, item_id: Optional[s
         title: Optional title for the canvas item (displayed as a header)
         item_id: Optional unique ID for the item. If provided, can be used to update
                 or remove the item later. Auto-generated if not provided.
+        source_cell: Optional explicit cell index that produced this item. If omitted,
+                the most recently executed cell is used automatically.
 
     Returns:
         Confirmation string describing what was added.
@@ -800,6 +818,7 @@ def add_to_canvas(content: Any, title: Optional[str] = None, item_id: Optional[s
     """
     try:
         workspace_root = _get_workspace_root_for_context()
+        src_cell, exec_count = _resolve_source_cell(source_cell, None)
 
         # Parse the content into canvas format
         parsed = parse_canvas_object(
@@ -807,6 +826,8 @@ def add_to_canvas(content: Any, title: Optional[str] = None, item_id: Optional[s
             workspace_root=workspace_root,
             title=title,
             item_id=item_id,
+            source_cell=src_cell,
+            execution_count=exec_count,
         )
 
         # Load existing items, append new one, write back
@@ -826,7 +847,12 @@ def add_to_canvas(content: Any, title: Optional[str] = None, item_id: Optional[s
         return f"Failed to add to canvas: {e}"
 
 
-def update_canvas_item(item_id: str, content: Any, title: Optional[str] = None) -> str:
+def update_canvas_item(
+    item_id: str,
+    content: Any,
+    title: Optional[str] = None,
+    source_cell: Optional[int] = None,
+) -> str:
     """Update an existing canvas item by its ID. If the item doesn't exist, it will be added.
 
     This is useful for updating charts or data that change over time, like progress
@@ -852,12 +878,15 @@ def update_canvas_item(item_id: str, content: Any, title: Optional[str] = None) 
     """
     try:
         workspace_root = _get_workspace_root_for_context()
+        src_cell, exec_count = _resolve_source_cell(source_cell, None)
 
         parsed = parse_canvas_object(
             content,
             workspace_root=workspace_root,
             title=title,
             item_id=item_id,
+            source_cell=src_cell,
+            execution_count=exec_count,
         )
 
         # Load existing items, replace matching ID or append
@@ -875,6 +904,67 @@ def update_canvas_item(item_id: str, content: Any, title: Optional[str] = None) 
         return f"Updated canvas item: {item_id}"
     except Exception as e:
         return f"Failed to update canvas item: {e}"
+
+
+def add_canvas_section(title: str, level: int = 1, item_id: Optional[str] = None) -> str:
+    """Add a section header to the canvas to structure the report.
+
+    Sections act as structural dividers — use them to group related items under
+    a theme (Overview, Methodology, Findings, etc.). They render as headings
+    in the canvas UI and exported reports.
+
+    Args:
+        title: The section heading text
+        level: Heading level 1-6 (default 1, like an H1)
+        item_id: Optional stable ID. Auto-generated if not provided.
+
+    Returns:
+        Confirmation string.
+
+    Examples:
+        add_canvas_section("Executive Summary")
+        add_canvas_section("Data Quality Checks", level=2)
+    """
+    try:
+        lvl = max(1, min(int(level), 6))
+        payload = {"__canvas_kind__": "section", "text": title, "level": lvl}
+        return add_to_canvas(payload, title=None, item_id=item_id)
+    except Exception as e:
+        return f"Failed to add section: {e}"
+
+
+def reorder_canvas(item_ids: List[str]) -> str:
+    """Reorder canvas items by providing the full list of item IDs in the new order.
+
+    Any IDs not in the list are dropped; unknown IDs are ignored. Use this
+    to restructure the report — e.g., move the summary to the top, push
+    methodology to the end.
+
+    Args:
+        item_ids: List of canvas item IDs in the desired final order
+
+    Returns:
+        Confirmation string with the new count.
+
+    Examples:
+        # Get current items, rearrange, then reorder
+        reorder_canvas(["summary_id", "chart_1", "chart_2", "conclusion_id"])
+    """
+    try:
+        workspace_root = _get_workspace_root_for_context()
+        items = load_canvas_from_markdown(workspace_root)
+        by_id = {item.get("id"): item for item in items if item.get("id")}
+
+        # Build the new ordered list, preserving only items whose IDs appear
+        new_items = [by_id[iid] for iid in item_ids if iid in by_id]
+
+        if not new_items:
+            return "No matching canvas items to reorder"
+
+        export_canvas_to_markdown(new_items, workspace_root)
+        return f"Reordered canvas: {len(new_items)} item(s)"
+    except Exception as e:
+        return f"Failed to reorder canvas: {e}"
 
 
 def remove_canvas_item(item_id: str) -> str:
