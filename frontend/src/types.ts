@@ -167,11 +167,14 @@ export interface TodoItem {
 
 export interface CanvasItem {
   id: string;
-  type: "dataframe" | "plotly" | "matplotlib" | "mermaid" | "image" | "html" | "markdown";
+  type: "dataframe" | "plotly" | "matplotlib" | "mermaid" | "image" | "html" | "markdown" | "section";
   title: string;
   data: unknown;
   file?: string;
   created_at: string;
+  level?: number;
+  source_cell?: number;
+  execution_count?: number;
 }
 
 export interface FileEntry {
