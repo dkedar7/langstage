@@ -13,7 +13,7 @@ Web UI for [LangGraph](https://github.com/langchain-ai/langgraph) and [deepagent
 - **Chat** with real-time token streaming via WebSocket
 - **Tool call visualization** — inline display of arguments, results, duration, and status
 - **Rich inline content** — HTML, Plotly charts, images, DataFrames, PDFs, and JSON rendered directly in the chat
-- **Canvas panel** — persistent visualizations (Plotly, matplotlib, Mermaid diagrams, DataFrames, Markdown, images)
+- **Canvas panel** — persistent report surface for charts, tables, diagrams, images, and narrative markdown. Opt-in via `CanvasMiddleware`; auto-detected by the UI.
 - **File browser** — workspace file tree with syntax-highlighted viewer and live file change detection
 - **Task tracking** — sidebar todo list with progress bar, synced with agent `write_todos` calls
 - **Human-in-the-loop** — interrupt dialog for reviewing and approving agent actions
@@ -63,6 +63,28 @@ from cowork_dash import run_app
 run_app(agent=your_agent, workspace="./workspace")
 ```
 
+### Enabling the Canvas
+
+The canvas is opt-in. Attach `CanvasMiddleware` to your agent and the Canvas tab appears in the UI automatically:
+
+```python
+from deepagents import create_deep_agent
+from cowork_dash import CoworkApp
+from cowork_dash.middleware import CanvasMiddleware
+
+agent = create_deep_agent(
+    tools=[...],
+    middleware=[CanvasMiddleware()],   # <-- adds canvas tools + report guidance
+    ...
+)
+
+CoworkApp(agent=agent, workspace="./workspace").run()
+```
+
+The middleware injects five tools (`add_to_canvas`, `update_canvas_item`, `remove_canvas_item`, `add_canvas_section`, `reorder_canvas`) and appends report-building instructions to the system prompt at each model call. Canvas items persist to `.canvas/canvas.md` in the workspace.
+
+To force the tabs on/off regardless of middleware: `--show-canvas/--no-show-canvas`, `--show-files/--no-show-files`, or the Python-API `show_canvas` / `show_files` kwargs.
+
 ## Configuration
 
 Configuration priority: **Python args > CLI args > environment variables > defaults**.
@@ -85,6 +107,8 @@ Configuration priority: **Python args > CLI args > environment variables > defau
 | Save workflow prompt | `--save-workflow-prompt` | `DEEPAGENT_SAVE_WORKFLOW_PROMPT` | _(built-in)_ |
 | Run workflow prompt | `--run-workflow-prompt` | `DEEPAGENT_RUN_WORKFLOW_PROMPT` | _(built-in, use `{filename}`)_ |
 | Create workflow prompt | `--create-workflow-prompt` | `DEEPAGENT_CREATE_WORKFLOW_PROMPT` | _(built-in)_ |
+| Show Canvas tab | `--show-canvas/--no-show-canvas` | `DEEPAGENT_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
+| Show Files tab | `--show-files/--no-show-files` | `DEEPAGENT_SHOW_FILES` | `true` |
 
 ## Slash Commands
 
