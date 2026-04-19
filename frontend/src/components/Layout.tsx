@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import { FolderTree, Palette, ListTodo, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
@@ -60,6 +60,15 @@ interface LayoutProps {
 export function Layout(props: LayoutProps) {
   const [activeTab, setActiveTab] = useState<RightTab>("tasks");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const showCanvas = props.config.show_canvas;
+  const showFiles = props.config.show_files;
+
+  // If the currently active tab gets hidden by config, fall back to Tasks.
+  useEffect(() => {
+    if (activeTab === "canvas" && !showCanvas) setActiveTab("tasks");
+    else if (activeTab === "files" && !showFiles) setActiveTab("tasks");
+  }, [activeTab, showCanvas, showFiles]);
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)]">
@@ -148,40 +157,44 @@ export function Layout(props: LayoutProps) {
                     </span>
                   )}
                 </button>
-                <button
-                  onClick={() => setActiveTab("canvas")}
-                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                    activeTab === "canvas"
-                      ? "border-[var(--color-text)] text-[var(--color-text)]"
-                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  <Palette size={13} />
-                  Canvas
-                  {props.canvasItems.length > 0 && (
-                    <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
-                      {props.canvasItems.length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setActiveTab("files")}
-                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                    activeTab === "files"
-                      ? "border-[var(--color-text)] text-[var(--color-text)]"
-                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  <FolderTree size={13} />
-                  Files
-                </button>
+                {showCanvas && (
+                  <button
+                    onClick={() => setActiveTab("canvas")}
+                    className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
+                      activeTab === "canvas"
+                        ? "border-[var(--color-text)] text-[var(--color-text)]"
+                        : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                    }`}
+                  >
+                    <Palette size={13} />
+                    Canvas
+                    {props.canvasItems.length > 0 && (
+                      <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
+                        {props.canvasItems.length}
+                      </span>
+                    )}
+                  </button>
+                )}
+                {showFiles && (
+                  <button
+                    onClick={() => setActiveTab("files")}
+                    className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
+                      activeTab === "files"
+                        ? "border-[var(--color-text)] text-[var(--color-text)]"
+                        : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                    }`}
+                  >
+                    <FolderTree size={13} />
+                    Files
+                  </button>
+                )}
               </div>
 
               <div className="flex-1 overflow-hidden">
                 {activeTab === "tasks" && (
                   <TodoPanel todos={props.todos} />
                 )}
-                {activeTab === "canvas" && (
+                {activeTab === "canvas" && showCanvas && (
                   <CanvasPanel
                     items={props.canvasItems}
                     onDelete={props.onDeleteCanvasItem}
@@ -189,7 +202,7 @@ export function Layout(props: LayoutProps) {
                     onExport={props.onExportCanvas}
                   />
                 )}
-                {activeTab === "files" && (
+                {activeTab === "files" && showFiles && (
                   props.selectedFile ? (
                     <FileViewer
                       file={props.selectedFile}

@@ -209,6 +209,8 @@ export interface AppConfig {
   save_workflow_prompt: string;
   run_workflow_prompt: string;
   create_workflow_prompt: string;
+  show_canvas: boolean;
+  show_files: boolean;
 }
 
 export interface TokenUsage {

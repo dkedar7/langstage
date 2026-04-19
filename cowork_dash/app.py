@@ -9,6 +9,7 @@ import uvicorn
 from cowork_dash.agent_loader import load_agent_from_spec
 from cowork_dash.config import AppConfig
 from cowork_dash.default_agent import create_default_agent
+from cowork_dash.middleware import agent_uses_canvas_middleware
 from cowork_dash.server.main import create_fastapi_app
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,8 @@ class CoworkApp:
         run_workflow_prompt: str | None = None,
         create_workflow_prompt: str | None = None,
         custom_css: str | None = None,
+        show_canvas: bool | None = None,
+        show_files: bool | None = None,
         stream_parser_config: dict | None = None,
     ):
         self.config = AppConfig.from_env().merge({
@@ -61,6 +64,8 @@ class CoworkApp:
             "run_workflow_prompt": run_workflow_prompt,
             "create_workflow_prompt": create_workflow_prompt,
             "custom_css": custom_css,
+            "show_canvas": show_canvas,
+            "show_files": show_files,
         })
 
         # Ensure workspace directory exists
@@ -68,6 +73,13 @@ class CoworkApp:
 
         self.agent = self._resolve_agent(agent)
         self.stream_parser_config = stream_parser_config or {}
+
+        # Resolve show_canvas: explicit value wins; otherwise auto-detect from
+        # the agent's middleware. show_files stays True unless explicitly off.
+        if self.config.show_canvas is None:
+            self.config.show_canvas = agent_uses_canvas_middleware(self.agent)
+        if self.config.show_files is None:
+            self.config.show_files = True
 
         # Default title and agent_name from the agent object's .name if not explicitly set
         inferred_name = getattr(self.agent, "name", None)

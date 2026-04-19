@@ -30,8 +30,10 @@ def main():
 @click.option("--run-workflow-prompt", default=None, help="Custom prompt template for /run-workflow command (use {filename} placeholder)")
 @click.option("--create-workflow-prompt", default=None, help="Custom prompt template for /create-workflow command")
 @click.option("--custom-css", default=None, type=click.Path(exists=True), help="Path to custom CSS file for theming")
+@click.option("--show-canvas/--no-show-canvas", "show_canvas", default=None, help="Force-show or force-hide the Canvas tab (default: auto-detect from CanvasMiddleware)")
+@click.option("--show-files/--no-show-files", "show_files", default=None, help="Show or hide the Files tab (default: shown)")
 @click.option("--no-browser", is_flag=True, default=False, help="Don't auto-open browser")
-def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, create_workflow_prompt, custom_css, no_browser):
+def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, create_workflow_prompt, custom_css, show_canvas, show_files, no_browser):
     """Start the Cowork Dash server."""
     app = CoworkApp(
         agent_spec=agent_spec,
@@ -51,6 +53,8 @@ def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_messa
         run_workflow_prompt=run_workflow_prompt,
         create_workflow_prompt=create_workflow_prompt,
         custom_css=custom_css,
+        show_canvas=show_canvas,
+        show_files=show_files,
     )
     app.run(open_browser=not no_browser)
 
