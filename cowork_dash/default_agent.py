@@ -11,8 +11,8 @@ from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from langgraph.checkpoint.memory import InMemorySaver
 
+from cowork_dash.middleware import CanvasMiddleware
 from cowork_dash.tools import (
-    add_to_canvas,
     bash,
     create_cell,
     delete_cell,
@@ -28,7 +28,6 @@ from cowork_dash.tools import (
 )
 
 SYSTEM_PROMPT = """You are a helpful AI assistant with access to a filesystem workspace and a Python code execution environment.
-You have access to a canvas, which is a markdown file located at `.canvas/canvas.md` in the workspace. This allows you to sketch out ideas, document your work, and present results to the user.
 
 CRITICAL!:
 - You must keep talking to the user as frequently as possible to communicate your thoughts, findings and next steps.
@@ -77,15 +76,6 @@ You have tools to write and execute Python code interactively, similar to a Jupy
   - Supported: images (.png, .jpg, .gif), documents (.html, .pdf), data (.csv, .json)
   - Example: `display_inline("results.csv", title="Sales Data")` as a tool call
 
-### Canvas Visualization
-- `add_to_canvas(content)` - Add content to the canvas panel (persistent note-taking area). To add images or charts, save them to files and reference them in markdown.
-- Use for: longer-term notes, sketches, charts
-- Canvas items are saved to `.canvas/` directory
-
-**When to use `display_inline` vs `add_to_canvas`:**
-- `display_inline`: For showing **saved files** (images, CSV, JSON) inline in chat
-- `add_to_canvas`: For longer-term notes, sketches, charts
-
 ## Workflow Guidelines
 
 ### For Code Tasks
@@ -121,9 +111,9 @@ The workspace is your sandbox - feel free to create files, organize content, and
 workspace_root = os.getenv("DEEPAGENT_WORKSPACE_ROOT", os.getcwd())
 backend = FilesystemBackend(root_dir=workspace_root, virtual_mode=True)
 
-# Default tools list used by both global and session agents
+# Default tools list used by both global and session agents.
+# Canvas tools are injected by CanvasMiddleware — not included here.
 AGENT_TOOLS = [
-    add_to_canvas,
     bash,
     create_cell,
     insert_cell,
@@ -133,10 +123,13 @@ AGENT_TOOLS = [
     execute_all_cells,
     get_script,
     get_variables,
-    reset_notebook, 
+    reset_notebook,
     display_inline,
-    think_tool
+    think_tool,
 ]
+
+# Middleware list — canvas is opt-in via CanvasMiddleware.
+AGENT_MIDDLEWARE = [CanvasMiddleware()]
 
 # Global agent for physical filesystem mode
 # This uses FilesystemBackend which writes to disk
@@ -145,45 +138,14 @@ agent = create_deep_agent(
     name="Cowork Dash",
     backend=backend,
     tools=AGENT_TOOLS,
+    middleware=AGENT_MIDDLEWARE,
     interrupt_on=dict(bash=True),
     checkpointer=InMemorySaver()
 )
-
-
-def create_session_agent(session_id: str):
-    """Create an agent with session-specific VirtualFilesystem backend.
-
-    This factory function creates an agent that uses the VirtualFilesystem
-    for the given session, enabling isolated file storage between sessions.
-
-    Args:
-        session_id: The session ID to use for VirtualFilesystem lookup.
-
-    Returns:
-        A configured deep agent that uses VirtualFilesystemBackend.
-    """
-    from .backends import VirtualFilesystemBackend
-    from .virtual_fs import get_session_manager
-
-    # Get the VirtualFilesystem for this session
-    fs = get_session_manager().get_filesystem(session_id)
-    if fs is None:
-        # Session doesn't exist, create it
-        get_session_manager().create_session(session_id)
-        fs = get_session_manager().get_filesystem(session_id)
-
-    # Create backend wrapping the VirtualFilesystem
-    session_backend = VirtualFilesystemBackend(fs)
-
-    # Create and return the agent
-    return create_deep_agent(
-        system_prompt=SYSTEM_PROMPT,
-        name="Cowork Dash",
-        backend=session_backend,
-        tools=AGENT_TOOLS,
-        interrupt_on=dict(bash=True),
-        checkpointer=InMemorySaver()
-    )
+# Preserve the middleware list for runtime introspection. deepagents fuses
+# middleware into the compiled graph, so we stash the originals so that
+# agent_uses_canvas_middleware() can still detect them.
+agent.middleware = AGENT_MIDDLEWARE
 
 
 def create_default_agent(workspace: Path):
