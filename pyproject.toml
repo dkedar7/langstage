@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cowork-dash"
-version = "0.3.7"
+version = "0.4.0"
 description = "Web UI for deepagents — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "langgraph-stream-parser>=0.1.0",
+    "langgraph-stream-parser>=0.2,<0.3",
     "watchfiles>=1.0",
     "click>=8.0",
     "python-dotenv>=1.0",

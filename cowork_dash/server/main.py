@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
+from langgraph_stream_parser.adapters import SessionAdapter
+
 from cowork_dash.config import AppConfig
 from cowork_dash.server.middleware import add_middleware
 from cowork_dash.server.routes_config import create_config_router
@@ -13,7 +15,6 @@ from cowork_dash.server.routes_files import create_files_router
 from cowork_dash.server.routes_canvas import create_canvas_router
 from cowork_dash.server.routes_session import create_session_router
 from cowork_dash.server.routes_chat import create_chat_router
-from cowork_dash.stream.session_manager import SessionManager
 from cowork_dash.workspace.file_manager import FileManager
 from cowork_dash.workspace.canvas_manager import CanvasManager
 
@@ -38,24 +39,27 @@ def create_fastapi_app(
     )
 
     # Shared services
-    session_manager = SessionManager()
     file_manager = FileManager(workspace)
     canvas_manager = CanvasManager(workspace)
+
+    # One session-scoped streaming adapter owns agent execution + the SSE pipe.
+    # max_result_len is large so the UI can show full tool output, not a preview.
+    adapter = SessionAdapter(
+        graph=agent,
+        stream_mode=["updates", "messages"],
+        max_result_len=50_000,
+        **(stream_parser_config or {}),
+    )
 
     # REST API routes (mounted first — take precedence over static)
     app.include_router(create_config_router(config))
     app.include_router(create_files_router(file_manager))
     app.include_router(create_canvas_router(canvas_manager))
-    app.include_router(create_session_router(session_manager, agent=agent, stream_parser_config=stream_parser_config))
-    app.include_router(create_chat_router(
-        session_manager,
-        agent=agent,
-        file_manager=file_manager,
-        stream_parser_config=stream_parser_config,
-    ))
+    app.include_router(create_session_router(adapter))
+    app.include_router(create_chat_router(adapter, file_manager=file_manager))
 
-    # Expose session_manager for testing
-    app.state.session_manager = session_manager
+    # Expose the adapter for testing
+    app.state.session_adapter = adapter
 
     # Serve custom CSS (always register so it returns 404 instead of SPA catch-all)
     @app.get("/api/custom-css")

@@ -7,9 +7,7 @@ load_dotenv()
 
 import os
 
-from deepagents import create_deep_agent
-from deepagents.backends import FilesystemBackend
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph_stream_parser.demo import create_default_agent as _build_default_agent
 
 from cowork_dash.middleware import CanvasMiddleware
 from cowork_dash.tools import (
@@ -109,7 +107,6 @@ The workspace is your sandbox - feel free to create files, organize content, and
 
 # Get workspace root from environment variable or default to current directory
 workspace_root = os.getenv("DEEPAGENT_WORKSPACE_ROOT", os.getcwd())
-backend = FilesystemBackend(root_dir=workspace_root, virtual_mode=True)
 
 # Default tools list used by both global and session agents.
 # Canvas tools are injected by CanvasMiddleware — not included here.
@@ -131,16 +128,18 @@ AGENT_TOOLS = [
 # Middleware list — canvas is opt-in via CanvasMiddleware.
 AGENT_MIDDLEWARE = [CanvasMiddleware()]
 
-# Global agent for physical filesystem mode
-# This uses FilesystemBackend which writes to disk
-agent = create_deep_agent(
-    system_prompt=SYSTEM_PROMPT,
+# Global agent for physical filesystem mode (writes to disk via the shared
+# demo factory's FilesystemBackend + InMemorySaver boilerplate). Cowork supplies
+# the prompt, notebook/display tools, canvas middleware, and bash interrupt.
+agent = _build_default_agent(
+    workspace=workspace_root,
+    model=None,  # let deepagents pick its default model (prior behavior)
     name="Cowork Dash",
-    backend=backend,
+    system_prompt=SYSTEM_PROMPT,
     tools=AGENT_TOOLS,
     middleware=AGENT_MIDDLEWARE,
     interrupt_on=dict(bash=True),
-    checkpointer=InMemorySaver()
+    virtual_mode=True,
 )
 # Preserve the middleware list for runtime introspection. deepagents fuses
 # middleware into the compiled graph, so we stash the originals so that
