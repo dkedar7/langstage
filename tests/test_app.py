@@ -29,7 +29,7 @@ def mock_agent():
 @pytest.fixture
 def app(workspace, mock_agent):
     config = AppConfig(
-        workspace=workspace,
+        workspace_root=workspace,
         title="Test App",
         subtitle="Test Sub",
         welcome_message="Welcome!",
@@ -111,7 +111,7 @@ async def test_delete_session_endpoint(client):
 @pytest.fixture
 def auth_app(workspace, mock_agent):
     config = AppConfig(
-        workspace=workspace,
+        workspace_root=workspace,
         title="Auth App",
         auth_username="myuser",
         auth_password="mypass",
@@ -168,7 +168,7 @@ async def test_no_auth_still_works(client):
 async def test_auth_default_username(workspace, mock_agent):
     """When only password is set, username defaults to 'admin'."""
     config = AppConfig(
-        workspace=workspace,
+        workspace_root=workspace,
         auth_password="secret",
     )
     app = create_fastapi_app(

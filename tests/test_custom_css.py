@@ -23,7 +23,7 @@ def mock_agent():
 @pytest.mark.asyncio
 async def test_custom_css_not_configured(workspace, mock_agent):
     """Without custom CSS, /api/custom-css returns 404."""
-    config = AppConfig(workspace=workspace)
+    config = AppConfig(workspace_root=workspace)
     app = create_fastapi_app(
         agent=mock_agent,
         workspace=workspace,
@@ -39,7 +39,7 @@ async def test_custom_css_not_configured(workspace, mock_agent):
 async def test_custom_css_served(workspace, mock_agent):
     """With custom CSS content, /api/custom-css returns it with text/css type."""
     css_content = ":root { --color-primary: #ff0000; }"
-    config = AppConfig(workspace=workspace)
+    config = AppConfig(workspace_root=workspace)
     app = create_fastapi_app(
         agent=mock_agent,
         workspace=workspace,
@@ -65,7 +65,7 @@ async def test_custom_css_content_matches(workspace, mock_agent):
 .dark {
   --color-surface: #0a1628;
 }"""
-    config = AppConfig(workspace=workspace)
+    config = AppConfig(workspace_root=workspace)
     app = create_fastapi_app(
         agent=mock_agent,
         workspace=workspace,

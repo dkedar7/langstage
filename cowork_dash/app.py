@@ -46,8 +46,10 @@ class CoworkApp:
         show_files: bool | None = None,
         stream_parser_config: dict | None = None,
     ):
-        self.config = AppConfig.from_env().merge({
-            "workspace": Path(workspace) if workspace else None,
+        # Resolve through the shared chain: defaults < deepagents.toml <
+        # DEEPAGENT_* env < these Python/CLI overrides (None values ignored).
+        self.config = AppConfig.resolve(overrides={
+            "workspace_root": Path(workspace) if workspace else None,
             "agent_spec": agent_spec,
             "host": host,
             "port": port,
@@ -69,7 +71,7 @@ class CoworkApp:
         })
 
         # Ensure workspace directory exists
-        self.config.workspace.mkdir(parents=True, exist_ok=True)
+        self.config.workspace_root.mkdir(parents=True, exist_ok=True)
 
         self.agent = self._resolve_agent(agent)
         self.stream_parser_config = stream_parser_config or {}
@@ -120,7 +122,7 @@ class CoworkApp:
         spec = self.config.agent_spec
         if spec:
             return load_agent_spec(spec)
-        return create_default_agent(self.config.workspace)
+        return create_default_agent(self.config.workspace_root)
 
     def run(self, open_browser: bool = True) -> None:
         """Start the FastAPI server with uvicorn. Blocks."""
@@ -146,7 +148,7 @@ class CoworkApp:
         """
         return create_fastapi_app(
             agent=self.agent,
-            workspace=self.config.workspace.resolve(),
+            workspace=self.config.workspace_root.resolve(),
             config=self.config,
             stream_parser_config=self.stream_parser_config,
             icon_local_path=self._icon_local_path,

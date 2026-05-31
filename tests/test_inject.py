@@ -23,7 +23,7 @@ def mock_agent():
 
 @pytest.fixture
 def app(workspace, mock_agent):
-    config = AppConfig(workspace=workspace)
+    config = AppConfig(workspace_root=workspace)
     return create_fastapi_app(agent=mock_agent, workspace=workspace, config=config)
 
 
