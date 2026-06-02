@@ -8,9 +8,11 @@ import uvicorn
 
 from langgraph_stream_parser import load_agent_spec
 from cowork_dash.config import AppConfig
-from cowork_dash.default_agent import create_default_agent
-from cowork_dash.middleware import agent_uses_canvas_middleware
 from cowork_dash.server.main import create_fastapi_app
+
+# NOTE: cowork_dash.default_agent and cowork_dash.middleware are imported lazily
+# (inside the methods below) because they pull in `langchain`/`deepagents`, which
+# are optional. This keeps `import cowork_dash` working on a base install.
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,7 @@ class CoworkApp:
         # Resolve show_canvas: explicit value wins; otherwise auto-detect from
         # the agent's middleware. show_files stays True unless explicitly off.
         if self.config.show_canvas is None:
+            from cowork_dash.middleware import agent_uses_canvas_middleware
             self.config.show_canvas = agent_uses_canvas_middleware(self.agent)
         if self.config.show_files is None:
             self.config.show_files = True
@@ -122,6 +125,7 @@ class CoworkApp:
         spec = self.config.agent_spec
         if spec:
             return load_agent_spec(spec)
+        from cowork_dash.default_agent import create_default_agent
         return create_default_agent(self.config.workspace_root)
 
     def run(self, open_browser: bool = True) -> None:
