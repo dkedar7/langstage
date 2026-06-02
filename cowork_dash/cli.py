@@ -59,5 +59,14 @@ def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_messa
     app.run(open_browser=not no_browser)
 
 
+@main.command()
+@click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
+def config(workspace):
+    """Show the resolved configuration: each value, its source, and the
+    env var / deepagents.toml key that sets it."""
+    overrides = {"workspace_root": workspace} if workspace else None
+    click.echo(AppConfig.resolve(overrides=overrides).describe())
+
+
 if __name__ == "__main__":
     main()

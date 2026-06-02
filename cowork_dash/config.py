@@ -1,38 +1,61 @@
-"""Configuration resolution: Python args > CLI args > env vars > defaults."""
+"""Configuration for cowork-dash.
 
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+`AppConfig` is a `HostConfig` subclass: it inherits the shared keys (agent_spec,
+workspace_root, host, port, debug, title) and adds cowork's UI keys, all
+resolved through the shared chain — defaults < deepagents.toml < DEEPAGENT_* env
+< overrides (Python/CLI args). cowork gains `deepagents.toml` support this way.
+"""
 import os
+from dataclasses import dataclass, fields, replace
+from pathlib import Path
+from typing import Any, ClassVar, Optional
+
+from langgraph_stream_parser.host import HostConfig
 
 
 def _parse_optional_bool(value: Optional[str]) -> Optional[bool]:
     """Parse an env-var string into an optional bool.
 
-    Returns True for '1'/'true'/'yes', False for '0'/'false'/'no', and
-    None for empty/unset (auto-detect mode).
+    True for '1'/'true'/'yes'/'on', False for '0'/'false'/'no'/'off', None for
+    empty/unrecognized (auto-detect mode).
     """
     if value is None or value == "":
         return None
-    lowered = value.strip().lower()
-    if lowered in ("1", "true", "yes"):
+    lowered = str(value).strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
         return True
-    if lowered in ("0", "false", "no"):
+    if lowered in ("0", "false", "no", "off"):
         return False
     return None
 
-# Module-level constants used by tools.py and agent.py
+
+# Module-level constants used by tools.py and default_agent.py (independent of
+# AppConfig — read directly from the environment at import).
 WORKSPACE_ROOT = Path(os.getenv("DEEPAGENT_WORKSPACE_ROOT", os.getcwd()))
 VIRTUAL_FS = os.getenv("DEEPAGENT_VIRTUAL_FS", "").lower() in ("1", "true", "yes")
 
+_SAVE_PROMPT = (
+    "Please capture this conversation as a detailed workflow markdown file in "
+    "the ./workflows/ directory. Include: a title, description of the goal, "
+    "step-by-step instructions that could be followed to reproduce this "
+    "workflow, any configuration or parameters needed, and expected outputs."
+)
+_RUN_PROMPT = (
+    "Please read and follow the workflow defined in ./workflows/{filename}. "
+    "Execute each step as described in the workflow file."
+)
+_CREATE_PROMPT = (
+    "Please create a new workflow markdown file in the ./workflows/ directory. "
+    "Include: a title, description of the goal, step-by-step instructions to "
+    "execute the workflow, any configuration or parameters needed, and "
+    "expected outputs."
+)
+
 
 @dataclass
-class AppConfig:
-    workspace: Path = field(default_factory=lambda: Path("."))
-    agent_spec: str | None = None
-    host: str = "localhost"
-    port: int = 8050
-    debug: bool = False
+class AppConfig(HostConfig):
+    # Shared keys (agent_spec, workspace_root, host, port, debug) come from
+    # HostConfig; cowork only overrides the title default and adds UI keys.
     title: str = "Cowork Dash"
     subtitle: str = "AI-Powered Workspace"
     welcome_message: str = ""
@@ -41,80 +64,69 @@ class AppConfig:
     icon_url: str = ""
     auth_username: str = ""
     auth_password: str = ""
-    save_workflow_prompt: str = "Please capture this conversation as a detailed workflow markdown file in the ./workflows/ directory. Include: a title, description of the goal, step-by-step instructions that could be followed to reproduce this workflow, any configuration or parameters needed, and expected outputs."
-    run_workflow_prompt: str = "Please read and follow the workflow defined in ./workflows/{filename}. Execute each step as described in the workflow file."
-    create_workflow_prompt: str = "Please create a new workflow markdown file in the ./workflows/ directory. Include: a title, description of the goal, step-by-step instructions to execute the workflow, any configuration or parameters needed, and expected outputs."
+    save_workflow_prompt: str = _SAVE_PROMPT
+    run_workflow_prompt: str = _RUN_PROMPT
+    create_workflow_prompt: str = _CREATE_PROMPT
     custom_css: str = ""
-    # Tab visibility — None means auto-resolve (canvas auto-detects middleware;
-    # files defaults to True). Explicit True/False overrides auto-detection.
+    # None means auto-resolve (canvas auto-detects middleware; files defaults True).
     show_canvas: Optional[bool] = None
     show_files: Optional[bool] = None
 
+    _ENV: ClassVar[dict] = {
+        "subtitle": ("DEEPAGENT_SUBTITLE", str),
+        "welcome_message": ("DEEPAGENT_WELCOME_MESSAGE", str),
+        "theme": ("DEEPAGENT_THEME", str),
+        "agent_name": ("DEEPAGENT_AGENT_NAME", str),
+        "icon_url": ("DEEPAGENT_ICON_URL", str),
+        "auth_username": ("DEEPAGENT_AUTH_USERNAME", str),
+        "auth_password": ("DEEPAGENT_AUTH_PASSWORD", str),
+        "save_workflow_prompt": ("DEEPAGENT_SAVE_WORKFLOW_PROMPT", str),
+        "run_workflow_prompt": ("DEEPAGENT_RUN_WORKFLOW_PROMPT", str),
+        "create_workflow_prompt": ("DEEPAGENT_CREATE_WORKFLOW_PROMPT", str),
+        "custom_css": ("DEEPAGENT_CUSTOM_CSS", str),
+        "show_canvas": ("DEEPAGENT_SHOW_CANVAS", _parse_optional_bool),
+        "show_files": ("DEEPAGENT_SHOW_FILES", _parse_optional_bool),
+    }
+    _TOML: ClassVar[dict] = {
+        "subtitle": "ui.subtitle",
+        "welcome_message": "ui.welcome_message",
+        "theme": "ui.theme",
+        "agent_name": "ui.agent_name",
+        "icon_url": "ui.icon_url",
+        "auth_username": "auth.username",
+        "auth_password": "auth.password",
+        "save_workflow_prompt": "workflow.save_prompt",
+        "run_workflow_prompt": "workflow.run_prompt",
+        "create_workflow_prompt": "workflow.create_prompt",
+        "custom_css": "ui.custom_css",
+        "show_canvas": "ui.show_canvas",
+        "show_files": "ui.show_files",
+    }
+
     @classmethod
     def from_env(cls) -> "AppConfig":
-        """Build config from DEEPAGENT_* environment variables."""
-        return cls(
-            workspace=Path(os.getenv("DEEPAGENT_WORKSPACE_ROOT", ".")),
-            agent_spec=os.getenv("DEEPAGENT_AGENT_SPEC"),
-            host=os.getenv("DEEPAGENT_HOST", "localhost"),
-            port=int(os.getenv("DEEPAGENT_PORT", "8050")),
-            debug=os.getenv("DEEPAGENT_DEBUG", "").lower() in ("1", "true", "yes"),
-            title=os.getenv("DEEPAGENT_TITLE", "Cowork Dash"),
-            subtitle=os.getenv("DEEPAGENT_SUBTITLE", "AI-Powered Workspace"),
-            welcome_message=os.getenv("DEEPAGENT_WELCOME_MESSAGE", ""),
-            theme=os.getenv("DEEPAGENT_THEME", "auto"),
-            agent_name=os.getenv("DEEPAGENT_AGENT_NAME", "Agent"),
-            icon_url=os.getenv("DEEPAGENT_ICON_URL", ""),
-            auth_username=os.getenv("DEEPAGENT_AUTH_USERNAME", ""),
-            auth_password=os.getenv("DEEPAGENT_AUTH_PASSWORD", ""),
-            save_workflow_prompt=os.getenv("DEEPAGENT_SAVE_WORKFLOW_PROMPT", AppConfig.save_workflow_prompt),
-            run_workflow_prompt=os.getenv("DEEPAGENT_RUN_WORKFLOW_PROMPT", AppConfig.run_workflow_prompt),
-            create_workflow_prompt=os.getenv("DEEPAGENT_CREATE_WORKFLOW_PROMPT", AppConfig.create_workflow_prompt),
-            custom_css=os.getenv("DEEPAGENT_CUSTOM_CSS", ""),
-            show_canvas=_parse_optional_bool(os.getenv("DEEPAGENT_SHOW_CANVAS")),
-            show_files=_parse_optional_bool(os.getenv("DEEPAGENT_SHOW_FILES")),
-        )
+        """Env + defaults view (no TOML). Use resolve() for the full chain."""
+        return cls.resolve(use_toml=False)
 
     def merge(self, overrides: dict) -> "AppConfig":
-        """Return new config with non-None overrides applied."""
-        updates = {k: v for k, v in overrides.items() if v is not None}
-        current = {
-            "workspace": self.workspace,
-            "agent_spec": self.agent_spec,
-            "host": self.host,
-            "port": self.port,
-            "debug": self.debug,
-            "title": self.title,
-            "subtitle": self.subtitle,
-            "welcome_message": self.welcome_message,
-            "theme": self.theme,
-            "agent_name": self.agent_name,
-            "icon_url": self.icon_url,
-            "auth_username": self.auth_username,
-            "auth_password": self.auth_password,
-            "save_workflow_prompt": self.save_workflow_prompt,
-            "run_workflow_prompt": self.run_workflow_prompt,
-            "create_workflow_prompt": self.create_workflow_prompt,
-            "custom_css": self.custom_css,
-            "show_canvas": self.show_canvas,
-            "show_files": self.show_files,
-        }
-        current.update(updates)
-        return AppConfig(**current)
+        """Return a copy with non-None overrides applied (dict-based)."""
+        valid = {f.name for f in fields(self)}
+        applied = {k: v for k, v in overrides.items() if v is not None and k in valid}
+        return replace(self, **applied)
 
     def to_client_dict(self) -> dict:
-        """Return config values needed by the frontend.
+        """Config values the frontend needs.
 
-        Unresolved show_* flags (None) are surfaced as True so the UI stays
-        permissive — the resolver in CoworkApp is responsible for turning
-        None into a concrete bool before the config reaches the client.
+        Unresolved show_* flags (None) surface as True so the UI stays
+        permissive — CoworkApp resolves None to a concrete bool before this
+        reaches the client.
         """
         return {
             "title": self.title,
             "subtitle": self.subtitle,
             "welcome_message": self.welcome_message,
             "theme": self.theme,
-            "workspace_name": self.workspace.name,
+            "workspace_name": self.workspace_root.name,
             "agent_name": self.agent_name,
             "icon_url": self.icon_url,
             "save_workflow_prompt": self.save_workflow_prompt,
