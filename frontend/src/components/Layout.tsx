@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import { FolderTree, Palette, ListTodo, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
+import { FolderTree, Palette, ListTodo, AlarmClock, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
 import type {
   ChatMessage,
   TodoItem,
@@ -10,6 +10,7 @@ import type {
   InterruptEventMsg,
   Decision,
   CanvasItem,
+  CronJob,
   FileEntry,
   FilePreview,
   ConnectionStatus,
@@ -19,12 +20,13 @@ import { ChatPanel } from "./ChatPanel";
 import { FileBrowser } from "./FileBrowser";
 import { FileViewer } from "./FileViewer";
 import { CanvasPanel } from "./CanvasPanel";
+import { SchedulesPanel } from "./SchedulesPanel";
 import { TodoPanel } from "./TodoPanel";
 import { InterruptDialog } from "./InterruptDialog";
 import { ThemeToggle } from "./ThemeToggle";
 import { StatusBar } from "./StatusBar";
 
-type RightTab = "files" | "canvas" | "tasks";
+type RightTab = "files" | "canvas" | "tasks" | "schedules";
 
 interface LayoutProps {
   config: AppConfig;
@@ -54,6 +56,10 @@ interface LayoutProps {
   onDeleteCanvasItem: (id: string) => void;
   onClearCanvas: () => void;
   onExportCanvas: () => Promise<string>;
+  cronJobs: CronJob[];
+  onCreateCron: (name: string, cron: string, prompt: string) => Promise<void>;
+  onDeleteCron: (id: string) => void;
+  onRunCron: (id: string) => void;
   onNewSession: () => void;
 }
 
@@ -188,6 +194,22 @@ export function Layout(props: LayoutProps) {
                     Files
                   </button>
                 )}
+                <button
+                  onClick={() => setActiveTab("schedules")}
+                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
+                    activeTab === "schedules"
+                      ? "border-[var(--color-text)] text-[var(--color-text)]"
+                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  }`}
+                >
+                  <AlarmClock size={13} />
+                  Schedules
+                  {props.cronJobs.length > 0 && (
+                    <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
+                      {props.cronJobs.length}
+                    </span>
+                  )}
+                </button>
               </div>
 
               <div className="flex-1 overflow-hidden">
@@ -222,6 +244,14 @@ export function Layout(props: LayoutProps) {
                       onDelete={props.onDeletePath}
                     />
                   )
+                )}
+                {activeTab === "schedules" && (
+                  <SchedulesPanel
+                    jobs={props.cronJobs}
+                    onCreate={props.onCreateCron}
+                    onDelete={props.onDeleteCron}
+                    onRun={props.onRunCron}
+                  />
                 )}
               </div>
             </div>

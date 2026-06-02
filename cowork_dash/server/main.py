@@ -15,6 +15,8 @@ from cowork_dash.server.routes_files import create_files_router
 from cowork_dash.server.routes_canvas import create_canvas_router
 from cowork_dash.server.routes_session import create_session_router
 from cowork_dash.server.routes_chat import create_chat_router
+from cowork_dash.server.routes_cron import create_cron_router
+from cowork_dash.scheduler import CronScheduler, set_scheduler
 from cowork_dash.workspace.file_manager import FileManager
 from cowork_dash.workspace.canvas_manager import CanvasManager
 
@@ -58,8 +60,24 @@ def create_fastapi_app(
     app.include_router(create_session_router(adapter))
     app.include_router(create_chat_router(adapter, file_manager=file_manager))
 
-    # Expose the adapter for testing
+    # In-memory cron scheduler — recurring agent runs while the app is alive.
+    # Registered process-globally so the agent's schedule_run tool can reach it.
+    scheduler = CronScheduler(adapter)
+    set_scheduler(scheduler)
+    app.include_router(create_cron_router(scheduler))
+
+    @app.on_event("startup")
+    async def _start_scheduler() -> None:
+        scheduler.start()
+
+    @app.on_event("shutdown")
+    async def _stop_scheduler() -> None:
+        scheduler.shutdown()
+        set_scheduler(None)
+
+    # Expose for testing
     app.state.session_adapter = adapter
+    app.state.scheduler = scheduler
 
     # Serve custom CSS (always register so it returns 404 instead of SPA catch-all)
     @app.get("/api/custom-css")
