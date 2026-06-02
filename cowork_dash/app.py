@@ -6,7 +6,7 @@ from pathlib import Path
 
 import uvicorn
 
-from cowork_dash.agent_loader import load_agent_from_spec
+from langgraph_stream_parser import load_agent_spec
 from cowork_dash.config import AppConfig
 from cowork_dash.default_agent import create_default_agent
 from cowork_dash.middleware import agent_uses_canvas_middleware
@@ -119,7 +119,7 @@ class CoworkApp:
             return agent
         spec = self.config.agent_spec
         if spec:
-            return load_agent_from_spec(spec)
+            return load_agent_spec(spec)
         return create_default_agent(self.config.workspace)
 
     def run(self, open_browser: bool = True) -> None:

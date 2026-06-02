@@ -1,15 +1,20 @@
-"""SSE streaming + REST endpoints for chat, replacing WebSocket."""
+"""SSE streaming + REST endpoints for chat.
+
+Backed by ``langgraph_stream_parser.adapters.SessionAdapter`` — the per-session
+queue, cancellation, and SSE plumbing that used to live in cowork's own
+``stream/`` package now come from the shared runtime.
+"""
 
 import asyncio
-import json
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from cowork_dash.stream.session_manager import SessionManager
-from cowork_dash.stream.sse_adapter import run_agent_stream, run_interrupt_response
+from langgraph_stream_parser.adapters import SessionAdapter
+
 from cowork_dash.workspace.file_manager import FileManager
 
 logger = logging.getLogger(__name__)
@@ -30,55 +35,45 @@ class CancelRequest(BaseModel):
     session_id: str
 
 
+def context_parts(cwd: str | None = None) -> list[str]:
+    """Context lines prepended to each user message (current time + cwd).
+
+    Forwarded to ``SessionAdapter.submit_message(context_parts=...)``, which
+    feeds them through ``prepare_agent_input``.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    parts = [f"[Current time: {now}]"]
+    if cwd:
+        parts.append(f"[Working directory: {cwd}]")
+    return parts
+
+
 def create_chat_router(
-    session_manager: SessionManager,
-    agent=None,
+    adapter: SessionAdapter,
     file_manager: FileManager | None = None,
-    stream_parser_config: dict | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["chat"])
 
     @router.get("/stream")
     async def sse_stream(request: Request, session_id: str | None = None):
-        """SSE endpoint: streams agent events to the client.
+        """SSE endpoint: the client opens this as an EventSource.
 
-        The client opens this as an EventSource. Events are pushed to the
-        session's asyncio.Queue by the agent streaming tasks.
+        Agent events and out-of-band file-change events are multiplexed onto
+        one stream via the session's queue.
         """
-        session = session_manager.get_or_create(session_id)
-        session.sse_connected = True
-
-        # Tell the client which session it's connected to
-        init_event = {"type": "session_init", "session_id": session.thread_id}
+        session = adapter.get_or_create(session_id)
 
         async def event_generator():
-            # Send session init first
-            yield f"data: {json.dumps(init_event)}\n\n"
-
-            # Start file watcher task
+            # File watcher pushes file_changed events into the same session queue.
             file_watch_task = None
             if file_manager:
                 file_watch_task = asyncio.create_task(
-                    _push_file_changes(session, file_manager)
+                    _push_file_changes(adapter, session.id, file_manager)
                 )
-
             try:
-                while True:
-                    # Check if client disconnected
-                    if await request.is_disconnected():
-                        break
-
-                    try:
-                        # Wait for next event with timeout to check disconnection
-                        event = await asyncio.wait_for(
-                            session.event_queue.get(), timeout=30.0
-                        )
-                        yield f"data: {json.dumps(event)}\n\n"
-                    except asyncio.TimeoutError:
-                        # Send keepalive comment to prevent proxy timeouts
-                        yield ": keepalive\n\n"
+                async for frame in adapter.sse(session.id):
+                    yield frame
             finally:
-                session.sse_connected = False
                 if file_watch_task:
                     file_watch_task.cancel()
 
@@ -95,64 +90,39 @@ def create_chat_router(
     @router.post("/chat")
     async def send_message(body: ChatRequest):
         """Send a user message and start agent streaming."""
-        session = session_manager.get_session_by_id(body.session_id)
-        if session is None:
+        if adapter.get(body.session_id) is None:
             raise HTTPException(status_code=404, detail="Session not found")
-
-        # Cancel any existing stream before starting a new one
-        session.cancel_current_stream()
-
-        # Launch agent stream as background task
-        session.current_task = asyncio.create_task(
-            run_agent_stream(
-                agent=agent,
-                session=session,
-                content=body.content,
-                cwd=body.cwd,
-                stream_parser_config=stream_parser_config,
-            )
+        adapter.submit_message(
+            body.session_id, body.content, context_parts=context_parts(body.cwd)
         )
-
         return {"status": "ok", "session_id": body.session_id}
 
     @router.post("/chat/interrupt")
     async def respond_to_interrupt(body: InterruptRequest):
-        """Resume agent from an interrupt with user decisions."""
-        session = session_manager.get_session_by_id(body.session_id)
-        if session is None:
+        """Resume the agent from an interrupt with user decisions."""
+        if adapter.get(body.session_id) is None:
             raise HTTPException(status_code=404, detail="Session not found")
-
-        session.cancel_current_stream()
-
-        session.current_task = asyncio.create_task(
-            run_interrupt_response(
-                agent=agent,
-                session=session,
-                decisions=body.decisions,
-                stream_parser_config=stream_parser_config,
-            )
-        )
-
+        adapter.submit_decisions(body.session_id, body.decisions)
         return {"status": "ok", "session_id": body.session_id}
 
     @router.post("/chat/cancel")
     async def cancel_stream(body: CancelRequest):
-        """Cancel the current agent stream."""
-        session = session_manager.get_session_by_id(body.session_id)
-        if session is None:
+        """Cancel the in-flight agent stream for a session."""
+        if adapter.get(body.session_id) is None:
             raise HTTPException(status_code=404, detail="Session not found")
-
-        session.cancel_current_stream()
+        adapter.cancel(body.session_id)
         return {"status": "ok", "session_id": body.session_id}
 
     return router
 
 
-async def _push_file_changes(session, file_manager: FileManager) -> None:
-    """Watch workspace for file changes and push to session queue."""
+async def _push_file_changes(
+    adapter: SessionAdapter, session_id: str, file_manager: FileManager
+) -> None:
+    """Watch the workspace and push file-change events into the session stream."""
     try:
         async for change in file_manager.watch():
-            await session.push_event({
+            adapter.push_event(session_id, {
                 "type": "file_changed",
                 "event": change.event_type,
                 "path": change.path,
