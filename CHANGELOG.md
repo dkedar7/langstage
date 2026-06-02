@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-06-02
+
+Adopts the shared `langgraph-stream-parser` runtime and config layer.
+
+### Changed
+- Streaming + session plumbing now comes from `langgraph_stream_parser.adapters.SessionAdapter`. The in-tree `agent_loader`, `stream/event_serializer`, `stream/sse_adapter`, and `stream/session_manager` modules are **deleted** (superseded by `host.load_agent_spec`, `event_to_dict`, and `SessionAdapter`). Server wires one `SessionAdapter`; chat/session routes are thin shims over it; the file watcher pushes via `push_event`.
+- `default_agent` builds on `demo.create_default_agent` (keeps cowork's notebook/canvas tools, `CanvasMiddleware`, and the bash interrupt).
+- `AppConfig` now subclasses `HostConfig`: resolves through `defaults < deepagents.toml < DEEPAGENT_* env < overrides`, gaining **`deepagents.toml` support**. The config field `workspace` was renamed to `workspace_root` to match `HostConfig` — the public `CoworkApp(workspace=...)` kwarg is unchanged.
+- Pin `langgraph-stream-parser>=0.2,<0.3`.
+
+### Added
+- `cowork-dash config` command — prints the resolved config with each value's source + env var / TOML key.
+
 ## 0.3.7 — 2026-04-18
 
 ### Added
