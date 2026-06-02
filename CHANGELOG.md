@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — 2026-06-02
+
+### Added
+- **Scheduled runs (cron).** Recurring agent runs on a standard 5-field cron expression, kept in memory for the life of the app process. A new **Schedules** tab lists active jobs and lets you add, run-now, and delete them; agents can manage schedules too via the `schedule_run`, `list_scheduled_runs`, and `cancel_scheduled_run` tools. REST API under `/api/cron`. New dependency: `croniter>=2.0`.
+- Playwright end-to-end tests (`frontend/e2e/`) driving the built app against a model-free stub agent, plus the first CI workflow (pytest matrix + e2e).
+
+### Fixed
+- `import cowork_dash` no longer requires the optional `deepagents`/`langchain` dependency — the default agent and canvas middleware are imported lazily, so the base install works on its own.
+
 ## 0.4.0 — 2026-06-02
 
 Adopts the shared `langgraph-stream-parser` runtime and config layer.
