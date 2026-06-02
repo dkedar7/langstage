@@ -177,6 +177,21 @@ export interface CanvasItem {
   execution_count?: number;
 }
 
+export interface CronJob {
+  id: string;
+  name: string;
+  cron: string;
+  prompt: string;
+  created_at: string;
+  created_by: "user" | "agent";
+  enabled: boolean;
+  next_run: string | null;
+  last_run: string | null;
+  last_status: string | null;
+  run_count: number;
+  session_id: string;
+}
+
 export interface FileEntry {
   name: string;
   path: string;

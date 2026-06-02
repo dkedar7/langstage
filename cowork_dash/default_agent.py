@@ -10,6 +10,7 @@ import os
 from langgraph_stream_parser.demo import create_default_agent as _build_default_agent
 
 from cowork_dash.middleware import CanvasMiddleware
+from cowork_dash.scheduler import CRON_TOOLS
 from cowork_dash.tools import (
     bash,
     create_cell,
@@ -123,6 +124,7 @@ AGENT_TOOLS = [
     reset_notebook,
     display_inline,
     think_tool,
+    *CRON_TOOLS,  # schedule_run / list_scheduled_runs / cancel_scheduled_run
 ]
 
 # Middleware list — canvas is opt-in via CanvasMiddleware.

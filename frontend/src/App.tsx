@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAgentStream } from "./hooks/useAgentStream";
 import { useFileTree } from "./hooks/useFileTree";
 import { useCanvas } from "./hooks/useCanvas";
+import { useCron } from "./hooks/useCron";
 import { Layout } from "./components/Layout";
 import type { AppConfig } from "./types";
 
@@ -90,6 +91,8 @@ export default function App() {
   const { items: canvasItems, deleteItem, clearAll, exportMarkdown } =
     useCanvas(fileChanges);
 
+  const { jobs: cronJobs, createJob, deleteJob, runNow } = useCron();
+
   const handleSend = useCallback(
     (content: string) => sendMessage(content, { cwd: workspacePath }),
     [sendMessage, workspacePath]
@@ -137,6 +140,10 @@ export default function App() {
       onDeleteCanvasItem={deleteItem}
       onClearCanvas={clearAll}
       onExportCanvas={exportMarkdown}
+      cronJobs={cronJobs}
+      onCreateCron={createJob}
+      onDeleteCron={deleteJob}
+      onRunCron={runNow}
       onNewSession={resetSession}
     />
   );
