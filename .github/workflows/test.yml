@@ -26,8 +26,8 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest pytest-asyncio httpx
+          # [deepagents] pulls langchain, which the default agent + tests need.
+          pip install -e ".[deepagents,dev]"
 
       - name: Run tests
         run: pytest -q
@@ -52,9 +52,10 @@ jobs:
       - name: Install the app (server + stub-agent deps)
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          # The stub agent needs langgraph + a checkpointer; no model/API key.
-          pip install langgraph langchain-core
+          # [deepagents] pulls langchain/langgraph: the server imports langchain
+          # eagerly on this branch, and the stub agent needs langgraph. The stub
+          # itself calls no model, so no API key is required.
+          pip install -e ".[deepagents]"
 
       - name: Build the frontend
         working-directory: frontend
