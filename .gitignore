@@ -230,3 +230,9 @@ sample_notebook.py
 spec.md
 spec.pdf
 spec.html
+
+# Playwright e2e artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+frontend/e2e/.tmp-workspace/
