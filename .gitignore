@@ -236,3 +236,5 @@ frontend/test-results/
 frontend/playwright-report/
 frontend/playwright/.cache/
 frontend/e2e/.tmp-workspace/
+
+frontend/e2e/screenshots/
