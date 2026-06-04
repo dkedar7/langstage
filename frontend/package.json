@@ -7,8 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:e2e": "playwright test",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e": "playwright test smoke.spec.ts",
+    "test:e2e:debug": "playwright test --debug",
+    "test:visual": "playwright test visual.spec.ts",
+    "test:visual:update": "playwright test visual.spec.ts --update-snapshots"
   },
   "dependencies": {
     "allotment": "^1.20.2",
