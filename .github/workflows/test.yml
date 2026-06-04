@@ -78,3 +78,22 @@ jobs:
           name: cowork-dash-playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+  visual:
+    runs-on: ubuntu-latest
+    # Same pinned image used to generate the baselines locally, so renders match.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Visual regression (pixel-diff vs committed baselines)
+        run: bash frontend/e2e/docker-visual.sh check
+
+      - name: Upload visual diff on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cowork-dash-visual-report
+          path: frontend/playwright-report/
+          retention-days: 7
