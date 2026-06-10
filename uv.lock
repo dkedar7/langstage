@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -241,11 +241,13 @@ wheels = [
 
 [[package]]
 name = "cowork-dash"
-version = "0.3.7"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "croniter" },
     { name = "fastapi" },
+    { name = "langgraph" },
     { name = "langgraph-stream-parser" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -268,10 +270,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.0" },
+    { name = "croniter", specifier = ">=2.0" },
     { name = "deepagents", marker = "extra == 'deepagents'", specifier = ">=0.3" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
-    { name = "langgraph-stream-parser", specifier = ">=0.1.0" },
+    { name = "langgraph", specifier = ">=1.0" },
+    { name = "langgraph-stream-parser", specifier = ">=0.2.2,<0.3" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
@@ -282,6 +286,18 @@ requires-dist = [
     { name = "watchfiles", specifier = ">=1.0" },
 ]
 provides-extras = ["deepagents", "dev"]
+
+[[package]]
+name = "croniter"
+version = "6.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/df/de/5832661ed55107b8a09af3f0a2e71e0957226a59eb1dcf0a445cce6daf20/croniter-6.2.2.tar.gz", hash = "sha256:ba60832a5ec8e12e51b8691c3309a113d1cf6526bdf1a48150ce8ec7a532d0ab", size = 113762, upload-time = "2026-03-15T08:43:48.112Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/39/783980e78cb92c2d7bdb1fc7dbc86e94ccc6d58224d76a7f1f51b6c51e30/croniter-6.2.2-py3-none-any.whl", hash = "sha256:a5d17b1060974d36251ea4faf388233eca8acf0d09cbd92d35f4c4ac8f279960", size = 45422, upload-time = "2026-03-15T08:43:46.626Z" },
+]
 
 [[package]]
 name = "cryptography"
@@ -847,11 +863,11 @@ wheels = [
 
 [[package]]
 name = "langgraph-stream-parser"
-version = "0.1.3"
+version = "0.2.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/74/ce/f6235645ce0eae50f797c0f59e8929c1579c72951020beb55d65700f0ecb/langgraph_stream_parser-0.1.3.tar.gz", hash = "sha256:2f1af4f48ef1506acba96ec5c7bb23209aec8255ba4d866fe099dd3aa4237743", size = 155177, upload-time = "2026-02-10T04:01:47.13Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/f3/fdad6195a604cd4b404d7e11b2fcd76363b36ffa8d06c22374c7bd125696/langgraph_stream_parser-0.2.2.tar.gz", hash = "sha256:73058de643ffeb8e875443ee614fd58245ad0c778c5618cda09beabfdde0fec7", size = 208624, upload-time = "2026-06-10T13:43:24.829Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/37/8f/9277270a20d1c8b2646934e90e8cb6dce653fb4ba77020bd66bf0ca4da50/langgraph_stream_parser-0.1.3-py3-none-any.whl", hash = "sha256:93e96bf4f45646ed55ec1159dbb0a877490e2ddac0f80c503738d4eb54a2c98f", size = 42852, upload-time = "2026-02-10T04:01:45.605Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/25/7d7c8ab08642a6d6dc42a74f8c5670ef8569bb51340a17de88786d823dfd/langgraph_stream_parser-0.2.2-py3-none-any.whl", hash = "sha256:7a1aef0c3e8a8555e0beeab3045a5c9907b57b688366202409144252a4f040f2", size = 73728, upload-time = "2026-06-10T13:43:23.748Z" },
 ]
 
 [[package]]
@@ -1216,6 +1232,18 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dateutil"
+version = "2.9.0.post0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
+]
+
+[[package]]
 name = "python-dotenv"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1350,6 +1378,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/23/01/1c30526460f4d23222d0fabd5888868262fd0e2b71a00570ca26483cd993/ruff-0.15.2-py3-none-win32.whl", hash = "sha256:fd5ff9e5f519a7e1bd99cbe8daa324010a74f5e2ebc97c6242c08f26f3714f6f", size = 10507885, upload-time = "2026-02-19T22:32:15.635Z" },
     { url = "https://files.pythonhosted.org/packages/5c/10/3d18e3bbdf8fc50bbb4ac3cc45970aa5a9753c5cb51bf9ed9a3cd8b79fa3/ruff-0.15.2-py3-none-win_amd64.whl", hash = "sha256:d20014e3dfa400f3ff84830dfb5755ece2de45ab62ecea4af6b7262d0fb4f7c5", size = 11623725, upload-time = "2026-02-19T22:32:04.947Z" },
     { url = "https://files.pythonhosted.org/packages/6d/78/097c0798b1dab9f8affe73da9642bb4500e098cb27fd8dc9724816ac747b/ruff-0.15.2-py3-none-win_arm64.whl", hash = "sha256:cabddc5822acdc8f7b5527b36ceac55cc51eec7b1946e60181de8fe83ca8876e", size = 10941649, upload-time = "2026-02-19T22:32:18.108Z" },
+]
+
+[[package]]
+name = "six"
+version = "1.17.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
 ]
 
 [[package]]

@@ -8,6 +8,19 @@ Web UI for [LangGraph](https://github.com/langchain-ai/langgraph) and [deepagent
 
 **Stack**: Python (FastAPI + WebSocket) backend, React (TypeScript + Vite) frontend.
 
+## One agent, every surface
+
+Cowork Dash is the web surface of the **deep-agent family**: write your agent once — any LangGraph `CompiledGraph` — and run it on every surface with the same spec string (`module:attr` or `path/to/file.py:attr`), the same `deepagents.toml` config file, and the same `DEEPAGENT_*` environment variables.
+
+| Surface | Package | Try it |
+|---|---|---|
+| Web app | cowork-dash | **you are here** |
+| JupyterLab | [deepagent-lab](https://github.com/dkedar7/deepagent-lab) | `pip install deepagent-lab`, then the chat sidebar in `jupyter lab` |
+| Terminal | [deepagent-code](https://github.com/dkedar7/deepagent-code) | `deepagent-code -a my_agent.py:graph` |
+| VS Code | [deepagent-vscode](https://github.com/dkedar7/deepagent-vscode) | chat participant + stdio sidecar |
+| Reference agent | [deepagent-hermes](https://github.com/dkedar7/deepagent-hermes) | `DEEPAGENT_AGENT_SPEC=deepagent_hermes.agent:graph` on any surface |
+| Shared core | [langgraph-stream-parser](https://github.com/dkedar7/langgraph-stream-parser) | typed events + config resolver behind every surface |
+
 ## Features
 
 - **Chat** with real-time token streaming via WebSocket
@@ -31,6 +44,14 @@ pip install cowork-dash
 ```
 
 ## Quick Start
+
+### No agent or API key yet?
+
+```bash
+cowork-dash run --demo
+```
+
+launches the full UI against a built-in keyless echo agent, so you can explore the surface before wiring up a real agent.
 
 ### From Python
 
@@ -88,6 +109,12 @@ To force the tabs on/off regardless of middleware: `--show-canvas/--no-show-canv
 ## Configuration
 
 Configuration priority: **Python args > CLI args > environment variables > defaults**.
+
+Never remember a variable name — print the resolved configuration (each value, its source, and the env var / `deepagents.toml` key that sets it):
+
+```bash
+cowork-dash --show-config
+```
 
 | Option | CLI Flag | Env Var | Default |
 |--------|----------|---------|---------|

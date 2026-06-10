@@ -12,7 +12,10 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "langgraph-stream-parser>=0.2,<0.3",
+    "langgraph-stream-parser>=0.2.2,<0.3",
+    # Any real use of cowork-dash already has langgraph in the env (it is the
+    # thing being hosted); declaring it makes `run --demo` work on a bare install.
+    "langgraph>=1.0",
     "watchfiles>=1.0",
     "click>=8.0",
     "python-dotenv>=1.0",
