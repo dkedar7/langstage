@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 — 2026-06-10
+
+### Added
+- **`cowork-dash run --demo`** — launches the full UI against a built-in keyless echo agent (`langgraph_stream_parser.demo.stub:graph`): no API key, no agent file. Mutually exclusive with `--agent`.
+- **`-a`** short flag for `--agent`, matching `deepagent-code -a`.
+- **`cowork-dash --show-config`** — group-level flag printing the resolved configuration (defaults < `deepagents.toml` < `DEEPAGENT_*` env), each value with its source. The `cowork-dash config` subcommand is unchanged.
+- **Visual-regression gate** — pinned-Docker Playwright baselines (`frontend/e2e/visual.spec.ts`) run in CI; `frontend/e2e/docker-visual.sh` reproduces the exact CI render locally for baseline updates.
+- README: *One agent, every surface* family table.
+
+### Changed
+- `langgraph>=1.0` is now a declared dependency (any real use already has it — it is the thing being hosted; declaring it makes `--demo` work on a bare install). `langgraph-stream-parser` pinned `>=0.2.2,<0.3`.
+
 ## 0.5.0 — 2026-06-02
 
 ### Added
