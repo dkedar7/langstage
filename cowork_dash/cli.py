@@ -6,14 +6,29 @@ from cowork_dash.app import CoworkApp
 from cowork_dash.config import AppConfig
 
 
-@click.group()
-def main():
+# The keyless echo agent shipped with the shared core — see `--demo`.
+DEMO_AGENT_SPEC = "langgraph_stream_parser.demo.stub:graph"
+
+
+@click.group(invoke_without_command=True)
+@click.option(
+    "--show-config",
+    is_flag=True,
+    help="Print the resolved configuration (defaults < deepagents.toml < env < CLI) and exit.",
+)
+@click.pass_context
+def main(ctx, show_config):
     """Cowork Dash — Web UI for LangGraph agents."""
-    pass
+    if show_config:
+        click.echo(AppConfig.resolve().describe())
+        ctx.exit(0)
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
 @main.command()
-@click.option("--agent", "agent_spec", default=None, help="Agent spec (e.g., my_agent.py:agent)")
+@click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec (e.g., my_agent.py:agent)")
+@click.option("--demo", is_flag=True, default=False, help="Run with the built-in keyless demo agent — no API key needed")
 @click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
 @click.option("--port", default=None, type=int, help="Server port (default: 8050)")
 @click.option("--host", default=None, help="Server host (default: localhost)")
@@ -33,8 +48,12 @@ def main():
 @click.option("--show-canvas/--no-show-canvas", "show_canvas", default=None, help="Force-show or force-hide the Canvas tab (default: auto-detect from CanvasMiddleware)")
 @click.option("--show-files/--no-show-files", "show_files", default=None, help="Show or hide the Files tab (default: shown)")
 @click.option("--no-browser", is_flag=True, default=False, help="Don't auto-open browser")
-def run(agent_spec, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, create_workflow_prompt, custom_css, show_canvas, show_files, no_browser):
+def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, create_workflow_prompt, custom_css, show_canvas, show_files, no_browser):
     """Start the Cowork Dash server."""
+    if demo:
+        if agent_spec:
+            raise click.UsageError("--demo and --agent are mutually exclusive.")
+        agent_spec = DEMO_AGENT_SPEC
     app = CoworkApp(
         agent_spec=agent_spec,
         workspace=workspace,
