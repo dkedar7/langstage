@@ -2,7 +2,7 @@
 
 from click.testing import CliRunner
 
-from cowork_dash import cli as cli_mod
+from langstage import cli as cli_mod
 
 
 class FakeApp:

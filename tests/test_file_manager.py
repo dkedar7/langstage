@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from cowork_dash.workspace.file_manager import FileManager
+from langstage.workspace.file_manager import FileManager
 
 
 @pytest.fixture

@@ -1,6 +1,8 @@
-# Cowork Dash
+# LangStage
 
-Web UI for [LangGraph](https://github.com/langchain-ai/langgraph) and [deepagents](https://github.com/langchain-ai/deepagents) agents. Provides a chat interface with real-time streaming, a workspace file browser, and a canvas for visualizations.
+**The web stage for your LangGraph agent.** A chat workspace for [LangGraph](https://github.com/langchain-ai/langgraph) and [deepagents](https://github.com/langchain-ai/deepagents) agents — real-time streaming, a workspace file browser, scheduled runs, and a canvas for visualizations.
+
+> Renamed from **cowork-dash** (the old package name now just installs this one, and the `cowork-dash` command still works).
 
 <p align="center">
   <img src="assets/cover.png" alt="Cowork Dash" style="border: 1px solid #d0d7de; border-radius: 6px;" />
@@ -8,18 +10,18 @@ Web UI for [LangGraph](https://github.com/langchain-ai/langgraph) and [deepagent
 
 **Stack**: Python (FastAPI + WebSocket) backend, React (TypeScript + Vite) frontend.
 
-## One agent, every surface
+## Every stage for your LangGraph agent
 
-Cowork Dash is the web surface of the **deep-agent family**: write your agent once — any LangGraph `CompiledGraph` — and run it on every surface with the same spec string (`module:attr` or `path/to/file.py:attr`), the same `deepagents.toml` config file, and the same `DEEPAGENT_*` environment variables.
+langstage is the web stage (and namesake) of the **LangStage family**: write your agent once — any LangGraph `CompiledGraph` — and run it on every stage with the same spec string (`module:attr` or `path/to/file.py:attr`), the same `langstage.toml` config file, and the same `LANGSTAGE_*` environment variables.
 
-| Surface | Package | Try it |
+| Stage | Package | Try it |
 |---|---|---|
-| Web app | cowork-dash | **you are here** |
-| JupyterLab | [deepagent-lab](https://github.com/dkedar7/deepagent-lab) | `pip install deepagent-lab`, then the chat sidebar in `jupyter lab` |
-| Terminal | [deepagent-code](https://github.com/dkedar7/deepagent-code) | `deepagent-code -a my_agent.py:graph` |
-| VS Code | [deepagent-vscode](https://github.com/dkedar7/deepagent-vscode) | chat participant + stdio sidecar |
-| Reference agent | [deepagent-hermes](https://github.com/dkedar7/deepagent-hermes) | `DEEPAGENT_AGENT_SPEC=deepagent_hermes.agent:graph` on any surface |
-| Shared core | [langgraph-stream-parser](https://github.com/dkedar7/langgraph-stream-parser) | typed events + config resolver behind every surface |
+| Web app | langstage | **you are here** |
+| JupyterLab | [langstage-jupyter](https://github.com/dkedar7/langstage-jupyter) | `pip install langstage-jupyter`, then the chat sidebar in `jupyter lab` |
+| Terminal | [langstage-cli](https://github.com/dkedar7/langstage-cli) | `langstage-cli -a my_agent.py:graph` |
+| VS Code | [langstage-vscode](https://github.com/dkedar7/langstage-vscode) | chat participant + stdio sidecar |
+| Reference agent | [langstage-hermes](https://github.com/dkedar7/langstage-hermes) | `LANGSTAGE_AGENT_SPEC=langstage_hermes.agent:graph` on any stage |
+| Shared core | [langgraph-stream-parser](https://github.com/dkedar7/langgraph-stream-parser) | typed events + config resolver behind every stage |
 
 ## Features
 
@@ -40,7 +42,7 @@ Cowork Dash is the web surface of the **deep-agent family**: write your agent on
 ## Installation
 
 ```bash
-pip install cowork-dash
+pip install langstage
 ```
 
 ## Quick Start
@@ -48,7 +50,7 @@ pip install cowork-dash
 ### No agent or API key yet?
 
 ```bash
-cowork-dash run --demo
+langstage run --demo
 ```
 
 launches the full UI against a built-in keyless echo agent, so you can explore the surface before wiring up a real agent.
@@ -56,7 +58,7 @@ launches the full UI against a built-in keyless echo agent, so you can explore t
 ### From Python
 
 ```python
-from cowork_dash import CoworkApp
+from langstage import CoworkApp
 
 app = CoworkApp(
     agent=your_langgraph_agent,  # Any LangGraph CompiledGraph
@@ -70,16 +72,16 @@ app.run()
 
 ```bash
 # Point to a Python file exporting a LangGraph agent
-cowork-dash run --agent my_agent.py:agent --workspace ./workspace
+langstage run --agent my_agent.py:agent --workspace ./workspace
 
 # With options
-cowork-dash run --agent my_agent.py:agent --port 8080 --theme dark --title "My Agent"
+langstage run --agent my_agent.py:agent --port 8080 --theme dark --title "My Agent"
 ```
 
 ### Shorthand
 
 ```python
-from cowork_dash import run_app
+from langstage import run_app
 
 run_app(agent=your_agent, workspace="./workspace")
 ```
@@ -90,8 +92,8 @@ The canvas is opt-in. Attach `CanvasMiddleware` to your agent and the Canvas tab
 
 ```python
 from deepagents import create_deep_agent
-from cowork_dash import CoworkApp
-from cowork_dash.middleware import CanvasMiddleware
+from langstage import CoworkApp
+from langstage.middleware import CanvasMiddleware
 
 agent = create_deep_agent(
     tools=[...],
@@ -110,32 +112,32 @@ To force the tabs on/off regardless of middleware: `--show-canvas/--no-show-canv
 
 Configuration priority: **Python args > CLI args > environment variables > defaults**.
 
-Never remember a variable name — print the resolved configuration (each value, its source, and the env var / `deepagents.toml` key that sets it):
+Never remember a variable name — print the resolved configuration (each value, its source, and the env var / `langstage.toml` key that sets it):
 
 ```bash
-cowork-dash --show-config
+langstage --show-config
 ```
 
 | Option | CLI Flag | Env Var | Default |
 |--------|----------|---------|---------|
-| Agent spec | `--agent` | `DEEPAGENT_AGENT_SPEC` | Built-in default agent |
-| Workspace | `--workspace` | `DEEPAGENT_WORKSPACE_ROOT` | `.` |
-| Host | `--host` | `DEEPAGENT_HOST` | `localhost` |
-| Port | `--port` | `DEEPAGENT_PORT` | `8050` |
-| Debug | `--debug` | `DEEPAGENT_DEBUG` | `false` |
-| Title | `--title` | `DEEPAGENT_TITLE` | Agent's `.name` or `"Cowork Dash"` |
-| Subtitle | `--subtitle` | `DEEPAGENT_SUBTITLE` | `"AI-Powered Workspace"` |
-| Welcome message | `--welcome-message` | `DEEPAGENT_WELCOME_MESSAGE` | _(empty)_ |
-| Theme | `--theme` | `DEEPAGENT_THEME` | `auto` |
-| Agent name | `--agent-name` | `DEEPAGENT_AGENT_NAME` | Agent's `.name` or `"Agent"` |
-| Icon URL | `--icon-url` | `DEEPAGENT_ICON_URL` | _(none)_ |
-| Auth username | `--auth-username` | `DEEPAGENT_AUTH_USERNAME` | `admin` |
-| Auth password | `--auth-password` | `DEEPAGENT_AUTH_PASSWORD` | _(none — auth disabled)_ |
-| Save workflow prompt | `--save-workflow-prompt` | `DEEPAGENT_SAVE_WORKFLOW_PROMPT` | _(built-in)_ |
-| Run workflow prompt | `--run-workflow-prompt` | `DEEPAGENT_RUN_WORKFLOW_PROMPT` | _(built-in, use `{filename}`)_ |
-| Create workflow prompt | `--create-workflow-prompt` | `DEEPAGENT_CREATE_WORKFLOW_PROMPT` | _(built-in)_ |
-| Show Canvas tab | `--show-canvas/--no-show-canvas` | `DEEPAGENT_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
-| Show Files tab | `--show-files/--no-show-files` | `DEEPAGENT_SHOW_FILES` | `true` |
+| Agent spec | `--agent` | `LANGSTAGE_AGENT_SPEC` | Built-in default agent |
+| Workspace | `--workspace` | `LANGSTAGE_WORKSPACE_ROOT` | `.` |
+| Host | `--host` | `LANGSTAGE_HOST` | `localhost` |
+| Port | `--port` | `LANGSTAGE_PORT` | `8050` |
+| Debug | `--debug` | `LANGSTAGE_DEBUG` | `false` |
+| Title | `--title` | `LANGSTAGE_TITLE` | Agent's `.name` or `"Cowork Dash"` |
+| Subtitle | `--subtitle` | `LANGSTAGE_SUBTITLE` | `"AI-Powered Workspace"` |
+| Welcome message | `--welcome-message` | `LANGSTAGE_WELCOME_MESSAGE` | _(empty)_ |
+| Theme | `--theme` | `LANGSTAGE_THEME` | `auto` |
+| Agent name | `--agent-name` | `LANGSTAGE_AGENT_NAME` | Agent's `.name` or `"Agent"` |
+| Icon URL | `--icon-url` | `LANGSTAGE_ICON_URL` | _(none)_ |
+| Auth username | `--auth-username` | `LANGSTAGE_AUTH_USERNAME` | `admin` |
+| Auth password | `--auth-password` | `LANGSTAGE_AUTH_PASSWORD` | _(none — auth disabled)_ |
+| Save workflow prompt | `--save-workflow-prompt` | `LANGSTAGE_SAVE_WORKFLOW_PROMPT` | _(built-in)_ |
+| Run workflow prompt | `--run-workflow-prompt` | `LANGSTAGE_RUN_WORKFLOW_PROMPT` | _(built-in, use `{filename}`)_ |
+| Create workflow prompt | `--create-workflow-prompt` | `LANGSTAGE_CREATE_WORKFLOW_PROMPT` | _(built-in)_ |
+| Show Canvas tab | `--show-canvas/--no-show-canvas` | `LANGSTAGE_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
+| Show Files tab | `--show-files/--no-show-files` | `LANGSTAGE_SHOW_FILES` | `true` |
 
 ## Slash Commands
 
@@ -196,7 +198,7 @@ pytest tests/
 # Frontend
 cd frontend
 npm install
-npm run build    # outputs to cowork_dash/static/
+npm run build    # outputs to langstage/static/
 npm run dev      # dev server with hot reload (proxy to backend on :8050)
 ```
 

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
 from httpx import AsyncClient, ASGITransport
 
-from cowork_dash.config import AppConfig
-from cowork_dash.server.main import create_fastapi_app
+from langstage.config import AppConfig
+from langstage.server.main import create_fastapi_app
 
 
 @pytest.fixture

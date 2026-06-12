@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
-    outDir: "../cowork_dash/static",
+    outDir: "../langstage/static",
     emptyOutDir: true,
   },
   server: {

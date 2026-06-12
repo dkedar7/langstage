@@ -4,19 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from cowork_dash import tools as tools_mod
-from cowork_dash.canvas import (
+from langstage import tools as tools_mod
+from langstage.canvas import (
     export_canvas_to_markdown,
     load_canvas_from_markdown,
     parse_canvas_object,
 )
-from cowork_dash.middleware.canvas import CANVAS_PROMPT, CanvasMiddleware
+from langstage.middleware.canvas import CANVAS_PROMPT, CanvasMiddleware
 
 
 @pytest.fixture
 def tmp_workspace(tmp_path: Path, monkeypatch) -> Path:
     """Provide a temporary workspace and point tools.WORKSPACE_ROOT at it."""
-    from cowork_dash import config as cfg
+    from langstage import config as cfg
 
     monkeypatch.setattr(cfg, "WORKSPACE_ROOT", tmp_path)
     monkeypatch.setattr(cfg, "VIRTUAL_FS", False)
@@ -151,7 +151,7 @@ def test_mixed_sections_and_items_roundtrip(tmp_workspace: Path):
 @pytest.fixture
 def fresh_notebook(monkeypatch):
     """Give each test a clean NotebookState so last_executed_cell is deterministic."""
-    from cowork_dash.tools import NotebookState
+    from langstage.tools import NotebookState
 
     fresh = NotebookState()
     monkeypatch.setattr(tools_mod, "_notebook_state", fresh)
