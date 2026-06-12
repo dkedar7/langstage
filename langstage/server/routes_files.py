@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from cowork_dash.workspace.file_manager import FileManager
+from langstage.workspace.file_manager import FileManager
 
 
 class PathRequest(BaseModel):

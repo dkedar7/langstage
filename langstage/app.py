@@ -7,12 +7,12 @@ from pathlib import Path
 import uvicorn
 
 from langgraph_stream_parser import load_agent_spec
-from cowork_dash.config import AppConfig
-from cowork_dash.server.main import create_fastapi_app
+from langstage.config import AppConfig
+from langstage.server.main import create_fastapi_app
 
-# NOTE: cowork_dash.default_agent and cowork_dash.middleware are imported lazily
+# NOTE: langstage.default_agent and langstage.middleware are imported lazily
 # (inside the methods below) because they pull in `langchain`/`deepagents`, which
-# are optional. This keeps `import cowork_dash` working on a base install.
+# are optional. This keeps `import langstage` working on a base install.
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class CoworkApp:
         # Resolve show_canvas: explicit value wins; otherwise auto-detect from
         # the agent's middleware. show_files stays True unless explicitly off.
         if self.config.show_canvas is None:
-            from cowork_dash.middleware import agent_uses_canvas_middleware
+            from langstage.middleware import agent_uses_canvas_middleware
             self.config.show_canvas = agent_uses_canvas_middleware(self.agent)
         if self.config.show_files is None:
             self.config.show_files = True
@@ -89,7 +89,7 @@ class CoworkApp:
         # Default title and agent_name from the agent object's .name if not explicitly set
         inferred_name = getattr(self.agent, "name", None)
         if inferred_name:
-            if self.config.title == "Cowork Dash":
+            if self.config.title == "LangStage":
                 self.config.title = inferred_name
             if self.config.agent_name == "Agent":
                 self.config.agent_name = inferred_name
@@ -125,7 +125,7 @@ class CoworkApp:
         spec = self.config.agent_spec
         if spec:
             return load_agent_spec(spec)
-        from cowork_dash.default_agent import create_default_agent
+        from langstage.default_agent import create_default_agent
         return create_default_agent(self.config.workspace_root)
 
     def run(self, open_browser: bool = True) -> None:

@@ -75,7 +75,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cowork-dash-playwright-report
+          name: langstage-playwright-report
           path: frontend/playwright-report/
           retention-days: 7
 
@@ -94,6 +94,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cowork-dash-visual-report
+          name: langstage-visual-report
           path: frontend/playwright-report/
           retention-days: 7

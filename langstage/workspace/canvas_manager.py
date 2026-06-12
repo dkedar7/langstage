@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
-from cowork_dash.canvas import load_canvas_from_markdown, export_canvas_to_markdown
+from langstage.canvas import load_canvas_from_markdown, export_canvas_to_markdown
 
 
 class CanvasManager:

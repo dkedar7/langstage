@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — 2026-06-12
+
+**cowork-dash is now `langstage`** — the web stage (and namesake) of the LangStage family ("every stage for your LangGraph agent"). The rename also clears the collision with Anthropic's Claude Cowork.
+
+### Changed
+- Distribution `cowork-dash` → **`langstage`**; module `cowork_dash` → **`langstage`**; command `cowork-dash` → **`langstage`** (the old command remains as a deprecated alias, and a deprecated alias package keeps `import cowork_dash` working with a warning).
+- Canonical config vocabulary via langgraph-stream-parser 0.3: `LANGSTAGE_*` env vars, project `langstage.toml`, global `~/.langstage/config.toml`. The full legacy `DEEPAGENT_*` / `deepagents.toml` vocabulary still resolves as a deprecated fallback.
+- Parser pinned `>=0.3,<0.4`.
+
 ## 0.6.0 — 2026-06-10
 
 ### Added

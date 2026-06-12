@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from cowork_dash.workspace.canvas_manager import CanvasManager
+from langstage.workspace.canvas_manager import CanvasManager
 
 
 def create_canvas_router(canvas_manager: CanvasManager) -> APIRouter:

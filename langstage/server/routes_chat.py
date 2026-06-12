@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from langgraph_stream_parser.adapters import SessionAdapter
 
-from cowork_dash.workspace.file_manager import FileManager
+from langstage.workspace.file_manager import FileManager
 
 logger = logging.getLogger(__name__)
 

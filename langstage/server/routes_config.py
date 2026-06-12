@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from cowork_dash.config import AppConfig
+from langstage.config import AppConfig
 
 router = APIRouter(prefix="/api")
 

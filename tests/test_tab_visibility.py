@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from cowork_dash.config import AppConfig, _parse_optional_bool
-from cowork_dash.middleware import CanvasMiddleware, agent_uses_canvas_middleware
+from langstage.config import AppConfig, _parse_optional_bool
+from langstage.middleware import CanvasMiddleware, agent_uses_canvas_middleware
 
 
 # --- _parse_optional_bool -----------------------------------------------------

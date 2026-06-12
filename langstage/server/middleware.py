@@ -38,7 +38,7 @@ class BasicAuthMiddleware:
         response = Response(
             "Unauthorized",
             status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="cowork-dash"'},
+            headers={"WWW-Authenticate": 'Basic realm="langstage"'},
         )
         await response(scope, receive, send)
 

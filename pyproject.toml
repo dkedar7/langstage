@@ -3,17 +3,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cowork-dash"
-version = "0.6.0"
-description = "Web UI for deepagents — AI-powered workspace with streaming, file browser, and canvas"
+name = "langstage"
+version = "0.7.0"
+description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "langgraph-stream-parser>=0.2.2,<0.3",
-    # Any real use of cowork-dash already has langgraph in the env (it is the
+    "langgraph-stream-parser>=0.3,<0.4",
+    # Any real use of langstage already has langgraph in the env (it is the
     # thing being hosted); declaring it makes `run --demo` work on a bare install.
     "langgraph>=1.0",
     "watchfiles>=1.0",
@@ -36,13 +36,15 @@ dev = [
 ]
 
 [project.scripts]
-cowork-dash = "cowork_dash.cli:main"
+langstage = "langstage.cli:main"
+# Deprecated alias command — kept for one transition window.
+cowork-dash = "langstage.cli:main"
 
 [tool.hatch.build]
-artifacts = ["cowork_dash/static/**"]
+artifacts = ["langstage/static/**"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["cowork_dash"]
+packages = ["langstage", "cowork_dash"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

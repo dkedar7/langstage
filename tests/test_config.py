@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from cowork_dash.config import AppConfig
+from langstage.config import AppConfig
 
 
 def test_defaults():
@@ -10,7 +10,7 @@ def test_defaults():
     assert cfg.host == "localhost"
     assert cfg.port == 8050
     assert cfg.debug is False
-    assert cfg.title == "Cowork Dash"
+    assert cfg.title == "LangStage"
     assert cfg.subtitle == "AI-Powered Workspace"
     assert cfg.theme == "auto"
     assert cfg.welcome_message == ""

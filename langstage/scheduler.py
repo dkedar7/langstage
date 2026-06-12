@@ -1,4 +1,4 @@
-"""In-memory cron scheduler for cowork-dash.
+"""In-memory cron scheduler for langstage.
 
 Schedules recurring agent runs that live as long as the app process does (not
 persisted). Each job runs the configured agent — via the shared

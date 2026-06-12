@@ -7,7 +7,7 @@ import { Layout } from "./components/Layout";
 import type { AppConfig } from "./types";
 
 const DEFAULT_CONFIG: AppConfig = {
-  title: "Cowork Dash",
+  title: "LangStage",
   subtitle: "AI-Powered Workspace",
   welcome_message: "",
   theme: "auto",

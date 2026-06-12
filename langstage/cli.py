@@ -1,9 +1,9 @@
-"""CLI: cowork-dash run [OPTIONS]."""
+"""CLI: langstage run [OPTIONS]."""
 
 import click
 
-from cowork_dash.app import CoworkApp
-from cowork_dash.config import AppConfig
+from langstage.app import CoworkApp
+from langstage.config import AppConfig
 
 
 # The keyless echo agent shipped with the shared core — see `--demo`.
@@ -18,7 +18,7 @@ DEMO_AGENT_SPEC = "langgraph_stream_parser.demo.stub:graph"
 )
 @click.pass_context
 def main(ctx, show_config):
-    """Cowork Dash — Web UI for LangGraph agents."""
+    """LangStage — every stage for your LangGraph agent (web)."""
     if show_config:
         click.echo(AppConfig.resolve().describe())
         ctx.exit(0)
@@ -49,7 +49,7 @@ def main(ctx, show_config):
 @click.option("--show-files/--no-show-files", "show_files", default=None, help="Show or hide the Files tab (default: shown)")
 @click.option("--no-browser", is_flag=True, default=False, help="Don't auto-open browser")
 def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome_message, theme, agent_name, icon_url, auth_username, auth_password, save_workflow_prompt, run_workflow_prompt, create_workflow_prompt, custom_css, show_canvas, show_files, no_browser):
-    """Start the Cowork Dash server."""
+    """Start the LangStage server."""
     if demo:
         if agent_spec:
             raise click.UsageError("--demo and --agent are mutually exclusive.")

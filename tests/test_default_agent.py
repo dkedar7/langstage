@@ -16,11 +16,11 @@ def test_default_agent_imports_and_exposes_middleware():
     """The global default agent must be importable and carry its middleware list.
 
     We rely on the `.middleware` attribute for runtime canvas-tab auto-detection
-    ([app.py](cowork_dash/app.py) -> `agent_uses_canvas_middleware`). If that
+    ([app.py](langstage/app.py) -> `agent_uses_canvas_middleware`). If that
     attribute is lost, the UI silently defaults the Canvas tab off.
     """
-    from cowork_dash.default_agent import agent, AGENT_MIDDLEWARE
-    from cowork_dash.middleware import CanvasMiddleware, agent_uses_canvas_middleware
+    from langstage.default_agent import agent, AGENT_MIDDLEWARE
+    from langstage.middleware import CanvasMiddleware, agent_uses_canvas_middleware
 
     # Graph is ready
     assert hasattr(agent, "astream"), "Default agent must expose astream()"
@@ -40,7 +40,7 @@ def test_agent_tools_exclude_canvas_tools():
     """Canvas tools should only be injected via CanvasMiddleware — never baked
     into the core tool list. Regression guard against accidental re-duplication.
     """
-    from cowork_dash.default_agent import AGENT_TOOLS
+    from langstage.default_agent import AGENT_TOOLS
 
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in AGENT_TOOLS}
     canvas_tool_names = {

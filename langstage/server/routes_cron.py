@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from cowork_dash.scheduler import CronScheduler
+from langstage.scheduler import CronScheduler
 
 
 class CronCreate(BaseModel):

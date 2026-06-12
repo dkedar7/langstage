@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 
-from cowork_dash.scheduler import (
+from langstage.scheduler import (
     CronScheduler,
     validate_cron,
     set_scheduler,

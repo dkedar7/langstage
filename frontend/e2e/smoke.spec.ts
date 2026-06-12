@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('cowork-dash', () => {
+test.describe('langstage', () => {
   test('streams an agent reply in the chat', async ({ page }) => {
     await page.goto('/');
 
@@ -10,7 +10,7 @@ test.describe('cowork-dash', () => {
     await input.fill('hi');
     await input.press('Enter');
 
-    // User message echoed, then the stub agent's streamed reply. (cowork-dash
+    // User message echoed, then the stub agent's streamed reply. (langstage
     // appends context like the working dir to the message, so match the stable
     // "stub reply:" prefix rather than the exact echoed text.)
     await expect(page.getByText('hi', { exact: true }).first()).toBeVisible();

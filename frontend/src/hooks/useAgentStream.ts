@@ -20,7 +20,7 @@ import type {
   ConnectionStatus,
 } from "../types";
 
-const STORAGE_KEY = "cowork-dash-session";
+const STORAGE_KEY = "langstage-session";
 
 interface PersistedState {
   sessionId: string | null;

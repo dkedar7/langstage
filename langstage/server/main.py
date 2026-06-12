@@ -8,17 +8,17 @@ from fastapi.responses import FileResponse, Response
 
 from langgraph_stream_parser.adapters import SessionAdapter
 
-from cowork_dash.config import AppConfig
-from cowork_dash.server.middleware import add_middleware
-from cowork_dash.server.routes_config import create_config_router
-from cowork_dash.server.routes_files import create_files_router
-from cowork_dash.server.routes_canvas import create_canvas_router
-from cowork_dash.server.routes_session import create_session_router
-from cowork_dash.server.routes_chat import create_chat_router
-from cowork_dash.server.routes_cron import create_cron_router
-from cowork_dash.scheduler import CronScheduler, set_scheduler
-from cowork_dash.workspace.file_manager import FileManager
-from cowork_dash.workspace.canvas_manager import CanvasManager
+from langstage.config import AppConfig
+from langstage.server.middleware import add_middleware
+from langstage.server.routes_config import create_config_router
+from langstage.server.routes_files import create_files_router
+from langstage.server.routes_canvas import create_canvas_router
+from langstage.server.routes_session import create_session_router
+from langstage.server.routes_chat import create_chat_router
+from langstage.server.routes_cron import create_cron_router
+from langstage.scheduler import CronScheduler, set_scheduler
+from langstage.workspace.file_manager import FileManager
+from langstage.workspace.canvas_manager import CanvasManager
 
 
 def create_fastapi_app(
@@ -116,7 +116,7 @@ def create_fastapi_app(
         @app.get("/")
         async def placeholder():
             return {
-                "message": "Cowork Dash v2 backend is running.",
+                "message": "LangStage backend is running.",
                 "sse": "/api/stream?session_id=...",
                 "api": {
                     "config": "/api/config",

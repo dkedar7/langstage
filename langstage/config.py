@@ -1,4 +1,4 @@
-"""Configuration for cowork-dash.
+"""Configuration for langstage.
 
 `AppConfig` is a `HostConfig` subclass: it inherits the shared keys (agent_spec,
 workspace_root, host, port, debug, title) and adds cowork's UI keys, all
@@ -56,7 +56,7 @@ _CREATE_PROMPT = (
 class AppConfig(HostConfig):
     # Shared keys (agent_spec, workspace_root, host, port, debug) come from
     # HostConfig; cowork only overrides the title default and adds UI keys.
-    title: str = "Cowork Dash"
+    title: str = "LangStage"
     subtitle: str = "AI-Powered Workspace"
     welcome_message: str = ""
     theme: str = "auto"  # "light" | "dark" | "auto"

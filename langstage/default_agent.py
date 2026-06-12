@@ -9,9 +9,9 @@ import os
 
 from langgraph_stream_parser.demo import create_default_agent as _build_default_agent
 
-from cowork_dash.middleware import CanvasMiddleware
-from cowork_dash.scheduler import CRON_TOOLS
-from cowork_dash.tools import (
+from langstage.middleware import CanvasMiddleware
+from langstage.scheduler import CRON_TOOLS
+from langstage.tools import (
     bash,
     create_cell,
     delete_cell,
@@ -136,7 +136,7 @@ AGENT_MIDDLEWARE = [CanvasMiddleware()]
 agent = _build_default_agent(
     workspace=workspace_root,
     model=None,  # let deepagents pick its default model (prior behavior)
-    name="Cowork Dash",
+    name="LangStage",
     system_prompt=SYSTEM_PROMPT,
     tools=AGENT_TOOLS,
     middleware=AGENT_MIDDLEWARE,

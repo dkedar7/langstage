@@ -46,7 +46,7 @@ from langchain.agents.middleware.types import (
     ModelRequest,
 )
 
-from cowork_dash.tools import (
+from langstage.tools import (
     add_canvas_section,
     add_to_canvas,
     remove_canvas_item,

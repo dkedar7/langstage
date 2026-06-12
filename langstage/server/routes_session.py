@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from langgraph_stream_parser.adapters import SessionAdapter
 
-from cowork_dash.server.routes_chat import context_parts
+from langstage.server.routes_chat import context_parts
 
 
 class InjectRequest(BaseModel):
