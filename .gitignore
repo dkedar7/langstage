@@ -207,7 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 # Built frontend assets (rebuilt from frontend/ source)
-cowork_dash/static/
+langstage/static/
 
 # Workspace / scratch files
 .canvas/
