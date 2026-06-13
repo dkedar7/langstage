@@ -23,6 +23,8 @@ langstage is the web stage (and namesake) of the **LangStage family**: write you
 | Reference agent | [langstage-hermes](https://github.com/dkedar7/langstage-hermes) | `LANGSTAGE_AGENT_SPEC=langstage_hermes.agent:graph` on any stage |
 | Shared core | [langgraph-stream-parser](https://github.com/dkedar7/langgraph-stream-parser) | typed events + config resolver behind every stage |
 
+📖 **Full documentation:** <https://dkedar7.github.io/langstage-docs/>
+
 ## Features
 
 - **Chat** with real-time token streaming via WebSocket
