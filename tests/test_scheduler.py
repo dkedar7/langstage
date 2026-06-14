@@ -13,24 +13,17 @@ from langstage.scheduler import (
 )
 
 
-class FakeSession:
-    def __init__(self):
-        self.current_task = None
-        self.sse_connected = False
-        self.event_queue = asyncio.Queue()
-
-
-class FakeAdapter:
-    """Records submit_message calls; returns a headless session."""
+class FakeRunner:
+    """Records enqueue calls (the scheduler is now a producer onto the runner)."""
 
     def __init__(self):
-        self.calls = []
+        self.enqueued = []
 
-    def submit_message(self, session_id, content, *, context_parts=None):
-        self.calls.append(
-            {"session_id": session_id, "content": content, "context_parts": context_parts}
+    async def enqueue(self, *, title, prompt, agent_spec=None, parent_id=None):
+        self.enqueued.append(
+            {"title": title, "prompt": prompt, "agent_spec": agent_spec, "parent_id": parent_id}
         )
-        return FakeSession()
+        return "task-fake"
 
 
 # ── cron validation ──────────────────────────────────────────────────
@@ -52,7 +45,7 @@ def test_validate_cron_rejects_invalid():
 
 
 def test_add_list_remove():
-    s = CronScheduler(FakeAdapter())
+    s = CronScheduler(FakeRunner())
     job = s.add_job(name="daily report", cron="0 9 * * *", prompt="write the report")
     assert job.id
     assert job.created_by == "user"
@@ -68,7 +61,7 @@ def test_add_list_remove():
 
 
 def test_add_job_validates():
-    s = CronScheduler(FakeAdapter())
+    s = CronScheduler(FakeRunner())
     with pytest.raises(ValueError):
         s.add_job(name="x", cron="nope", prompt="p")
     with pytest.raises(ValueError):
@@ -80,36 +73,35 @@ def test_add_job_validates():
 # ── firing ───────────────────────────────────────────────────────────
 
 
-async def test_fire_runs_agent_on_its_own_session():
-    adapter = FakeAdapter()
-    s = CronScheduler(adapter)
+async def test_fire_enqueues_onto_runner():
+    runner = FakeRunner()
+    s = CronScheduler(runner)
     job = s.add_job(name="j", cron="* * * * *", prompt="do it")
 
     await s._fire(job)
 
-    assert len(adapter.calls) == 1
-    assert adapter.calls[0]["session_id"] == f"cron-{job.id}"
-    assert adapter.calls[0]["content"] == "do it"
-    assert any("Scheduled run" in p for p in adapter.calls[0]["context_parts"])
-    assert job.last_status == "ok"
+    assert len(runner.enqueued) == 1
+    assert runner.enqueued[0]["title"] == "j"
+    assert runner.enqueued[0]["prompt"] == "do it"
+    assert job.last_status == "queued"
     assert job.run_count == 1
     assert job.last_run
 
 
 async def test_run_now():
-    adapter = FakeAdapter()
-    s = CronScheduler(adapter)
+    runner = FakeRunner()
+    s = CronScheduler(runner)
     job = s.add_job(name="j", cron="* * * * *", prompt="p")
     assert await s.run_now(job.id) is True
     assert await s.run_now("missing") is False
-    assert len(adapter.calls) == 1
+    assert len(runner.enqueued) == 1
 
 
 # ── agent tools ──────────────────────────────────────────────────────
 
 
 def test_tools_schedule_list_cancel():
-    s = CronScheduler(FakeAdapter())
+    s = CronScheduler(FakeRunner())
     set_scheduler(s)
     try:
         out = schedule_run.invoke({"name": "nightly", "cron": "0 0 * * *", "prompt": "summarize"})
@@ -126,7 +118,7 @@ def test_tools_schedule_list_cancel():
 
 
 def test_tool_reports_invalid_cron():
-    s = CronScheduler(FakeAdapter())
+    s = CronScheduler(FakeRunner())
     set_scheduler(s)
     try:
         out = schedule_run.invoke({"name": "x", "cron": "bad", "prompt": "p"})

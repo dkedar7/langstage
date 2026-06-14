@@ -72,10 +72,12 @@ class CronJob:
 
 
 class CronScheduler:
-    """Runs ``CronJob``s on the app's asyncio loop. In-memory only."""
+    """Schedules ``CronJob``s on the app's asyncio loop. In-memory schedules;
+    on each fire it *enqueues* a task onto the durable TaskRunner (the runner
+    owns execution, persistence, and the board). The scheduler is a producer."""
 
-    def __init__(self, adapter: Any):
-        self._adapter = adapter
+    def __init__(self, runner: Any):
+        self._runner = runner
         self._jobs: dict[str, CronJob] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._started = False
@@ -144,7 +146,10 @@ class CronScheduler:
     def _compute_next(expr: str) -> Optional[str]:
         if croniter is None:  # pragma: no cover
             return None
-        nxt = croniter(expr, datetime.now()).get_next(datetime)
+        # Compute entirely in UTC: croniter interprets the cron expression
+        # relative to its (tz-aware) base, so the displayed next_run and the
+        # fire delay agree regardless of the host's local timezone.
+        nxt = croniter(expr, datetime.now(timezone.utc)).get_next(datetime)
         return nxt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
     def _start_job(self, job: CronJob) -> None:
@@ -152,11 +157,12 @@ class CronScheduler:
 
     async def _run_loop(self, job: CronJob) -> None:
         try:
-            itr = croniter(job.cron, datetime.now())
+            # UTC base + UTC "now" for the delay → no local/UTC skew.
+            itr = croniter(job.cron, datetime.now(timezone.utc))
             while True:
                 nxt = itr.get_next(datetime)
                 job.next_run = nxt.astimezone(timezone.utc).isoformat(timespec="seconds")
-                delay = (nxt - datetime.now()).total_seconds()
+                delay = (nxt - datetime.now(timezone.utc)).total_seconds()
                 if delay > 0:
                     await asyncio.sleep(delay)
                 await self._fire(job)
@@ -167,27 +173,20 @@ class CronScheduler:
             job.last_status = "error: loop crashed"
 
     async def _fire(self, job: CronJob) -> None:
-        job.last_status = "running"
+        # Producer: enqueue a task onto the durable runner and return. The
+        # runner executes it on the board (queued → ongoing → done), so the
+        # scheduler no longer runs the agent or drains queues itself.
         try:
-            session = self._adapter.submit_message(
-                job.session_id, job.prompt,
-                context_parts=[f"[Scheduled run: {job.name}]"],
+            await self._runner.enqueue(
+                title=job.name,
+                prompt=job.prompt,
             )
-            task = getattr(session, "current_task", None)
-            if task is not None:
-                await task
-            # Headless run with no SSE consumer: drain the queue so it can't
-            # grow unbounded across repeated fires.
-            if not getattr(session, "sse_connected", False):
-                q = getattr(session, "event_queue", None)
-                while q is not None and not q.empty():
-                    q.get_nowait()
-            job.last_status = "ok"
+            job.last_status = "queued"
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
             job.last_status = f"error: {type(exc).__name__}: {exc}"
-            logger.exception("cron job %s fire failed", job.id)
+            logger.exception("cron job %s enqueue failed", job.id)
         finally:
             job.last_run = _now_iso()
             job.run_count += 1

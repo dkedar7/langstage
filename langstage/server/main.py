@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
 from langgraph_stream_parser.adapters import SessionAdapter
+from langgraph_stream_parser.tasks import TaskRunner, set_runner
 
 from langstage.config import AppConfig
 from langstage.server.middleware import add_middleware
@@ -16,7 +18,9 @@ from langstage.server.routes_canvas import create_canvas_router
 from langstage.server.routes_session import create_session_router
 from langstage.server.routes_chat import create_chat_router
 from langstage.server.routes_cron import create_cron_router
+from langstage.server.routes_tasks import create_tasks_router
 from langstage.scheduler import CronScheduler, set_scheduler
+from langstage.tasks import SqliteTaskStore
 from langstage.workspace.file_manager import FileManager
 from langstage.workspace.canvas_manager import CanvasManager
 
@@ -60,24 +64,42 @@ def create_fastapi_app(
     app.include_router(create_session_router(adapter))
     app.include_router(create_chat_router(adapter, file_manager=file_manager))
 
-    # In-memory cron scheduler — recurring agent runs while the app is alive.
+    # Durable task board: a SQLite-backed store + the shared TaskRunner worker
+    # pool. The runner owns async task execution (queued → ongoing → done);
+    # registered process-globally so agent tools can reach it later.
+    task_db = workspace / ".langstage" / "tasks.db"
+    task_db.parent.mkdir(parents=True, exist_ok=True)
+    task_store = SqliteTaskStore(task_db)
+    task_concurrency = int(os.getenv("LANGSTAGE_TASK_CONCURRENCY", "3"))
+    runner = TaskRunner(adapter, task_store, concurrency=task_concurrency)
+    set_runner(runner)
+    app.include_router(create_tasks_router(runner, task_store))
+
+    # In-memory cron schedules — now a *producer* that enqueues onto the runner.
     # Registered process-globally so the agent's schedule_run tool can reach it.
-    scheduler = CronScheduler(adapter)
+    scheduler = CronScheduler(runner)
     set_scheduler(scheduler)
     app.include_router(create_cron_router(scheduler))
 
     @app.on_event("startup")
-    async def _start_scheduler() -> None:
+    async def _start_services() -> None:
+        await task_store.setup()
+        await runner.start()
         scheduler.start()
 
     @app.on_event("shutdown")
-    async def _stop_scheduler() -> None:
+    async def _stop_services() -> None:
         scheduler.shutdown()
+        await runner.shutdown()
+        await task_store.close()
         set_scheduler(None)
+        set_runner(None)
 
     # Expose for testing
     app.state.session_adapter = adapter
     app.state.scheduler = scheduler
+    app.state.task_runner = runner
+    app.state.task_store = task_store
 
     # Serve custom CSS (always register so it returns 404 instead of SPA catch-all)
     @app.get("/api/custom-css")
