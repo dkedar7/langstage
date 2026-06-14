@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0 — 2026-06-14
+
+Adopt AG-UI: widen the langgraph-stream-parser ceiling to <0.5 and add an [agui] extra so this surface's agent can be served over AG-UI via langstage-agui. Additive; no runtime changes.
+
 ## 0.7.0 — 2026-06-12
 
 **cowork-dash is now `langstage`** — the web stage (and namesake) of the LangStage family ("every stage for your LangGraph agent"). The rename also clears the collision with Anthropic's Claude Cowork.
