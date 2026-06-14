@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.0 — 2026-06-14
+
+**Async task board** — delegate tasks to background copies of the agent, track them on a Kanban board, and interact with each run.
+
+### Added
+- **Task board** (new **Board** tab): delegate a task from the UI and watch it move `queued → ongoing → review_needed → done` (cancel/retry per card). Backed by the core 0.6 task engine (`TaskRunner` + a durable SQLite store) — non-blocking, single-process, no extra infra.
+- **`/api/tasks`** REST: list/get/create/cancel/retry, plus `GET /{id}/events`, `POST /{id}/resume` (HITL approve/reject), `POST /{id}/message` (talk-back).
+- **Task detail pop-up**: click a card to replay/live-tail its agent's full event stream, approve/reject a paused task, and send follow-ups.
+- **Agent self-delegation**: the default agent now carries `start/check/list/update/cancel_async_task` tools, so it can spawn async sub-tasks (tracked on the board with parent links).
+- The cron **scheduler** now enqueues onto the task board (durable) and its timezone handling is fixed (UTC throughout).
+
+### Changed
+- Parser pinned `>=0.6,<0.7` (+ `[agui]`); added `aiosqlite`.
+- The **"Tasks"** tab (the todo/plan list) is renamed **"Plan"** (the async tasks live on the new Board tab).
+
+### Notes
+- Runs on the existing in-memory checkpointer; task rows + transcripts persist in SQLite (the board survives a restart). Durable mid-run checkpoint resume is a later pass.
+- Single-process: run one server worker.
+
 ## 0.8.0 — 2026-06-14
 
 Adopt AG-UI: widen the langgraph-stream-parser ceiling to <0.5 and add an [agui] extra so this surface's agent can be served over AG-UI via langstage-agui. Additive; no runtime changes.
