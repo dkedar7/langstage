@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.7.0"
+version = "0.8.0"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "langgraph-stream-parser>=0.3,<0.4",
+    "langgraph-stream-parser>=0.3,<0.5",
     # Any real use of langstage already has langgraph in the env (it is the
     # thing being hosted); declaring it makes `run --demo` work on a bare install.
     "langgraph>=1.0",
@@ -27,6 +27,9 @@ dependencies = [
 [project.optional-dependencies]
 deepagents = [
     "deepagents>=0.3",
+]
+agui = [
+    "langgraph-stream-parser[agui]>=0.4,<0.5",
 ]
 dev = [
     "pytest>=8",
