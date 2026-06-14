@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_state  ON tasks(state);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
+
+CREATE TABLE IF NOT EXISTS task_events (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    event   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_events ON task_events(task_id, id);
 """
 
 
@@ -180,3 +187,25 @@ class SqliteTaskStore:
         )
         await db.commit()
         return cur.rowcount or 0
+
+    async def append_events(self, task_id: str, events: list[dict[str, Any]]) -> None:
+        db = self._conn()
+        await db.executemany(
+            "INSERT INTO task_events (task_id, event) VALUES (?, ?)",
+            [(task_id, json.dumps(e)) for e in events],
+        )
+        await db.commit()
+
+    async def get_events(self, task_id: str) -> list[dict[str, Any]]:
+        db = self._conn()
+        async with db.execute(
+            "SELECT event FROM task_events WHERE task_id = ? ORDER BY id", (task_id,)
+        ) as cur:
+            rows = await cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                out.append(json.loads(r["event"]))
+            except (ValueError, TypeError):  # pragma: no cover - defensive
+                continue
+        return out
