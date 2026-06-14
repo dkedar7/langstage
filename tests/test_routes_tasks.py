@@ -98,3 +98,42 @@ async def test_retry_done_task_is_400(ctx):
     await _wait(store, tid, DONE)
     # a completed task is not retryable
     assert (await client.post(f"/api/tasks/{tid}/retry")).status_code == 400
+
+
+async def test_events_endpoint(ctx):
+    client, store = ctx
+    r = await client.post("/api/tasks", json={"prompt": "hi"})
+    tid = r.json()["task_id"]
+    await _wait(store, tid, DONE)
+    ev = await client.get(f"/api/tasks/{tid}/events")
+    assert ev.status_code == 200
+    types = [e["type"] for e in ev.json()]
+    assert "content" in types and types[-1] == "complete"
+
+
+async def test_events_404(ctx):
+    client, _ = ctx
+    assert (await client.get("/api/tasks/nope/events")).status_code == 404
+
+
+async def test_message_followup_reruns(ctx):
+    client, store = ctx
+    r = await client.post("/api/tasks", json={"prompt": "hi"})
+    tid = r.json()["task_id"]
+    await _wait(store, tid, DONE)
+    m = await client.post(f"/api/tasks/{tid}/message", json={"message": "now do more"})
+    assert m.status_code == 200
+    await _wait(store, tid, DONE)
+    ev = (await client.get(f"/api/tasks/{tid}/events")).json()
+    assert sum(1 for e in ev if e["type"] == "complete") == 2  # ran twice
+
+
+async def test_resume_400_when_not_review(ctx):
+    client, store = ctx
+    r = await client.post("/api/tasks", json={"prompt": "hi"})
+    tid = r.json()["task_id"]
+    await _wait(store, tid, DONE)
+    res = await client.post(
+        f"/api/tasks/{tid}/resume", json={"decisions": [{"type": "approve"}]}
+    )
+    assert res.status_code == 400  # not awaiting review

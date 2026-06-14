@@ -6,7 +6,7 @@ review gate) land in Slice 2.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -20,6 +20,14 @@ class TaskCreate(BaseModel):
     title: Optional[str] = None
     agent_spec: Optional[str] = None
     parent_id: Optional[str] = None
+
+
+class ResumeBody(BaseModel):
+    decisions: list[dict[str, Any]]
+
+
+class MessageBody(BaseModel):
+    message: str
 
 
 def create_tasks_router(runner: TaskRunner, store: TaskStore) -> APIRouter:
@@ -59,6 +67,28 @@ def create_tasks_router(runner: TaskRunner, store: TaskStore) -> APIRouter:
     async def retry_task(task_id: str):
         if not await runner.retry(task_id):
             raise HTTPException(status_code=400, detail="Task not found or not retryable")
+        return {"ok": True}
+
+    @router.get("/{task_id}/events")
+    async def get_task_events(task_id: str):
+        if await store.get(task_id) is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return await store.get_events(task_id)
+
+    @router.post("/{task_id}/resume")
+    async def resume_task(task_id: str, body: ResumeBody):
+        # The frontend builds the decisions (approve/reject/edit/respond) the
+        # same way the chat InterruptDialog does, then posts them here.
+        if not await runner.resume(task_id, body.decisions):
+            raise HTTPException(status_code=400, detail="Task is not awaiting review")
+        return {"ok": True}
+
+    @router.post("/{task_id}/message")
+    async def message_task(task_id: str, body: MessageBody):
+        if not await runner.followup(task_id, body.message):
+            raise HTTPException(
+                status_code=400, detail="Task not found or not in a state that accepts follow-ups"
+            )
         return {"ok": True}
 
     return router

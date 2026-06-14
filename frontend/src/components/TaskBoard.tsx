@@ -11,6 +11,7 @@ import {
   KanbanSquare,
 } from "lucide-react";
 import type { Task, TaskState } from "../types";
+import { TaskDetailModal } from "./TaskDetailModal";
 
 interface TaskBoardProps {
   tasks: Task[];
@@ -53,13 +54,19 @@ function TaskCard({
   task,
   onCancel,
   onRetry,
+  onOpen,
 }: {
   task: Task;
   onCancel: (id: string) => void;
   onRetry: (id: string) => void;
+  onOpen: (id: string) => void;
 }) {
   return (
-    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5">
+    <div
+      onClick={() => onOpen(task.task_id)}
+      title="Open task"
+      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 cursor-pointer hover:border-[var(--color-primary)] transition-colors"
+    >
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-medium text-[var(--color-text)] truncate min-w-0">
           {task.title}
@@ -67,7 +74,7 @@ function TaskCard({
         <div className="flex items-center gap-1 shrink-0">
           {CANCELLABLE.includes(task.state) && (
             <button
-              onClick={() => onCancel(task.task_id)}
+              onClick={(e) => { e.stopPropagation(); onCancel(task.task_id); }}
               title="Cancel"
               className="p-0.5 rounded hover:bg-[var(--color-surface-3)] text-[var(--color-text-secondary)] hover:text-red-500"
             >
@@ -76,7 +83,7 @@ function TaskCard({
           )}
           {RETRYABLE.includes(task.state) && (
             <button
-              onClick={() => onRetry(task.task_id)}
+              onClick={(e) => { e.stopPropagation(); onRetry(task.task_id); }}
               title="Retry"
               className="p-0.5 rounded hover:bg-[var(--color-surface-3)] text-[var(--color-text-secondary)]"
             >
@@ -105,6 +112,7 @@ export function TaskBoard({ tasks, onCreate, onCancel, onRetry }: TaskBoardProps
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const canSubmit = prompt.trim() && !submitting;
 
@@ -167,7 +175,13 @@ export function TaskBoard({ tasks, onCreate, onCancel, onRetry }: TaskBoardProps
                 </div>
                 <div className="space-y-2 overflow-y-auto">
                   {items.map((t) => (
-                    <TaskCard key={t.task_id} task={t} onCancel={onCancel} onRetry={onRetry} />
+                    <TaskCard
+                      key={t.task_id}
+                      task={t}
+                      onCancel={onCancel}
+                      onRetry={onRetry}
+                      onOpen={setOpenId}
+                    />
                   ))}
                 </div>
               </div>
@@ -175,6 +189,8 @@ export function TaskBoard({ tasks, onCreate, onCancel, onRetry }: TaskBoardProps
           })}
         </div>
       )}
+
+      {openId && <TaskDetailModal taskId={openId} onClose={() => setOpenId(null)} />}
     </div>
   );
 }

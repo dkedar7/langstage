@@ -76,7 +76,7 @@ export function Layout(props: LayoutProps) {
   const showCanvas = props.config.show_canvas;
   const showFiles = props.config.show_files;
 
-  // If the currently active tab gets hidden by config, fall back to Tasks.
+  // If the currently active tab gets hidden by config, fall back to Plan.
   useEffect(() => {
     if (activeTab === "canvas" && !showCanvas) setActiveTab("tasks");
     else if (activeTab === "files" && !showFiles) setActiveTab("tasks");
@@ -162,7 +162,7 @@ export function Layout(props: LayoutProps) {
                   }`}
                 >
                   <ListTodo size={13} />
-                  Tasks
+                  Plan
                   {props.todos.length > 0 && (
                     <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
                       {props.todos.length}

@@ -8,6 +8,7 @@ load_dotenv()
 import os
 
 from langgraph_stream_parser.demo import create_default_agent as _build_default_agent
+from langgraph_stream_parser.tasks import TASK_TOOLS
 
 from langstage.middleware import CanvasMiddleware
 from langstage.scheduler import CRON_TOOLS
@@ -125,6 +126,7 @@ AGENT_TOOLS = [
     display_inline,
     think_tool,
     *CRON_TOOLS,  # schedule_run / list_scheduled_runs / cancel_scheduled_run
+    *TASK_TOOLS,  # start/check/list/update/cancel_async_task — agent self-delegation
 ]
 
 # Middleware list — canvas is opt-in via CanvasMiddleware.

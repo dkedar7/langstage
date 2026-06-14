@@ -105,6 +105,33 @@ async def test_list_filters(tmp_path):
         await store.close()
 
 
+async def test_events_append_get_order(tmp_path):
+    store = SqliteTaskStore(tmp_path / "t.db")
+    await store.setup()
+    try:
+        await store.append_events("a", [{"type": "content", "content": "hi"}, {"type": "complete"}])
+        await store.append_events("a", [{"type": "x"}])
+        assert [e["type"] for e in await store.get_events("a")] == ["content", "complete", "x"]
+        assert await store.get_events("missing") == []
+    finally:
+        await store.close()
+
+
+async def test_events_durable_across_reopen(tmp_path):
+    path = tmp_path / "t.db"
+    s1 = SqliteTaskStore(path)
+    await s1.setup()
+    await s1.append_events("a", [{"type": "content", "content": "x"}, {"type": "complete"}])
+    await s1.close()
+
+    s2 = SqliteTaskStore(path)
+    await s2.setup()
+    try:
+        assert len(await s2.get_events("a")) == 2
+    finally:
+        await s2.close()
+
+
 async def test_update_rejects_unknown_column(tmp_path):
     import pytest
 
