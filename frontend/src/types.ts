@@ -192,6 +192,31 @@ export interface CronJob {
   session_id: string;
 }
 
+export type TaskState =
+  | "queued"
+  | "ongoing"
+  | "review_needed"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+export interface Task {
+  task_id: string;
+  parent_id: string | null;
+  title: string;
+  prompt: string;
+  agent_spec: string | null;
+  state: TaskState;
+  thread_id: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  result: string | null;
+  artifacts: unknown[] | null;
+  error: string | null;
+  interrupt: Record<string, unknown> | null;
+}
+
 export interface FileEntry {
   name: string;
   path: string;

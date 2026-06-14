@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import { FolderTree, Palette, ListTodo, AlarmClock, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
+import { FolderTree, Palette, ListTodo, AlarmClock, KanbanSquare, PanelRightClose, PanelRightOpen, Sparkles } from "lucide-react";
 import type {
   ChatMessage,
   TodoItem,
@@ -11,6 +11,7 @@ import type {
   Decision,
   CanvasItem,
   CronJob,
+  Task,
   FileEntry,
   FilePreview,
   ConnectionStatus,
@@ -21,12 +22,13 @@ import { FileBrowser } from "./FileBrowser";
 import { FileViewer } from "./FileViewer";
 import { CanvasPanel } from "./CanvasPanel";
 import { SchedulesPanel } from "./SchedulesPanel";
+import { TaskBoard } from "./TaskBoard";
 import { TodoPanel } from "./TodoPanel";
 import { InterruptDialog } from "./InterruptDialog";
 import { ThemeToggle } from "./ThemeToggle";
 import { StatusBar } from "./StatusBar";
 
-type RightTab = "files" | "canvas" | "tasks" | "schedules";
+type RightTab = "files" | "canvas" | "tasks" | "board" | "schedules";
 
 interface LayoutProps {
   config: AppConfig;
@@ -60,6 +62,10 @@ interface LayoutProps {
   onCreateCron: (name: string, cron: string, prompt: string) => Promise<void>;
   onDeleteCron: (id: string) => void;
   onRunCron: (id: string) => void;
+  tasks: Task[];
+  onCreateTask: (prompt: string, title?: string) => Promise<void>;
+  onCancelTask: (id: string) => void;
+  onRetryTask: (id: string) => void;
   onNewSession: () => void;
 }
 
@@ -210,6 +216,27 @@ export function Layout(props: LayoutProps) {
                     </span>
                   )}
                 </button>
+                <button
+                  onClick={() => setActiveTab("board")}
+                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
+                    activeTab === "board"
+                      ? "border-[var(--color-text)] text-[var(--color-text)]"
+                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+                  }`}
+                >
+                  <KanbanSquare size={13} />
+                  Board
+                  {(() => {
+                    const active = props.tasks.filter(
+                      (t) => t.state === "queued" || t.state === "ongoing" || t.state === "review_needed"
+                    ).length;
+                    return active > 0 ? (
+                      <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
+                        {active}
+                      </span>
+                    ) : null;
+                  })()}
+                </button>
               </div>
 
               <div className="flex-1 overflow-hidden">
@@ -244,6 +271,14 @@ export function Layout(props: LayoutProps) {
                       onDelete={props.onDeletePath}
                     />
                   )
+                )}
+                {activeTab === "board" && (
+                  <TaskBoard
+                    tasks={props.tasks}
+                    onCreate={props.onCreateTask}
+                    onCancel={props.onCancelTask}
+                    onRetry={props.onRetryTask}
+                  />
                 )}
                 {activeTab === "schedules" && (
                   <SchedulesPanel
