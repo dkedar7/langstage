@@ -3,6 +3,7 @@ import { useAgentStream } from "./hooks/useAgentStream";
 import { useFileTree } from "./hooks/useFileTree";
 import { useCanvas } from "./hooks/useCanvas";
 import { useCron } from "./hooks/useCron";
+import { useTasks } from "./hooks/useTasks";
 import { Layout } from "./components/Layout";
 import type { AppConfig } from "./types";
 
@@ -93,6 +94,13 @@ export default function App() {
 
   const { jobs: cronJobs, createJob, deleteJob, runNow } = useCron();
 
+  const {
+    tasks,
+    createTask,
+    cancelTask,
+    retryTask,
+  } = useTasks();
+
   const handleSend = useCallback(
     (content: string) => sendMessage(content, { cwd: workspacePath }),
     [sendMessage, workspacePath]
@@ -144,6 +152,10 @@ export default function App() {
       onCreateCron={createJob}
       onDeleteCron={deleteJob}
       onRunCron={runNow}
+      tasks={tasks}
+      onCreateTask={createTask}
+      onCancelTask={cancelTask}
+      onRetryTask={retryTask}
       onNewSession={resetSession}
     />
   );
