@@ -86,12 +86,16 @@ async def test_server_startup_upgrades_to_sqlite(tmp_path):
     config = AppConfig.resolve(overrides={"workspace_root": tmp_path})
     app = create_fastapi_app(agent=graph, workspace=tmp_path, config=config)
 
-    await app.router.startup()
+    # Run the registered startup/shutdown handlers directly (portable across
+    # Starlette versions — `router.startup()` isn't available everywhere).
+    for handler in app.router.on_startup:
+        await handler()
     try:
         assert isinstance(graph.checkpointer, AsyncSqliteSaver)
         assert (tmp_path / ".langstage" / "checkpoints.db").exists()
     finally:
-        await app.router.shutdown()
+        for handler in app.router.on_shutdown:
+            await handler()
 
 
 def test_langstage_tools_bundle():
