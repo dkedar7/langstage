@@ -120,6 +120,11 @@ class CoworkApp:
                 from langgraph.checkpoint.memory import InMemorySaver
 
                 self.agent.checkpointer = InMemorySaver()
+                # Mark it as ours so the server can upgrade it to a durable
+                # SQLite saver at startup (which needs the event loop). A
+                # user-supplied checkpointer is never marked, so it's never
+                # replaced.
+                self.agent._langstage_auto_checkpointer = True
                 logger.info(
                     "Agent had no checkpointer; attached an in-memory one "
                     "(enables conversation memory + interrupts). Pass your own "

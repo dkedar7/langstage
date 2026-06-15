@@ -84,6 +84,28 @@ def create_fastapi_app(
     @app.on_event("startup")
     async def _start_services() -> None:
         await task_store.setup()
+        # Upgrade an auto-attached in-memory checkpointer to a durable SQLite
+        # one so conversation/interrupt state + the task review gate survive a
+        # restart (and orphaned tasks resume from their last checkpoint). Only
+        # touches checkpointers LangStage attached (the sentinel) — never a
+        # user-supplied one.
+        if getattr(agent, "_langstage_auto_checkpointer", False) is True:
+            try:
+                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+                ckpt_db = workspace / ".langstage" / "checkpoints.db"
+                ckpt_db.parent.mkdir(parents=True, exist_ok=True)
+                ckpt_cm = AsyncSqliteSaver.from_conn_string(str(ckpt_db))
+                saver = await ckpt_cm.__aenter__()
+                await saver.setup()
+                agent.checkpointer = saver
+                app.state._ckpt_cm = ckpt_cm
+            except Exception:  # noqa: BLE001 - keep the in-memory saver on failure
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Durable checkpointer unavailable; keeping in-memory.",
+                    exc_info=True,
+                )
         await runner.start()
         scheduler.start()
 
@@ -92,6 +114,12 @@ def create_fastapi_app(
         scheduler.shutdown()
         await runner.shutdown()
         await task_store.close()
+        ckpt_cm = getattr(app.state, "_ckpt_cm", None)
+        if ckpt_cm is not None:
+            try:
+                await ckpt_cm.__aexit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                pass
         set_scheduler(None)
         set_runner(None)
 

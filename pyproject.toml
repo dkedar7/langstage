@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.10.0"
+version = "0.11.0"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -24,6 +24,9 @@ dependencies = [
     "croniter>=2.0",
     # Durable task store for the async task board (TaskRunner persistence).
     "aiosqlite>=0.19",
+    # Durable agent checkpointer (auto-attached) so conversation/interrupt state
+    # and the task review gate survive restarts.
+    "langgraph-checkpoint-sqlite>=2.0",
 ]
 
 [project.optional-dependencies]
