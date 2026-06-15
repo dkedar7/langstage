@@ -110,13 +110,27 @@ class CoworkApp:
             else:
                 logger.warning("custom_css file not found: %s", css_path)
 
-        # Check for checkpointer
+        # Ensure a checkpointer. Conversation memory, human-in-the-loop
+        # interrupts, and the task board's review gate all need threaded state.
+        # Many bring-your-own graphs are compiled without one, so auto-attach an
+        # in-memory default (same approach as the AG-UI bridge) instead of
+        # silently degrading. The user can still supply their own (durable) one.
         if not _has_checkpointer(self.agent):
-            logger.warning(
-                "Agent has no checkpointer. Human-in-the-loop interrupts and "
-                "conversation persistence will not work. Pass "
-                "checkpointer=MemorySaver() to enable these features."
-            )
+            try:
+                from langgraph.checkpoint.memory import InMemorySaver
+
+                self.agent.checkpointer = InMemorySaver()
+                logger.info(
+                    "Agent had no checkpointer; attached an in-memory one "
+                    "(enables conversation memory + interrupts). Pass your own "
+                    "checkpointer for durability across restarts."
+                )
+            except Exception:  # noqa: BLE001 - best effort; warn if it won't attach
+                logger.warning(
+                    "Agent has no checkpointer and one could not be attached. "
+                    "Human-in-the-loop interrupts and conversation persistence "
+                    "will not work. Compile your graph with a checkpointer."
+                )
 
     def _resolve_agent(self, agent):
         """Resolve agent from argument, spec, env var, or create default."""

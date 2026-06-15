@@ -22,6 +22,8 @@ def test_legacy_submodules_alias_the_new_ones():
 
 def test_legacy_public_api():
     import cowork_dash
+    import langstage
 
     assert hasattr(cowork_dash, "CoworkApp")
-    assert cowork_dash.__version__ == "0.7.0"
+    # The shim mirrors the real package's version (don't hardcode — it rots).
+    assert cowork_dash.__version__ == langstage.__version__
