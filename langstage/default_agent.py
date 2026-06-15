@@ -149,6 +149,9 @@ agent = _build_default_agent(
 # middleware into the compiled graph, so we stash the originals so that
 # agent_uses_canvas_middleware() can still detect them.
 agent.middleware = AGENT_MIDDLEWARE
+# The demo factory gives us an in-memory checkpointer; mark it so the server
+# upgrades it to a durable SQLite one at startup (survives restarts).
+agent._langstage_auto_checkpointer = True
 
 
 def create_default_agent(workspace: Path):

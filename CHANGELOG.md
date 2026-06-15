@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.11.0 — 2026-06-15
+
+### Changed
+- **Durable agent checkpointer.** The auto-attached checkpointer is now upgraded
+  to a SQLite-backed `AsyncSqliteSaver` (`<workspace>/.langstage/checkpoints.db`)
+  at server startup, so conversation + interrupt state and the task review gate
+  **survive restarts**, and orphaned tasks resume from their last checkpoint
+  instead of from scratch. Only checkpointers LangStage auto-attached are
+  upgraded — a user-supplied checkpointer is never replaced. Falls back to
+  in-memory if the SQLite saver can't initialize.
+- Picks up `langgraph-stream-parser` 0.6.1 (sharper async-delegation tool
+  descriptions, so the agent reaches for the task board for long/background work).
+
+### Added
+- Dependency: `langgraph-checkpoint-sqlite`.
+
 ## 0.10.0 — 2026-06-15
 
 **Bring-your-own-agent integration** — make pointing `--agent` at any LangGraph graph "just work," and tell users exactly what lights up.
