@@ -168,7 +168,7 @@ export function TaskBoard({ tasks, onCreate, onCancel, onRetry }: TaskBoardProps
           {COLUMNS.map((col) => {
             const items = inCol(col.states);
             return (
-              <div key={col.key} className="flex flex-col w-44 shrink-0">
+              <div key={col.key} className="flex flex-col flex-1 min-w-[160px]">
                 <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
                   <span>{col.label}</span>
                   <span className="tabular-nums">{items.length}</span>

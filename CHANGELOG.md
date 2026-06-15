@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1 — 2026-06-14
+
+### Fixed
+- Task board columns now expand to fill the panel width (they were fixed-width, leaving dead space when the right panel was widened).
+
+### Docs
+- README: documented the task board (delegate, live-tail detail pop-up, review gate, agent self-delegation, REST API).
+
 ## 0.9.0 — 2026-06-14
 
 **Async task board** — delegate tasks to background copies of the agent, track them on a Kanban board, and interact with each run.
