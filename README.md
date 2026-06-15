@@ -120,6 +120,38 @@ The middleware injects five tools (`add_to_canvas`, `update_canvas_item`, `remov
 
 To force the tabs on/off regardless of middleware: `--show-canvas/--no-show-canvas`, `--show-files/--no-show-files`, or the Python-API `show_canvas` / `show_files` kwargs.
 
+## Bring your own agent
+
+Point `--agent` at any compiled LangGraph graph — `langstage run --agent my_agent.py:graph`. Most of the UI works immediately; a few features light up when your agent follows a convention or carries a tool.
+
+**Works out of the box (no agent changes):** chat with token streaming, tool-call visualization, the file browser, the **task board** (delegate any agent from the UI), and **schedules**.
+
+**Auto-handled:** if your graph has no checkpointer, LangStage attaches an in-memory one so conversation memory, human-in-the-loop interrupts, and the task review gate work. Supply your own checkpointer for durability across restarts.
+
+**Unlock the rest:**
+
+| Feature | How |
+| --- | --- |
+| **Plan** tab populates | agent calls `write_todos` (the deepagents convention) |
+| **Rich inline content** (charts, images, DataFrames, HTML) | a tool returns the `display_inline` shape |
+| **Canvas** tab | attach `CanvasMiddleware` to your agent |
+| **Agent self-delegation + agent-created schedules** | add the host tools — `from langstage import LANGSTAGE_TOOLS` → `tools=[*my_tools, *LANGSTAGE_TOOLS]` |
+| **Human-in-the-loop review** | use LangGraph `interrupt()` (or deepagents `interrupt_on=...`) |
+
+**Preflight your agent** with the built-in doctor — it loads your spec and reports exactly what will and won't light up:
+
+```bash
+langstage check --agent my_agent.py:graph
+```
+
+```
+[ ok ] loads
+[ ok ] checkpointer present (memory + interrupts + review gate)
+[warn] no CanvasMiddleware - Canvas hidden (attach it to enable)
+[ ok ] write_todos present - Plan tab will populate
+[warn] async task tools not found - add `from langstage import LANGSTAGE_TOOLS` ...
+```
+
 ## Task board
 
 The **Board** tab turns LangStage into a lightweight agent control room: delegate a task and it runs on a background copy of your agent while you keep chatting. No extra infrastructure — tasks are persisted in a local SQLite file (the board survives a restart) and executed by an in-process worker pool, built on the [`langgraph-stream-parser`](https://github.com/dkedar7/langgraph-stream-parser) task engine.

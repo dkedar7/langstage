@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.0 — 2026-06-15
+
+**Bring-your-own-agent integration** — make pointing `--agent` at any LangGraph graph "just work," and tell users exactly what lights up.
+
+### Added
+- **`langstage check --agent <spec>`** — a preflight doctor that loads your agent and reports which features will light up (checkpointer, Canvas, Plan/`write_todos`, async-delegation tools) and which need a convention or tool to unlock.
+- **`LANGSTAGE_TOOLS`** — a one-import bundle (`from langstage import LANGSTAGE_TOOLS`) of the host's scheduling + async task-delegation tools, so a BYO agent unlocks agent self-delegation and agent-created schedules in one line.
+- README **"Bring your own agent"** section documenting the integration contract.
+
+### Changed
+- **Checkpointer is now auto-attached** when a loaded agent has none (was: a console warning, then silently degraded). Conversation memory, human-in-the-loop interrupts, and the task review gate now work for any BYO graph out of the box; supply your own checkpointer for durability. (Matches the AG-UI bridge's behavior.)
+- `__version__` now reads from package metadata (was a stale hardcoded constant).
+
 ## 0.9.1 — 2026-06-14
 
 ### Fixed
