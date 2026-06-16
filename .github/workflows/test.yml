@@ -32,6 +32,28 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+  minimal-install:
+    # Guards against UNDECLARED dependencies. The other jobs install
+    # `.[deepagents]`, which pulls `langchain` transitively and so masks any
+    # dependency that's used-but-not-declared. This job installs with NO extras
+    # — exactly what `pip install langstage` gives a real user — and exercises
+    # the import + CLI hot paths. It is the test that would have caught the
+    # missing `langchain` declaration (found in prod by the daily cloud routine).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install with NO extras (declared deps only)
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+      - name: Import + CLI smoke on a minimal install
+        run: |
+          python -c "import langstage; from langstage import CoworkApp, LANGSTAGE_TOOLS; from langstage.middleware import agent_uses_canvas_middleware; print('imports ok')"
+          langstage check --demo
+
   e2e:
     runs-on: ubuntu-latest
     steps:

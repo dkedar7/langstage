@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.11.0"
+version = "0.11.1"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -16,6 +16,10 @@ dependencies = [
     # Any real use of langstage already has langgraph in the env (it is the
     # thing being hosted); declaring it makes `run --demo` work on a bare install.
     "langgraph>=1.0",
+    # CanvasMiddleware subclasses langchain.agents.middleware on import, and
+    # langstage.middleware is imported on hot paths (app, cli `check`, default
+    # agent) — so langchain is a HARD dep, not incidental via [deepagents].
+    "langchain>=1.0",
     "watchfiles>=1.0",
     "click>=8.0",
     "python-dotenv>=1.0",
