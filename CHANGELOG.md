@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.11.1 — 2026-06-16
+
+### Fixed
+- **Declare `langchain` as a dependency.** `langstage.middleware` (canvas) imports
+  `langchain.agents.middleware` and is loaded on hot paths (`app`, the `check` CLI
+  command, the default agent), but `langchain` wasn't declared — it only arrived
+  transitively via the `[deepagents]` extra. A clean `pip install langstage` therefore
+  failed with `ModuleNotFoundError: No module named 'langchain'` on `langstage check`
+  / `langstage run`. Now a hard dependency. (Found in production by the daily QA routine.)
+
+### CI
+- Added a **minimal-install** job: installs with no extras (`pip install .`) and runs
+  an import + CLI smoke — the lane that matches a real `pip install langstage`. The
+  other jobs install `[deepagents]`, which masked the missing `langchain` by pulling
+  it transitively. This guards against undeclared dependencies going forward.
+
 ## 0.11.0 — 2026-06-15
 
 ### Changed
