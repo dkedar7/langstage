@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import warnings
 
 from langgraph_stream_parser.demo import create_default_agent as _build_default_agent
 from langgraph_stream_parser.tasks import TASK_TOOLS
@@ -107,8 +108,20 @@ This applies to EVERY user message, regardless of complexity.
 
 The workspace is your sandbox - feel free to create files, organize content, and help users manage their projects."""
 
-# Get workspace root from environment variable or default to current directory
-workspace_root = os.getenv("DEEPAGENT_WORKSPACE_ROOT", os.getcwd())
+# Workspace root: canonical LANGSTAGE_WORKSPACE_ROOT first, then the deprecated
+# DEEPAGENT_WORKSPACE_ROOT (with a warning), else cwd. Reading only the legacy
+# name meant the canonical var was silently ignored (gh #-dogfood).
+workspace_root = os.getenv("LANGSTAGE_WORKSPACE_ROOT")
+if workspace_root is None:
+    _legacy_ws = os.getenv("DEEPAGENT_WORKSPACE_ROOT")
+    if _legacy_ws is not None:
+        warnings.warn(
+            "DEEPAGENT_WORKSPACE_ROOT is deprecated; use LANGSTAGE_WORKSPACE_ROOT.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        workspace_root = _legacy_ws
+workspace_root = workspace_root or os.getcwd()
 
 # Default tools list used by both global and session agents.
 # Canvas tools are injected by CanvasMiddleware — not included here.

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.2 — 2026-06-20
+
+### Fixed
+- **Custom non-streaming agents replied with nothing in chat (gh #-dogfood).** A
+  `CompiledGraph` whose node returns a finished `AIMessage` (rule-based / router /
+  retrieval agents, or any LLM call outside a token-streaming node) rendered an
+  empty assistant turn. Root cause was in the shared core; bumped
+  `langgraph-stream-parser` to `>=0.6.4`, which emits such content as a fallback.
+- **Canonical `LANGSTAGE_WORKSPACE_ROOT` was ignored** when computing the default
+  agent's workspace — `default_agent.py` read only the deprecated
+  `DEEPAGENT_WORKSPACE_ROOT`. It now reads the canonical name first and warns on
+  the legacy one.
+
 ## 0.11.1 — 2026-06-16
 
 ### Fixed
