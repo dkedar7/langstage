@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.11.4 — 2026-06-21
+
+### Fixed
+- **Unknown `/api/*` paths returned 200 + the SPA HTML shell instead of 404.** The
+  SPA catch-all route swallowed the whole `/api` (and `/ws`) namespace, so a typo'd
+  or missing API path silently returned an HTML page to programmatic clients. The
+  catch-all now raises a JSON 404 for `/api/*` and `/ws/*`; other paths still serve
+  the SPA. (gh #-dogfood)
+- **CLI help / `config` text** still referenced the pre-rename `deepagents.toml`;
+  now `langstage.toml`.
+- **Default Title** was documented (and the bundled `index.html` `<title>`) as
+  `Cowork Dash`; corrected to `LangStage`.
+
+### Added
+- **`langstage --version`** flag (it only had `--show-config`/`--help`).
+
+### Docs
+- Documented the schedules REST surface (`GET/POST/DELETE /api/cron`,
+  `POST /api/cron/{id}/run`) — the path is `/api/cron`, not `/api/schedules`.
+- Bumped the `langgraph-stream-parser` floor to `>=0.6.7` (tool_end name + dict
+  messages).
+
 ## 0.11.3 — 2026-06-21
 
 ### Fixed
