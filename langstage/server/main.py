@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
@@ -157,9 +157,14 @@ def create_fastapi_app(
             async def get_favicon():
                 return FileResponse(str(favicon))
 
-        # Catch-all: serve index.html for client-side routing
+        # Catch-all: serve index.html for client-side routing. But NOT for the
+        # API/WS namespaces — an unknown /api/* path must be a JSON 404, not a
+        # 200 + the SPA HTML shell (which silently breaks programmatic clients
+        # doing content-negotiation / error handling) (gh #-dogfood).
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):
+            if full_path == "api" or full_path.startswith(("api/", "ws/")):
+                raise HTTPException(status_code=404, detail="Not Found")
             return FileResponse(str(static_dir / "index.html"))
     else:
         # No pre-built frontend — serve a placeholder

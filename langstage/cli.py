@@ -11,10 +11,11 @@ DEMO_AGENT_SPEC = "langgraph_stream_parser.demo.stub:graph"
 
 
 @click.group(invoke_without_command=True)
+@click.version_option(package_name="langstage", prog_name="langstage")
 @click.option(
     "--show-config",
     is_flag=True,
-    help="Print the resolved configuration (defaults < deepagents.toml < env < CLI) and exit.",
+    help="Print the resolved configuration (defaults < langstage.toml < env < CLI) and exit.",
 )
 @click.pass_context
 def main(ctx, show_config):
@@ -82,7 +83,7 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
 @click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
 def config(workspace):
     """Show the resolved configuration: each value, its source, and the
-    env var / deepagents.toml key that sets it."""
+    env var / langstage.toml key that sets it."""
     overrides = {"workspace_root": workspace} if workspace else None
     click.echo(AppConfig.resolve(overrides=overrides).describe())
 

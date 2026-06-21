@@ -167,7 +167,9 @@ The **Board** tab turns LangStage into a lightweight agent control room: delegat
 
 - **Scheduled runs** (the Schedules tab) enqueue onto the same board.
 
-REST API: `GET /api/tasks`, `POST /api/tasks` (delegate), `GET /api/tasks/{id}/events`, and `POST /api/tasks/{id}/{cancel,retry,resume,message}`. Concurrency is bounded by `LANGSTAGE_TASK_CONCURRENCY` (default 3).
+Task REST API: `GET /api/tasks`, `POST /api/tasks` (delegate), `GET /api/tasks/{id}/events`, and `POST /api/tasks/{id}/{cancel,retry,resume,message}`. Concurrency is bounded by `LANGSTAGE_TASK_CONCURRENCY` (default 3).
+
+Schedules (cron) REST API: `GET /api/cron`, `POST /api/cron` (create), `DELETE /api/cron/{id}`, and `POST /api/cron/{id}/run` (run now → enqueues a task). (The Schedules tab drives these; note the path is `/api/cron`, not `/api/schedules`.)
 
 > **Single-process:** run one server worker. The atomic task claim and the worker pool are scoped to one process; multiple uvicorn workers would double-run tasks.
 
@@ -188,7 +190,7 @@ langstage --show-config
 | Host | `--host` | `LANGSTAGE_HOST` | `localhost` |
 | Port | `--port` | `LANGSTAGE_PORT` | `8050` |
 | Debug | `--debug` | `LANGSTAGE_DEBUG` | `false` |
-| Title | `--title` | `LANGSTAGE_TITLE` | Agent's `.name` or `"Cowork Dash"` |
+| Title | `--title` | `LANGSTAGE_TITLE` | Agent's `.name` or `"LangStage"` |
 | Subtitle | `--subtitle` | `LANGSTAGE_SUBTITLE` | `"AI-Powered Workspace"` |
 | Welcome message | `--welcome-message` | `LANGSTAGE_WELCOME_MESSAGE` | _(empty)_ |
 | Theme | `--theme` | `LANGSTAGE_THEME` | `auto` |
