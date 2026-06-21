@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.3 — 2026-06-21
+
+### Fixed
+- **README advertised a `/ws/chat` WebSocket transport that doesn't exist** — the
+  Architecture diagram and Features bullet promised WebSocket; connecting to
+  `/ws/chat` returns **403** (no such route). The real chat transport is
+  Server-Sent Events: `GET /api/stream?session_id=…` + `POST /api/chat`. Corrected
+  the diagram, the Features bullet, and the Stack line. (gh #-dogfood)
+- Bumped the `langgraph-stream-parser` floor to `>=0.6.6` (base + `[agui]`) so
+  dict-form-message agents (`{"role":"assistant","content":…}`) render in chat.
+
 ## 0.11.2 — 2026-06-20
 
 ### Fixed

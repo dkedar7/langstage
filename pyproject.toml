@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.11.2"
+version = "0.11.3"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -14,7 +14,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     # >=0.6.4 carries the dual-mode content fallback so non-token-streaming
     # agents render in chat instead of replying blank (gh #-dogfood).
-    "langgraph-stream-parser>=0.6.4,<0.7",
+    "langgraph-stream-parser>=0.6.6,<0.7",
     # Any real use of langstage already has langgraph in the env (it is the
     # thing being hosted); declaring it makes `run --demo` work on a bare install.
     "langgraph>=1.0",
@@ -40,7 +40,7 @@ deepagents = [
     "deepagents>=0.3",
 ]
 agui = [
-    "langgraph-stream-parser[agui]>=0.6.4,<0.7",
+    "langgraph-stream-parser[agui]>=0.6.6,<0.7",
 ]
 dev = [
     "pytest>=8",

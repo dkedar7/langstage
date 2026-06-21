@@ -8,7 +8,7 @@
   <img src="assets/cover.png" alt="Cowork Dash" style="border: 1px solid #d0d7de; border-radius: 6px;" />
 </p>
 
-**Stack**: Python (FastAPI + WebSocket) backend, React (TypeScript + Vite) frontend.
+**Stack**: Python (FastAPI, chat over Server-Sent Events) backend, React (TypeScript + Vite) frontend.
 
 ## Every stage for your LangGraph agent
 
@@ -36,7 +36,7 @@ langstage-agui --agent my_agent.py:graph
 
 ## Features
 
-- **Chat** with real-time token streaming via WebSocket
+- **Chat** with real-time token streaming over Server-Sent Events (`GET /api/stream` + `POST /api/chat`)
 - **Tool call visualization** — inline display of arguments, results, duration, and status
 - **Rich inline content** — HTML, Plotly charts, images, DataFrames, PDFs, and JSON rendered directly in the chat
 - **Canvas panel** — persistent report surface for charts, tables, diagrams, images, and narrative markdown. Opt-in via `CanvasMiddleware`; auto-detected by the UI.
@@ -240,13 +240,16 @@ See [langgraph-stream-parser](https://github.com/dkedar7/langgraph-stream-parser
 ## Architecture
 
 ```
-Browser  <--WebSocket-->  FastAPI  <--astream_events-->  LangGraph Agent
-            /ws/chat         |
-                        REST APIs:
-                          /api/config
-                          /api/files/tree
-                          /api/files/{path}
-                          /api/canvas/items
+Browser  <--SSE / REST-->  FastAPI  <--astream_events-->  LangGraph Agent
+                              |
+   chat (Server-Sent Events):  GET /api/stream?session_id=...   (event stream)
+                               POST /api/chat {session_id, content}
+   other REST APIs:            /api/config
+                               /api/files/tree
+                               /api/files/{path}
+                               /api/canvas/items
+                               /api/cron        (schedules)
+                               /api/tasks       (async task board)
 ```
 
 The frontend is pre-built and bundled into the Python package as static files. No Node.js required at runtime.
