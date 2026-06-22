@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.5 — 2026-06-22
+
+### Fixed
+- **Workspace split-brain: the agent's `bash`/file tools ignored
+  `LANGSTAGE_WORKSPACE_ROOT`.** 0.11.2 fixed `default_agent.py` to honor the
+  canonical var, but `config.py`'s module-level `WORKSPACE_ROOT` / `VIRTUAL_FS`
+  still read **only** the legacy `DEEPAGENT_*` names — and `tools.py` uses
+  `config.WORKSPACE_ROOT` as the `bash` cwd. So with only `LANGSTAGE_WORKSPACE_ROOT`
+  set, the file browser used the canonical workspace while `bash`/file tools ran in
+  cwd (the 0.11.2 entry over-claimed the fix). `config.py` is now canonical-first
+  (legacy fallback + warning) for both vars, and is the **single source** —
+  `default_agent.py` imports `config.WORKSPACE_ROOT` instead of resolving its own
+  copy, so the agent and tools can never disagree again. (gh #-dogfood)
+
 ## 0.11.4 — 2026-06-21
 
 ### Fixed

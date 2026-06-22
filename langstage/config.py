@@ -6,11 +6,29 @@ resolved through the shared chain — defaults < deepagents.toml < DEEPAGENT_* e
 < overrides (Python/CLI args). cowork gains `deepagents.toml` support this way.
 """
 import os
+import warnings
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any, ClassVar, Optional
 
 from langgraph_stream_parser.host import HostConfig
+
+
+def _env_canonical_first(canonical: str, legacy: str) -> Optional[str]:
+    """Read an env var by its canonical ``LANGSTAGE_*`` name, falling back to the
+    deprecated ``DEEPAGENT_*`` name (with a warning). Canonical wins."""
+    value = os.getenv(canonical)
+    if value is not None:
+        return value
+    legacy_value = os.getenv(legacy)
+    if legacy_value is not None:
+        warnings.warn(
+            f"{legacy} is deprecated; use {canonical}.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return legacy_value
+    return None
 
 
 def _parse_optional_bool(value: Optional[str]) -> Optional[bool]:
@@ -29,10 +47,16 @@ def _parse_optional_bool(value: Optional[str]) -> Optional[bool]:
     return None
 
 
-# Module-level constants used by tools.py and default_agent.py (independent of
-# AppConfig — read directly from the environment at import).
-WORKSPACE_ROOT = Path(os.getenv("DEEPAGENT_WORKSPACE_ROOT", os.getcwd()))
-VIRTUAL_FS = os.getenv("DEEPAGENT_VIRTUAL_FS", "").lower() in ("1", "true", "yes")
+# Module-level constants used by tools.py (bash cwd + file tools) and
+# default_agent.py. Canonical LANGSTAGE_* first, deprecated DEEPAGENT_* fallback.
+# Reading ONLY the legacy names here while default_agent.py honored the canonical
+# LANGSTAGE_WORKSPACE_ROOT created a split-brain: the file browser used the
+# canonical workspace but the agent's bash/file tools ran in cwd (gh #-dogfood).
+# This is the single source — default_agent.py imports WORKSPACE_ROOT from here.
+_ws = _env_canonical_first("LANGSTAGE_WORKSPACE_ROOT", "DEEPAGENT_WORKSPACE_ROOT")
+WORKSPACE_ROOT = Path(_ws) if _ws else Path(os.getcwd())
+_vfs = _env_canonical_first("LANGSTAGE_VIRTUAL_FS", "DEEPAGENT_VIRTUAL_FS")
+VIRTUAL_FS = (_vfs or "").lower() in ("1", "true", "yes")
 
 _SAVE_PROMPT = (
     "Please capture this conversation as a detailed workflow markdown file in "
