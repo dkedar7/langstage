@@ -248,7 +248,7 @@ Browser  <--SSE / REST-->  FastAPI  <--astream_events-->  LangGraph Agent
                                POST /api/chat {session_id, content}
    other REST APIs:            /api/config
                                /api/files/tree
-                               /api/files/{path}
+                               /api/files/read?path=...   (also: preview, download, upload, mkdir, delete)
                                /api/canvas/items
                                /api/cron        (schedules)
                                /api/tasks       (async task board)
