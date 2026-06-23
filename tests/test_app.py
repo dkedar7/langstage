@@ -85,6 +85,21 @@ async def test_files_read_not_found(client):
 
 
 @pytest.mark.asyncio
+async def test_files_read_path_escape_returns_400_not_500(client):
+    # A path that escapes the workspace must be rejected cleanly. The boundary
+    # holds either way (no traversal), but the path-escape ValueError used to
+    # propagate uncaught -> 500 instead of the 400 the sibling cases return.
+    resp = await client.get("/api/files/read?path=/../../../../etc/passwd")
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_files_tree_path_escape_returns_400_not_500(client):
+    resp = await client.get("/api/files/tree?path=/../../../..")
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_canvas_empty(client):
     resp = await client.get("/api/canvas/items")
     assert resp.status_code == 200

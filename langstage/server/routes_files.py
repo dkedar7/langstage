@@ -25,6 +25,10 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             return tree
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")
+        except ValueError as e:
+            # Path escapes the workspace — the boundary holds (no traversal), but
+            # return a clean 400 instead of letting it fall through to a 500.
+            raise HTTPException(status_code=400, detail=str(e))
 
     @r.get("/read")
     async def read_file(
@@ -37,6 +41,9 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"File not found: {path}")
         except IsADirectoryError:
             raise HTTPException(status_code=400, detail=f"Path is a directory: {path}")
+        except ValueError as e:
+            # Path escapes the workspace — boundary holds; return 400, not 500.
+            raise HTTPException(status_code=400, detail=str(e))
 
     @r.get("/preview")
     async def preview_file(
@@ -49,6 +56,9 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"File not found: {path}")
         except IsADirectoryError:
             raise HTTPException(status_code=400, detail=f"Path is a directory: {path}")
+        except ValueError as e:
+            # Path escapes the workspace — boundary holds; return 400, not 500.
+            raise HTTPException(status_code=400, detail=str(e))
 
     @r.get("/download")
     async def download_file(

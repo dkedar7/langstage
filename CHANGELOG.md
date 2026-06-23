@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.6 — 2026-06-22
+
+### Fixed
+- **`/api/files/*` returned 500 on a path that escapes the workspace.** The
+  workspace boundary held (no traversal — `_resolve_path` raised
+  `ValueError("Path escapes workspace: …")`), but on `read`, `preview`, and
+  `tree` that error propagated uncaught into a generic 500, while the sibling
+  routes (`download`/`mkdir`/`delete`) already mapped it to a clean 400. Those
+  three now return **400** too, matching the rest of the file API. (Found by the
+  dogfood routine.)
+
 ## 0.11.5 — 2026-06-22
 
 ### Fixed
