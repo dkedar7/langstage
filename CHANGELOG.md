@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.7 — 2026-06-26
+
+### Fixed
+- **`--show-config` reported `auth_username` as empty when the effective default
+  is `admin`.** The `admin` default lived only in the auth middleware
+  (`auth_username or "admin"`), not the config layer that `--show-config`
+  renders — so a user enabling auth and consulting the documented config
+  inspector to find their login username saw a blank, while the server enforced
+  `admin`. The default now lives in `config.py` (`auth_username: str = "admin"`),
+  so `--show-config`, `--help`, the README table, and the runtime all agree.
+  (Auth stays inert unless a password is set, so this has no security effect.)
+  (Found by the dogfood routine, gh #35.)
+
 ## 0.11.6 — 2026-06-22
 
 ### Fixed

@@ -61,7 +61,7 @@ class BasicAuthMiddleware:
 def add_middleware(
     app: FastAPI,
     debug: bool = False,
-    auth_username: str = "",
+    auth_username: str = "admin",
     auth_password: str = "",
 ) -> None:
     """Add middleware stack. CORS is always added; basic auth is conditional."""
@@ -81,7 +81,8 @@ def add_middleware(
         allow_headers=["*"],
     )
 
-    # Basic auth (only when a password is configured)
+    # Basic auth (only when a password is configured). The "admin" default now
+    # lives in the config layer, so use the resolved value directly — what
+    # --show-config displays is exactly what the server enforces. (gh #35)
     if auth_password:
-        username = auth_username or "admin"
-        app.add_middleware(BasicAuthMiddleware, username=username, password=auth_password)
+        app.add_middleware(BasicAuthMiddleware, username=auth_username or "admin", password=auth_password)

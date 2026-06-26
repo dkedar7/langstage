@@ -23,6 +23,19 @@ def test_show_config_prints_resolved_config():
     assert "DEEPAGENT_AGENT_SPEC" in result.output
 
 
+def test_show_config_auth_username_default_is_admin():
+    # gh #35: the effective default (and what the server enforces) is "admin";
+    # --show-config must not show it as blank.
+    from langstage.config import AppConfig
+
+    assert AppConfig().auth_username == "admin"
+    result = CliRunner().invoke(cli_mod.main, ["--show-config"])
+    assert result.exit_code == 0
+    import re
+
+    assert re.search(r"auth_username\s*=\s*admin", result.output), result.output
+
+
 def test_bare_invocation_prints_help():
     result = CliRunner().invoke(cli_mod.main, [])
     assert result.exit_code == 0
