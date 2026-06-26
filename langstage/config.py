@@ -86,7 +86,11 @@ class AppConfig(HostConfig):
     theme: str = "auto"  # "light" | "dark" | "auto"
     agent_name: str = "Agent"
     icon_url: str = ""
-    auth_username: str = ""
+    # Default "admin" lives here (the resolved-config layer) so --show-config,
+    # --help, the README, and the runtime all agree on the effective username.
+    # Auth is inert unless auth_password is set, so this has no security effect.
+    # (gh #35)
+    auth_username: str = "admin"
     auth_password: str = ""
     save_workflow_prompt: str = _SAVE_PROMPT
     run_workflow_prompt: str = _RUN_PROMPT
