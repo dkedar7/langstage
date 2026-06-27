@@ -97,6 +97,31 @@ async def test_run_now():
     assert len(runner.enqueued) == 1
 
 
+async def test_next_run_populated_on_create_for_started_scheduler():
+    # gh #37: on a live (started) server, add_job used to defer next_run to the
+    # run loop, so the POST create response (and schedule_run) returned null.
+    s = CronScheduler(FakeRunner())
+    s.start()  # _started=True; creates run-loop tasks (needs the running loop)
+    try:
+        job = s.add_job(name="daily3", cron="0 9 * * 1-5", prompt="morning")
+        assert job.next_run, "next_run must be set synchronously on create"
+    finally:
+        s.shutdown()
+
+
+async def test_schedule_run_tool_reports_next_run_on_started_scheduler():
+    s = CronScheduler(FakeRunner())
+    s.start()
+    set_scheduler(s)
+    try:
+        out = schedule_run.invoke({"name": "nightly", "cron": "0 9 * * 1-5", "prompt": "p"})
+        assert "Next run: pending" not in out
+        assert "Next run:" in out
+    finally:
+        set_scheduler(None)
+        s.shutdown()
+
+
 # ── agent tools ──────────────────────────────────────────────────────
 
 
