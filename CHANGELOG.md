@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.8 — 2026-06-27
+
+### Fixed
+- **`POST /api/cron` (and the `schedule_run` agent tool) returned `next_run:
+  null` on a running server.** `add_job` computed `next_run` synchronously only
+  when the scheduler hadn't started yet; on a live server it deferred to the run
+  loop, which hadn't fired when the create response / tool message was
+  serialized — so the two places a user looks right after creating a schedule
+  showed no next fire time (a follow-up `GET` already had it, and the agent
+  always said "Next run: pending"). `next_run` is now computed synchronously in
+  `add_job` regardless of started state; the run loop keeps refreshing it.
+  (Found by the dogfood routine, gh #37.)
+
 ## 0.11.7 — 2026-06-26
 
 ### Fixed

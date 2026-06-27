@@ -105,10 +105,14 @@ class CronScheduler:
             created_by=created_by,
         )
         self._jobs[job.id] = job
+        # Compute next_run synchronously so the POST create response and the
+        # schedule_run tool's confirmation message carry it immediately. On a
+        # started scheduler _start_job's run loop keeps refreshing it; without
+        # this, a live server deferred next_run to the loop and returned null on
+        # create (only a follow-up GET showed it). (gh #37)
+        job.next_run = self._compute_next(job.cron)
         if self._started:
             self._start_job(job)
-        else:
-            job.next_run = self._compute_next(job.cron)
         return job
 
     def remove_job(self, job_id: str) -> bool:
