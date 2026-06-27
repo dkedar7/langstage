@@ -12,7 +12,9 @@
 
 ## Every stage for your LangGraph agent
 
-langstage is the web stage (and namesake) of the **LangStage family**: write your agent once — any LangGraph `CompiledGraph` — and run it on every stage with the same spec string (`module:attr` or `path/to/file.py:attr`), the same `langstage.toml` config file, and the same `LANGSTAGE_*` environment variables.
+langstage is the web stage (and namesake) of the **LangStage family**: write your agent once — any LangGraph `CompiledGraph`, from a single ReAct agent to a multi-agent supervisor — and run it on every stage with the same spec string (`module:attr` or `path/to/file.py:attr`), the same `langstage.toml` config file, and the same `LANGSTAGE_*` environment variables.
+
+> **Multi-agent works out of the box.** A supervisor, swarm, or crew compiles to the same `CompiledStateGraph` langstage loads, so its routing and hand-offs stream just like a single agent — no extra setup. See [Running a multi-agent supervisor](https://dkedar7.github.io/langstage-docs/guides/multi-agent-supervisor/).
 
 | Stage | Package | Try it |
 |---|---|---|
