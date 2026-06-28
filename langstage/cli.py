@@ -126,6 +126,25 @@ def check(agent_spec, demo):
     except Exception as e:  # noqa: BLE001 - report load failure cleanly
         click.echo(f"{click.style('[fail]', fg='red')} failed to load: {e}")
         raise SystemExit(1)
+
+    # Loading the object is not enough — the server drives the agent via
+    # astream(), so a non-runnable object (an uncompiled StateGraph, a dict, an
+    # int) starts fine and then dies mid-stream with "'X' object has no attribute
+    # 'astream'". Preflight exists to catch exactly that, so gate the all-clear
+    # on runnability instead of reporting `[ ok ] loads` for any object. (gh #39)
+    fail = click.style("[fail]", fg="red")
+    if not callable(getattr(agent, "astream", None)):
+        if callable(getattr(agent, "compile", None)):
+            # The single most common BYO mistake: exported the builder, not the
+            # compiled graph (forgot `.compile()`).
+            click.echo(f"{fail} not runnable: this is an uncompiled "
+                       f"{type(agent).__name__} - call .compile() and export the result")
+        else:
+            click.echo(f"{fail} not runnable: loaded a {type(agent).__name__}, which is not "
+                       "a LangGraph graph (no astream()). Export a compiled graph "
+                       "(module:attr or path/to/file.py:attr).")
+        raise SystemExit(1)
+
     click.echo(f"{ok} loads")
     name = getattr(agent, "name", None)
     if name:
