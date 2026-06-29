@@ -31,7 +31,7 @@ export function TodoPanel({ todos }: TodoPanelProps) {
       {/* Progress header */}
       <div className="px-4 py-2.5 border-b border-[var(--color-border)]">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
             Progress
           </span>
           <span className="text-[11px] tabular-nums text-[var(--color-text-muted)]">

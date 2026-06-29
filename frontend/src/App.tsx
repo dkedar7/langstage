@@ -9,7 +9,7 @@ import type { AppConfig } from "./types";
 
 const DEFAULT_CONFIG: AppConfig = {
   title: "LangStage",
-  subtitle: "AI-Powered Workspace",
+  subtitle: "",
   welcome_message: "",
   theme: "auto",
   workspace_name: "",

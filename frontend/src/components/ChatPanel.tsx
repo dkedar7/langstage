@@ -7,6 +7,15 @@ import { MessageBubble } from "./MessageBubble";
 import { useSlashCommands } from "../hooks/useSlashCommands";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 
+// Generic starter prompts shown on the empty/welcome state — applicable to most
+// bring-your-own agents, to defuse the blank-canvas problem. (UI modernization)
+const STARTER_PROMPTS = [
+  "What can you do?",
+  "Summarize the files in my workspace",
+  "Help me plan a task step by step",
+  "Write a short code example",
+];
+
 interface ChatPanelProps {
   messages: ChatMessage[];
   isStreaming: boolean;
@@ -65,6 +74,12 @@ export function ChatPanel({
     if (!trimmed || isStreaming) return;
     const expanded = slashCommands.tryExecute(trimmed);
     sendAndReset(expanded ?? trimmed);
+  };
+
+  const handleStarter = (text: string) => {
+    if (isStreaming) return;
+    isNearBottomRef.current = true;
+    onSend(text);
   };
 
   const handleSlashSelect = (index: number) => {
@@ -128,14 +143,28 @@ export function ChatPanel({
                 </div>
               ) : (
                 <div className="text-center">
-                  <p className="text-sm font-medium text-[var(--color-text)]">
+                  <p className="text-base font-semibold text-[var(--color-text)]">
                     What can I help you with?
                   </p>
-                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                    Ask a question to get started
+                  <p className="text-sm text-[var(--color-text-muted)] mt-1">
+                    Pick a starting point or ask anything below.
                   </p>
                 </div>
               )}
+
+              {/* Starter prompts — one-click ways in, to skip the blank canvas */}
+              <div className="flex flex-wrap items-center justify-center gap-2 max-w-md">
+                {STARTER_PROMPTS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => handleStarter(p)}
+                    disabled={isStreaming}
+                    className="px-3 py-1.5 text-xs text-[var(--color-text-secondary)] rounded-full border border-[var(--color-border)] bg-[var(--color-card)] hover:border-[var(--color-primary)] hover:text-[var(--color-text)] hover:bg-[var(--color-accent-soft)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -144,18 +173,22 @@ export function ChatPanel({
               key={msg.id}
               message={msg}
               agentName={agentName}
+              iconUrl={iconUrl}
               showLabel={i === 0 || messages[i - 1].role !== msg.role}
             />
           ))}
 
           {isStreaming && messages.length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-              <span className="flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "300ms" }} />
+            <div className="flex gap-3 text-xs text-[var(--color-text-muted)]">
+              <div className="flex-shrink-0 w-7" />
+              <span className="flex items-center gap-2">
+                <span className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary)] animate-bounce" style={{ animationDelay: "300ms" }} />
+                </span>
+                {agentName} is working…
               </span>
-              {agentName} is working...
             </div>
           )}
         </div>
@@ -174,7 +207,7 @@ export function ChatPanel({
             onSelect={handleSlashSelect}
             onHover={slashCommands.setSelectedIndex}
           />
-          <div className="flex items-end gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 focus-within:border-[var(--color-text-muted)] transition-colors">
+          <div className="flex items-end gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-card)] shadow-xs px-3 py-2 transition-colors focus-within:border-[var(--color-primary)] focus-within:ring-1 focus-within:ring-[var(--color-primary)]">
             <textarea
               ref={inputRef}
               value={input}
@@ -203,7 +236,7 @@ export function ChatPanel({
               </button>
             )}
           </div>
-          <div className="text-center mt-1.5">
+          <div className={`text-center mt-1.5 transition-opacity ${input ? "opacity-0" : "opacity-100"}`}>
             <span className="text-[10px] text-[var(--color-text-muted)]">
               <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">Shift+Enter</kbd> for new line, <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-3)] text-[9px] font-mono">/</kbd> for commands
             </span>

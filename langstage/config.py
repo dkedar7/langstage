@@ -81,7 +81,10 @@ class AppConfig(HostConfig):
     # Shared keys (agent_spec, workspace_root, host, port, debug) come from
     # HostConfig; cowork only overrides the title default and adds UI keys.
     title: str = "LangStage"
-    subtitle: str = "AI-Powered Workspace"
+    # Empty by default — a generic "AI-Powered Workspace" tagline was filler that
+    # cluttered the header. The UI hides the subtitle when unset; set one
+    # (--subtitle / LANGSTAGE_SUBTITLE / [ui].subtitle) for a real label.
+    subtitle: str = ""
     welcome_message: str = ""
     theme: str = "auto"  # "light" | "dark" | "auto"
     agent_name: str = "Agent"

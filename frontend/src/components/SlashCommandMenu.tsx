@@ -33,7 +33,7 @@ export function SlashCommandMenu({
 
   return (
     <div className="absolute bottom-full left-0 right-0 mb-2 z-10">
-      <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg shadow-lg overflow-hidden max-h-[200px] overflow-y-auto">
+      <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg shadow-md overflow-hidden max-h-[200px] overflow-y-auto">
         {showCommandMenu && (
           <div className="py-1">
             {filteredCommands.map((cmd, i) => (
