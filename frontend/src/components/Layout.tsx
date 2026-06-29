@@ -30,6 +30,39 @@ import { StatusBar } from "./StatusBar";
 
 type RightTab = "files" | "canvas" | "tasks" | "board" | "schedules";
 
+function TabButton({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof FolderTree;
+  label: string;
+  count?: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 flex-shrink-0 px-2.5 h-7 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors ${
+        active
+          ? "bg-[var(--color-surface-3)] text-[var(--color-text)]"
+          : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-3)]"
+      }`}
+    >
+      <Icon size={14} />
+      {label}
+      {count != null && count > 0 && (
+        <span className="min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-card)] border border-[var(--color-border)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 interface LayoutProps {
   config: AppConfig;
   messages: ChatMessage[];
@@ -150,93 +183,49 @@ export function Layout(props: LayoutProps) {
           </Allotment.Pane>
 
           <Allotment.Pane minSize={250} visible={sidebarOpen}>
-            <div data-print-hide className="flex flex-col h-full bg-[var(--color-surface)]">
-              {/* Tab bar */}
-              <div className="flex items-center h-10 border-b border-[var(--color-border)]">
-                <button
+            <div data-print-hide className="flex flex-col h-full bg-[var(--color-panel)]">
+              {/* Tab bar — scrollable pills so it degrades gracefully when narrow */}
+              <div className="flex items-center gap-1 px-2 h-11 border-b border-[var(--color-border)] overflow-x-auto">
+                <TabButton
+                  active={activeTab === "tasks"}
                   onClick={() => setActiveTab("tasks")}
-                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                    activeTab === "tasks"
-                      ? "border-[var(--color-text)] text-[var(--color-text)]"
-                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  <ListTodo size={13} />
-                  Plan
-                  {props.todos.length > 0 && (
-                    <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
-                      {props.todos.length}
-                    </span>
-                  )}
-                </button>
+                  icon={ListTodo}
+                  label="Plan"
+                  count={props.todos.length}
+                />
                 {showCanvas && (
-                  <button
+                  <TabButton
+                    active={activeTab === "canvas"}
                     onClick={() => setActiveTab("canvas")}
-                    className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                      activeTab === "canvas"
-                        ? "border-[var(--color-text)] text-[var(--color-text)]"
-                        : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                    }`}
-                  >
-                    <Palette size={13} />
-                    Canvas
-                    {props.canvasItems.length > 0 && (
-                      <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
-                        {props.canvasItems.length}
-                      </span>
-                    )}
-                  </button>
+                    icon={Palette}
+                    label="Canvas"
+                    count={props.canvasItems.length}
+                  />
                 )}
                 {showFiles && (
-                  <button
+                  <TabButton
+                    active={activeTab === "files"}
                     onClick={() => setActiveTab("files")}
-                    className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                      activeTab === "files"
-                        ? "border-[var(--color-text)] text-[var(--color-text)]"
-                        : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                    }`}
-                  >
-                    <FolderTree size={13} />
-                    Files
-                  </button>
+                    icon={FolderTree}
+                    label="Files"
+                  />
                 )}
-                <button
+                <TabButton
+                  active={activeTab === "schedules"}
                   onClick={() => setActiveTab("schedules")}
-                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                    activeTab === "schedules"
-                      ? "border-[var(--color-text)] text-[var(--color-text)]"
-                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  <AlarmClock size={13} />
-                  Schedules
-                  {props.cronJobs.length > 0 && (
-                    <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
-                      {props.cronJobs.length}
-                    </span>
-                  )}
-                </button>
-                <button
+                  icon={AlarmClock}
+                  label="Schedules"
+                  count={props.cronJobs.length}
+                />
+                <TabButton
+                  active={activeTab === "board"}
                   onClick={() => setActiveTab("board")}
-                  className={`flex items-center gap-1.5 px-4 h-full text-xs font-medium tracking-wide uppercase transition-colors border-b-2 ${
-                    activeTab === "board"
-                      ? "border-[var(--color-text)] text-[var(--color-text)]"
-                      : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                  }`}
-                >
-                  <KanbanSquare size={13} />
-                  Board
-                  {(() => {
-                    const active = props.tasks.filter(
-                      (t) => t.state === "queued" || t.state === "ongoing" || t.state === "review_needed"
-                    ).length;
-                    return active > 0 ? (
-                      <span className="ml-1 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-surface-3)] text-[10px] tabular-nums text-[var(--color-text-muted)] inline-flex items-center justify-center">
-                        {active}
-                      </span>
-                    ) : null;
-                  })()}
-                </button>
+                  icon={KanbanSquare}
+                  label="Board"
+                  count={props.tasks.filter(
+                    (t) => t.state === "queued" || t.state === "ongoing" || t.state === "review_needed"
+                  ).length}
+                />
               </div>
 
               <div className="flex-1 overflow-hidden">

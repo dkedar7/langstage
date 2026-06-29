@@ -87,7 +87,7 @@ export function StatusBar({
           </button>
 
           {showChart && (
-            <div className="absolute right-0 top-full mt-2 w-[340px] p-4 rounded-lg shadow-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] z-50">
+            <div className="absolute right-0 top-full mt-2 w-[340px] p-4 rounded-lg shadow-md border border-[var(--color-border)] bg-[var(--color-card)] z-50">
               <div className="text-xs font-medium text-[var(--color-text)] mb-3">
                 Token Usage by Turn
               </div>

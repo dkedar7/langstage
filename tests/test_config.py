@@ -11,7 +11,7 @@ def test_defaults():
     assert cfg.port == 8050
     assert cfg.debug is False
     assert cfg.title == "LangStage"
-    assert cfg.subtitle == "AI-Powered Workspace"
+    assert cfg.subtitle == ""  # empty by default (no generic filler); user-settable
     assert cfg.theme == "auto"
     assert cfg.welcome_message == ""
     assert cfg.agent_spec is None

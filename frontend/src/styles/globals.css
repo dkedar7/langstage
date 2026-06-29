@@ -6,24 +6,46 @@
   --color-primary-dark: #1d4ed8;
   --color-surface: #ffffff;
   --color-surface-2: #f9fafb;
-  --color-surface-3: #f3f4f6;
-  --color-border: #e5e7eb;
+  --color-surface-3: #f1f3f5;
+  --color-border: #e6e8eb;
   --color-text: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-muted: #9ca3af;
+  --color-text-secondary: #5b6472;
+  --color-text-muted: #9aa3af;
   --color-success: #059669;
   --color-error: #dc2626;
   --color-warning: #d97706;
+
+  /* Layered surfaces — a "panel" sits behind "cards" that float above it.
+     In light, raised = white on a faintly tinted panel; in dark, raised is
+     a lighter step than the panel (elevation reads as lighter, not darker). */
+  --color-panel: #f7f8fa;          /* right-panel / secondary surface bg */
+  --color-card: #ffffff;           /* raised cards, popovers, modals */
+  --color-accent-soft: #eef3ff;    /* tinted hover/active wash */
+
+  /* Elevation + radius scale */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.07);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04);
 }
 
 .dark {
-  --color-surface: #171717;
-  --color-surface-2: #212121;
-  --color-surface-3: #2a2a2a;
-  --color-border: #333333;
+  --color-surface: #151517;
+  --color-surface-2: #1f2022;
+  --color-surface-3: #2a2b2e;
+  --color-border: #2c2e33;
   --color-text: #ececec;
-  --color-text-secondary: #a0a0a0;
-  --color-text-muted: #666666;
+  --color-text-secondary: #a7adb8;
+  --color-text-muted: #6b7280;
+
+  --color-panel: #1a1b1d;
+  --color-card: #232427;
+  --color-accent-soft: #1c2740;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 html, body, #root {
@@ -54,14 +76,15 @@ html, body, #root {
 .markdown-content code {
   background: var(--color-surface-3);
   padding: 0.15em 0.4em;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 0.85em;
   font-family: "JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", monospace;
 }
 .markdown-content pre {
   background: var(--color-surface-3);
   padding: 0.75em 1em;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
   overflow-x: auto;
   margin: 0.5em 0;
   font-size: 0.85em;

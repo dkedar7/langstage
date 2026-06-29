@@ -193,7 +193,7 @@ langstage --show-config
 | Port | `--port` | `LANGSTAGE_PORT` | `8050` |
 | Debug | `--debug` | `LANGSTAGE_DEBUG` | `false` |
 | Title | `--title` | `LANGSTAGE_TITLE` | Agent's `.name` or `"LangStage"` |
-| Subtitle | `--subtitle` | `LANGSTAGE_SUBTITLE` | `"AI-Powered Workspace"` |
+| Subtitle | `--subtitle` | `LANGSTAGE_SUBTITLE` | `""` (hidden when unset) |
 | Welcome message | `--welcome-message` | `LANGSTAGE_WELCOME_MESSAGE` | _(empty)_ |
 | Theme | `--theme` | `LANGSTAGE_THEME` | `auto` |
 | Agent name | `--agent-name` | `LANGSTAGE_AGENT_NAME` | Agent's `.name` or `"Agent"` |

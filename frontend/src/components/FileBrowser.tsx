@@ -92,7 +92,7 @@ function TreeNode({
           ) : (
             <ChevronRight size={14} className="text-[var(--color-text-muted)] flex-shrink-0" />
           )}
-          <FolderIcon size={14} className="text-[var(--color-warning)] flex-shrink-0" />
+          <FolderIcon size={14} className="text-[var(--color-text-secondary)] flex-shrink-0" />
           <span className="truncate text-[var(--color-text)]">
             {entry.name}
           </span>
@@ -326,7 +326,7 @@ export function FileBrowser({
       {contextMenu && (
         <div
           ref={menuRef}
-          className="fixed z-50 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-md shadow-lg py-1 min-w-[140px]"
+          className="fixed z-50 bg-[var(--color-card)] border border-[var(--color-border)] rounded-md shadow-md py-1 min-w-[140px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button

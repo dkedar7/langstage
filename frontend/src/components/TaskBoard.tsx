@@ -65,7 +65,7 @@ function TaskCard({
     <div
       onClick={() => onOpen(task.task_id)}
       title="Open task"
-      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 cursor-pointer hover:border-[var(--color-primary)] transition-colors"
+      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xs p-2.5 cursor-pointer hover:border-[var(--color-primary)] hover:shadow-sm transition-all"
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-medium text-[var(--color-text)] truncate min-w-0">
@@ -136,12 +136,12 @@ export function TaskBoard({ tasks, onCreate, onCancel, onRetry }: TaskBoardProps
     <div className="flex flex-col h-full overflow-hidden">
       {/* Delegate form */}
       <form onSubmit={submit} className="p-3 border-b border-[var(--color-border)] space-y-2">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+        <div className="text-xs font-semibold text-[var(--color-text-secondary)]">
           Delegate a task
         </div>
         <div className="flex gap-2">
           <input
-            className="flex-1 px-2.5 py-1.5 text-xs rounded-md bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)]"
+            className="flex-1 px-2.5 py-1.5 text-xs rounded-md bg-[var(--color-card)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]"
             placeholder="Describe a task to run in the background…"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -169,7 +169,7 @@ export function TaskBoard({ tasks, onCreate, onCancel, onRetry }: TaskBoardProps
             const items = inCol(col.states);
             return (
               <div key={col.key} className="flex flex-col flex-1 min-w-[160px]">
-                <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                <div className="flex items-center justify-between px-1 pb-1.5 text-[11px] font-semibold text-[var(--color-text-secondary)]">
                   <span>{col.label}</span>
                   <span className="tabular-nums">{items.length}</span>
                 </div>

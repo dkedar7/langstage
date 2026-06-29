@@ -9,6 +9,15 @@ interface SchedulesPanelProps {
   onRun: (id: string) => void;
 }
 
+// Natural-language presets so the common cases don't require writing raw cron.
+const CRON_PRESETS: { label: string; cron: string }[] = [
+  { label: "Every 15 min", cron: "*/15 * * * *" },
+  { label: "Hourly", cron: "0 * * * *" },
+  { label: "Daily 9am", cron: "0 9 * * *" },
+  { label: "Weekdays 9am", cron: "0 9 * * 1-5" },
+  { label: "Weekly Mon", cron: "0 9 * * 1" },
+];
+
 function fmt(iso: string | null): string {
   if (!iso) return "—";
   try {
@@ -52,13 +61,13 @@ export function SchedulesPanel({ jobs, onCreate, onDelete, onRun }: SchedulesPan
   };
 
   const inputCls =
-    "w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)]";
+    "w-full px-2.5 py-1.5 text-xs rounded-md bg-[var(--color-card)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary)]";
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Create form */}
       <form onSubmit={submit} className="p-3 border-b border-[var(--color-border)] space-y-2">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+        <div className="text-xs font-semibold text-[var(--color-text-secondary)]">
           New schedule
         </div>
         <input
@@ -73,6 +82,24 @@ export function SchedulesPanel({ jobs, onCreate, onDelete, onRun }: SchedulesPan
           value={cron}
           onChange={(e) => setCron(e.target.value)}
         />
+        {/* Quick presets — set the cron field without writing raw cron */}
+        <div className="flex flex-wrap gap-1">
+          {CRON_PRESETS.map((p) => (
+            <button
+              key={p.cron}
+              type="button"
+              onClick={() => setCron(p.cron)}
+              title={p.cron}
+              className={`px-2 py-0.5 text-[11px] rounded-full border transition-colors ${
+                cron === p.cron
+                  ? "border-[var(--color-primary)] bg-[var(--color-accent-soft)] text-[var(--color-text)]"
+                  : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-text)]"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <textarea
           className={`${inputCls} resize-none`}
           rows={2}
@@ -106,7 +133,7 @@ export function SchedulesPanel({ jobs, onCreate, onDelete, onRun }: SchedulesPan
           jobs.map((job) => (
             <div
               key={job.id}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5"
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] shadow-xs p-2.5"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
