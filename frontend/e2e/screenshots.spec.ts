@@ -47,8 +47,8 @@ for (const theme of ['light', 'dark'] as const) {
       await page.waitForTimeout(300);
       await shot('03-schedules');
 
-      // 4. Tasks tab (default right panel)
-      await page.getByRole('button', { name: 'Tasks' }).click();
+      // 4. Plan tab (default right panel)
+      await page.getByRole('button', { name: 'Plan' }).click();
       await page.waitForTimeout(300);
       await shot('04-tasks');
     });
