@@ -112,11 +112,15 @@ jobs:
       - name: Visual regression (pixel-diff vs committed baselines)
         run: bash frontend/e2e/docker-visual.sh check
 
-      - name: DEBUG — where is my new UI?
+      - name: DEBUG — capture what CI actually renders
         if: always()
         run: |
-          echo "=== HEAD ==="; git log -1 --oneline 2>&1 || true
-          echo "=== config.py subtitle default ==="; grep -n 'subtitle' langstage/config.py | head -3
-          echo "=== new string in SRC? ==="; grep -rl 'Pick a starting point' frontend/src/ || echo MISSING_IN_SRC
-          echo "=== new string in BUILT static? ==="; grep -rl 'Pick a starting point' langstage/static/ 2>/dev/null || echo MISSING_IN_BUILD
-          echo "=== served HTML head ==="; ls -la langstage/static/assets/*.js 2>/dev/null | head
+          cd frontend
+          npx playwright test screenshots.spec.ts || true
+      - name: Upload actual screenshots (TEMP diagnostic)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: langstage-actual-screens
+          path: frontend/e2e/screenshots/
+          retention-days: 7
