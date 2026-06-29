@@ -109,13 +109,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Regenerate visual baselines (TEMP — revert to check)
-        run: bash frontend/e2e/docker-visual.sh update
+      - name: Visual regression (pixel-diff vs committed baselines)
+        run: bash frontend/e2e/docker-visual.sh check
 
-      - name: Upload regenerated baselines
+      - name: Upload actual renders (TEMP diagnostic)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: langstage-visual-baselines
-          path: frontend/e2e/visual.spec.ts-snapshots/
+          name: langstage-visual-actuals
+          path: frontend/test-results/
           retention-days: 7
