@@ -304,7 +304,12 @@ class FileManager:
         else:
             resolved = self.workspace
 
-        # Ensure path is within workspace (prevent directory traversal)
-        if not str(resolved).startswith(str(self.workspace)):
+        # Confine to the workspace by path containment, NOT a string prefix. A bare
+        # startswith() match has no path-separator boundary, so a *sibling* directory
+        # that shares the workspace's name as a prefix (ws-secret, ws.bak, ws2, ...)
+        # slips through and becomes readable/writable/deletable via ../-relative
+        # paths. is_relative_to() is true only for the workspace itself or a real
+        # descendant. (gh #41)
+        if not resolved.is_relative_to(self.workspace):
             raise ValueError(f"Path escapes workspace: {path}")
         return resolved

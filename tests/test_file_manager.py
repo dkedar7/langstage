@@ -56,3 +56,27 @@ def test_csv_language(workspace):
     fm = FileManager(workspace)
     content = fm.read_file("/data.csv")
     assert content["language"] == "csv"
+
+
+def test_sibling_prefix_dir_cannot_escape_workspace(tmp_path):
+    """A sibling dir sharing the workspace's name prefix must NOT be reachable.
+
+    The old guard used a plain str startswith() with no separator boundary, so
+    `ws-secret` passed the check for workspace `ws` and a ../-relative path could
+    read/write/delete outside the workspace. (gh #41 — path traversal)
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    sibling = tmp_path / "ws_secret"
+    sibling.mkdir()
+    (sibling / "passwd.txt").write_text("SECRET outside the workspace")
+    (ws / "inside.txt").write_text("ok")
+
+    fm = FileManager(ws)
+    # Legitimate in-workspace access still works.
+    assert fm._resolve_path("inside.txt").name == "inside.txt"
+    assert fm._resolve_path("/").resolve() == ws.resolve()
+    # Every traversal into the prefix-sharing sibling is rejected.
+    for escape in ("../ws_secret/passwd.txt", "../ws_secret", "/../ws_secret/passwd.txt"):
+        with pytest.raises(ValueError, match="escapes workspace"):
+            fm._resolve_path(escape)
