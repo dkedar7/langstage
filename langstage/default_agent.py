@@ -139,29 +139,40 @@ AGENT_MIDDLEWARE = [CanvasMiddleware()]
 # Global agent for physical filesystem mode (writes to disk via the shared
 # demo factory's FilesystemBackend + InMemorySaver boilerplate). Cowork supplies
 # the prompt, notebook/display tools, canvas middleware, and bash interrupt.
-agent = _build_default_agent(
-    workspace=workspace_root,
-    model=None,  # let deepagents pick its default model (prior behavior)
-    name="LangStage",
-    system_prompt=SYSTEM_PROMPT,
-    tools=AGENT_TOOLS,
-    middleware=AGENT_MIDDLEWARE,
-    interrupt_on=dict(bash=True),
-    virtual_mode=True,
-)
-# Preserve the middleware list for runtime introspection. deepagents fuses
-# middleware into the compiled graph, so we stash the originals so that
-# agent_uses_canvas_middleware() can still detect them.
-agent.middleware = AGENT_MIDDLEWARE
-# The demo factory gives us an in-memory checkpointer; mark it so the server
-# upgrades it to a durable SQLite one at startup (survives restarts).
-agent._langstage_auto_checkpointer = True
+def _make_default_agent(ws_root: str):
+    """Build the LangStage default deepagent rooted at ``ws_root``."""
+    a = _build_default_agent(
+        workspace=ws_root,
+        model=None,  # let deepagents pick its default model (prior behavior)
+        name="LangStage",
+        system_prompt=SYSTEM_PROMPT,
+        tools=AGENT_TOOLS,
+        middleware=AGENT_MIDDLEWARE,
+        interrupt_on=dict(bash=True),
+        virtual_mode=True,
+    )
+    # Preserve the middleware list for runtime introspection. deepagents fuses
+    # middleware into the compiled graph, so we stash the originals so that
+    # agent_uses_canvas_middleware() can still detect them.
+    a.middleware = AGENT_MIDDLEWARE
+    # The demo factory gives us an in-memory checkpointer; mark it so the server
+    # upgrades it to a durable SQLite one at startup (survives restarts).
+    a._langstage_auto_checkpointer = True
+    return a
+
+
+# Module-level default (built from the config/env workspace) for any import-time
+# consumers. CoworkApp rebuilds rooted at the RESOLVED workspace via
+# create_default_agent(), so --workspace/toml/Python reach the agent too. (gh #44)
+agent = _make_default_agent(workspace_root)
 
 
 def create_default_agent(workspace: Path):
-    """Create a default deepagent with filesystem access.
+    """Create a default deepagent with filesystem access, rooted at ``workspace``.
 
-    Requires deepagents to be installed and an LLM API key
-    (e.g. ANTHROPIC_API_KEY) to be set.
+    Builds a fresh agent for the given workspace, so the agent's tools run in the
+    same resolved workspace the file browser uses — not the import-time env/cwd
+    default. Requires deepagents installed and an LLM API key
+    (e.g. ANTHROPIC_API_KEY). (gh #44)
     """
-    return agent
+    return _make_default_agent(str(workspace))

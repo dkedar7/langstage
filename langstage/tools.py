@@ -1590,10 +1590,15 @@ def bash(command: str, timeout: int = 60) -> Dict[str, Any]:
         return _bash_sandboxed(command, timeout)
 
     try:
+        # Read the workspace dynamically from config (not the import-bound copy),
+        # so CoworkApp's resolved --workspace/toml/Python value is honored — not
+        # just whatever the env was at import time. (gh #44)
+        from . import config as cfg
+
         result = subprocess.run(
             command,
             shell=True,
-            cwd=str(WORKSPACE_ROOT),
+            cwd=str(cfg.WORKSPACE_ROOT),
             capture_output=True,
             text=True,
             timeout=timeout

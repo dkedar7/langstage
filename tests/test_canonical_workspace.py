@@ -77,3 +77,44 @@ def test_config_tools_agent_agree_on_canonical_workspace(tmp_path):
     assert Path(tools) == Path(target), f"bash cwd ignored canonical: {tools}"
     assert Path(agent) == Path(target)
     assert Path(cfg) == Path(tools) == Path(agent)  # no split-brain
+
+
+def test_cli_workspace_reaches_agent_bash(tmp_path):
+    """--workspace / CoworkApp(workspace=) must reach the agent's bash tool, not
+    just the file browser. Previously only the env var (lowest documented
+    priority) reached the agent; CLI/TOML/Python were dropped. (gh #44)
+
+    Run in a subprocess so the global config.WORKSPACE_ROOT mutation can't leak.
+    """
+    launch = tmp_path / "launch"
+    project = launch / "project"
+    project.mkdir(parents=True)
+    agent = launch / "bashpwd.py"
+    agent.write_text(
+        "from langgraph.graph import StateGraph, MessagesState, START, END\n"
+        "from langchain_core.messages import AIMessage\n"
+        "from langstage.tools import bash\n"
+        "def respond(s):\n"
+        "    return {'messages': [AIMessage(content=bash('pwd')['stdout'].strip())]}\n"
+        "b = StateGraph(MessagesState); b.add_node('respond', respond)\n"
+        "b.add_edge(START, 'respond'); b.add_edge('respond', END)\n"
+        "graph = b.compile()\n"
+    )
+    code = (
+        f"from langstage import CoworkApp; "
+        f"CoworkApp(agent_spec=r'{agent}:graph', workspace='./project', port=8190); "
+        "import langstage.config as cfg; from langstage.tools import bash; "
+        "print('WS=' + str(cfg.WORKSPACE_ROOT)); "
+        "print('BASH=' + bash('pwd')['stdout'].strip())"
+    )
+    env = {k: v for k, v in os.environ.items() if not k.endswith("WORKSPACE_ROOT")}
+    out = subprocess.run(
+        [sys.executable, "-c", code], cwd=str(launch), env=env, capture_output=True, text=True
+    )
+    assert out.returncode == 0, out.stderr
+    ws = next(line[3:] for line in out.stdout.splitlines() if line.startswith("WS="))
+    bashpwd = next(line[5:] for line in out.stdout.splitlines() if line.startswith("BASH="))
+    # Both the tools' workspace and the agent's bash cwd resolve to ./project,
+    # not the launch cwd.
+    assert os.path.basename(ws.rstrip("/\\")) == "project", ws
+    assert os.path.basename(bashpwd.rstrip("/")) == "project", bashpwd
