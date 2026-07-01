@@ -9,7 +9,7 @@ import os
 import warnings
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import ClassVar, Optional
 
 from langgraph_stream_parser.host import HostConfig
 
@@ -102,6 +102,10 @@ class AppConfig(HostConfig):
     # None means auto-resolve (canvas auto-detects middleware; files defaults True).
     show_canvas: Optional[bool] = None
     show_files: Optional[bool] = None
+    # [experimental] Stream chat through the in-process AG-UI adapter instead of
+    # the built-in StreamParser (ADR 0002). Opt-in via LANGSTAGE_AGUI=1. Requires
+    # the agui extra: pip install "langstage[agui]".
+    agui: Optional[bool] = None
 
     _ENV: ClassVar[dict] = {
         "subtitle": ("DEEPAGENT_SUBTITLE", str),
@@ -117,6 +121,7 @@ class AppConfig(HostConfig):
         "custom_css": ("DEEPAGENT_CUSTOM_CSS", str),
         "show_canvas": ("DEEPAGENT_SHOW_CANVAS", _parse_optional_bool),
         "show_files": ("DEEPAGENT_SHOW_FILES", _parse_optional_bool),
+        "agui": ("DEEPAGENT_AGUI", _parse_optional_bool),
     }
     _TOML: ClassVar[dict] = {
         "subtitle": "ui.subtitle",
@@ -132,6 +137,7 @@ class AppConfig(HostConfig):
         "custom_css": "ui.custom_css",
         "show_canvas": "ui.show_canvas",
         "show_files": "ui.show_files",
+        "agui": "experimental.agui",
     }
 
     @classmethod

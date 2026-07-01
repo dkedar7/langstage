@@ -54,6 +54,9 @@ def create_fastapi_app(
         graph=agent,
         stream_mode=["updates", "messages"],
         max_result_len=50_000,
+        # [experimental] Route chat through the in-process AG-UI adapter (ADR 0002)
+        # when LANGSTAGE_AGUI is set; same SSE frames, so the frontend is unchanged.
+        agui=bool(config.agui),
         **(stream_parser_config or {}),
     )
 
