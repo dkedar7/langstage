@@ -69,6 +69,11 @@ langstage run --demo
 
 launches the full UI against a built-in keyless echo agent, so you can explore the surface before wiring up a real agent.
 
+> **Note:** running `langstage run` with no `--demo` and no `--agent` falls
+> back to the built-in default agent, which requires the `deepagents` extra.
+> Install it with `pip install "langstage[deepagents]"`, or use `--demo`
+> above for a zero-setup path that needs no extra install.
+
 ### From Python
 
 ```python
@@ -187,7 +192,7 @@ langstage --show-config
 
 | Option | CLI Flag | Env Var | Default |
 |--------|----------|---------|---------|
-| Agent spec | `--agent` | `LANGSTAGE_AGENT_SPEC` | Built-in default agent |
+| Agent spec | `--agent` | `LANGSTAGE_AGENT_SPEC` | Built-in default agent (requires `deepagents` extra — see Quick Start) |
 | Workspace | `--workspace` | `LANGSTAGE_WORKSPACE_ROOT` | `.` |
 | Host | `--host` | `LANGSTAGE_HOST` | `localhost` |
 | Port | `--port` | `LANGSTAGE_PORT` | `8050` |
