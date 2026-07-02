@@ -7,7 +7,7 @@ from langstage.config import AppConfig
 
 
 # The keyless echo agent shipped with the shared core - see `--demo`.
-DEMO_AGENT_SPEC = "langgraph_stream_parser.demo.stub:graph"
+DEMO_AGENT_SPEC = "langstage_core.demo.stub:graph"
 
 
 @click.group(invoke_without_command=True)
@@ -110,7 +110,7 @@ def _agent_tool_names(agent) -> set[str] | None:
 def check(agent_spec, demo):
     """Preflight a bring-your-own agent: load it and report which LangStage
     features will light up (and which need a convention or tool to unlock)."""
-    from langgraph_stream_parser import load_agent_spec
+    from langstage_core import load_agent_spec
     from langstage.middleware import agent_uses_canvas_middleware
 
     spec = DEMO_AGENT_SPEC if demo else agent_spec

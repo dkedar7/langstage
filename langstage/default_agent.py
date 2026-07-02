@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from langgraph_stream_parser.demo import create_default_agent as _build_default_agent
-from langgraph_stream_parser.tasks import TASK_TOOLS
+from langstage_core.demo import create_default_agent as _build_default_agent
+from langstage_core.tasks import TASK_TOOLS
 
 from langstage.config import WORKSPACE_ROOT as _WORKSPACE_ROOT
 from langstage.middleware import CanvasMiddleware

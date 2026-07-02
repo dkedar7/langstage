@@ -5,8 +5,8 @@ to SQLite, so the claim atomicity + durability are proven here independently.
 """
 import asyncio
 
-from langgraph_stream_parser.tasks.state import DONE, ONGOING, QUEUED
-from langgraph_stream_parser.tasks.store import now_iso
+from langstage_core.tasks.state import DONE, ONGOING, QUEUED
+from langstage_core.tasks.store import now_iso
 from langstage.tasks import SqliteTaskStore
 
 

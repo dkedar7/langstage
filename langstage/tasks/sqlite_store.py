@@ -1,4 +1,4 @@
-"""SQLite-backed :class:`~langgraph_stream_parser.tasks.TaskStore`.
+"""SQLite-backed :class:`~langstage_core.tasks.TaskStore`.
 
 Durable across restarts (the task board survives a bounce). Single-process by
 design: an :class:`asyncio.Lock` serializes the claim so two workers never grab
@@ -16,9 +16,9 @@ from typing import Any, Optional
 
 import aiosqlite
 
-from langgraph_stream_parser.tasks import Task
-from langgraph_stream_parser.tasks.state import ONGOING, QUEUED
-from langgraph_stream_parser.tasks.store import now_iso
+from langstage_core.tasks import Task
+from langstage_core.tasks.state import ONGOING, QUEUED
+from langstage_core.tasks.store import now_iso
 
 _COLUMNS = [
     "task_id", "parent_id", "title", "prompt", "agent_spec", "state",

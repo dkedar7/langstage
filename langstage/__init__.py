@@ -2,7 +2,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from langgraph_stream_parser.tasks import TASK_TOOLS
+from langstage_core.tasks import TASK_TOOLS
 
 from langstage.app import CoworkApp, run_app
 from langstage.scheduler import CRON_TOOLS

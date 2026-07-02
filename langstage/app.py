@@ -7,7 +7,7 @@ from pathlib import Path
 
 import uvicorn
 
-from langgraph_stream_parser import load_agent_spec
+from langstage_core import load_agent_spec
 from langstage.config import AppConfig
 from langstage.server.main import create_fastapi_app
 
