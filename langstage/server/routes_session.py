@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from langgraph_stream_parser.adapters import SessionAdapter
+from langstage_core.adapters import SessionAdapter
 
 from langstage.server.routes_chat import context_parts
 

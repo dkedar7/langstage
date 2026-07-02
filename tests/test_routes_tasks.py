@@ -1,6 +1,6 @@
 """Contract tests for the /api/tasks REST router.
 
-Wires a real TaskRunner + SqliteTaskStore + SessionAdapter (fake agent) behind
+Wires a real TaskRunner + SqliteTaskStore + SessionAdapter (stub agent) behind
 the router and drives it over HTTP. (httpx ASGITransport doesn't fire lifespan,
 so the store/runner are set up explicitly here rather than via app startup.)
 """
@@ -10,13 +10,12 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from langgraph_stream_parser.adapters import SessionAdapter
-from langgraph_stream_parser.tasks import TaskRunner
-from langgraph_stream_parser.tasks.state import DONE
+from langstage_core import load_agent_spec
+from langstage_core.adapters import SessionAdapter
+from langstage_core.tasks import TaskRunner
+from langstage_core.tasks.state import DONE
 from langstage.server.routes_tasks import create_tasks_router
 from langstage.tasks import SqliteTaskStore
-
-from .test_streaming import FakeStreamingAgent
 
 
 async def _wait(store, task_id, target, timeout=4.0):
@@ -35,7 +34,7 @@ async def _wait(store, task_id, target, timeout=4.0):
 async def ctx(tmp_path):
     store = SqliteTaskStore(tmp_path / "tasks.db")
     await store.setup()
-    adapter = SessionAdapter(graph=FakeStreamingAgent(chunks=["all ", "done"]))
+    adapter = SessionAdapter(graph=load_agent_spec("langstage_core.demo.stub:graph"))
     runner = TaskRunner(adapter, store, concurrency=2, poll_interval=0.05)
     await runner.start()
     app = FastAPI()

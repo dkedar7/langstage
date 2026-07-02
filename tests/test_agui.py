@@ -1,46 +1,26 @@
-"""Experimental AG-UI chat path for the web app (ADR 0002).
+"""AG-UI chat path for the web app — the SessionAdapter's only streaming path
+since core 1.0 (ADR 0003).
 
-The config toggle (LANGSTAGE_AGUI) flips SessionAdapter into its in-process AG-UI
-mode, which emits the same SSE frames — so the frontend is unchanged. The frame
-mapping + outcome tracking live in the core (langgraph-stream-parser); here we
-verify the web's toggle wiring and one end-to-end stream.
+The adapter streams every turn through the in-process AG-UI adapter, emitting the
+same SSE frames the frontend already consumes. The frame mapping + outcome
+tracking live in the core (langstage-core); here we verify one end-to-end stream.
 """
 
 import pytest
 
-from langstage.config import AppConfig
-
-
-def test_agui_toggle_defaults_off():
-    assert AppConfig().agui is None
-    assert bool(AppConfig().agui) is False  # coerced off when unset (as main.py does)
-
-
-def test_agui_toggle_from_env(monkeypatch):
-    monkeypatch.setenv("LANGSTAGE_AGUI", "1")
-    assert AppConfig.from_env().agui is True
-
-
-def test_agui_toggle_legacy_env(monkeypatch):
-    monkeypatch.delenv("LANGSTAGE_AGUI", raising=False)
-    monkeypatch.setenv("DEEPAGENT_AGUI", "true")
-    assert AppConfig.from_env().agui is True
-
-
-# ── end-to-end (requires the agui extra) ─────────────────────────────
-
+# The AG-UI runtime is a base dependency (core's [agui] extra); importorskip is a
+# safety net so a stripped env degrades gracefully rather than erroring at collect.
 pytest.importorskip("ag_ui_langgraph")
 
 
 @pytest.mark.asyncio
-async def test_session_adapter_agui_streams_via_web_dep():
-    from langgraph_stream_parser import load_agent_spec
-    from langgraph_stream_parser.adapters import SessionAdapter
+async def test_session_adapter_streams_agui_frames():
+    from langstage_core import load_agent_spec
+    from langstage_core.adapters import SessionAdapter
 
     adapter = SessionAdapter(
-        graph=load_agent_spec("langgraph_stream_parser.demo.stub:graph"),
+        graph=load_agent_spec("langstage_core.demo.stub:graph"),
         max_result_len=50_000,
-        agui=True,
     )
     session = adapter.submit_message("s1", "hello web agui")
     await session.current_task

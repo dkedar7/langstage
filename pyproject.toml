@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.12.3"
+version = "0.13.0"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -12,9 +12,11 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    # >=0.6.4 carries the dual-mode content fallback so non-token-streaming
-    # agents render in chat instead of replying blank (gh #-dogfood).
-    "langgraph-stream-parser>=0.6.16,<0.7",
+    # Since core 1.0 (ADR 0003) the SessionAdapter streams every turn ONLY through
+    # the in-process AG-UI adapter, so the AG-UI runtime (ag-ui-langgraph[fastapi],
+    # via core's [agui] extra) is a HARD dep. fastapi + uvicorn are already base
+    # deps above, so [agui] mainly adds ag-ui-langgraph itself.
+    "langstage-core[agui]>=1.0",
     # Any real use of langstage already has langgraph in the env (it is the
     # thing being hosted); declaring it makes `run --demo` work on a bare install.
     "langgraph>=1.0",
@@ -39,16 +41,18 @@ dependencies = [
 deepagents = [
     "deepagents>=0.3",
 ]
+# Redundant since AG-UI moved into base deps (core 1.0); kept as a no-op alias so
+# existing `pip install langstage[agui]` scripts/READMEs still resolve.
 agui = [
-    "langgraph-stream-parser[agui]>=0.6.16,<0.7",
+    "langstage-core[agui]>=1.0",
 ]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "httpx>=0.27",
     "ruff>=0.5",
-    # The experimental AG-UI chat path (ADR 0002); pulled into dev so CI exercises
-    # tests/test_agui.py instead of skipping it.
+    # AG-UI runtime for the SessionAdapter's only streaming path (base deps pull
+    # this via core's [agui] extra; pinned here too so the test env is explicit).
     "ag-ui-langgraph>=0.0.41",
 ]
 

@@ -1,6 +1,6 @@
 """SSE streaming + REST endpoints for chat.
 
-Backed by ``langgraph_stream_parser.adapters.SessionAdapter`` — the per-session
+Backed by ``langstage_core.adapters.SessionAdapter`` — the per-session
 queue, cancellation, and SSE plumbing that used to live in cowork's own
 ``stream/`` package now come from the shared runtime.
 """
@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from langgraph_stream_parser.adapters import SessionAdapter
+from langstage_core.adapters import SessionAdapter
 
 from langstage.workspace.file_manager import FileManager
 

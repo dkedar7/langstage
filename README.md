@@ -23,14 +23,14 @@ langstage is the web stage (and namesake) of the **LangStage family**: write you
 | Terminal | [langstage-cli](https://github.com/dkedar7/langstage-cli) | `langstage-cli -a my_agent.py:graph` |
 | VS Code | [langstage-vscode](https://github.com/dkedar7/langstage-vscode) | chat participant + stdio sidecar |
 | Reference agent | [langstage-hermes](https://github.com/dkedar7/langstage-hermes) | `LANGSTAGE_AGENT_SPEC=langstage_hermes.agent:graph` on any stage |
-| Shared core | [langgraph-stream-parser](https://github.com/dkedar7/langgraph-stream-parser) | typed events + config resolver behind every stage |
+| Shared core | [langstage-core](https://github.com/dkedar7/langstage-core) | typed events + config resolver behind every stage |
 
 ### Serve over AG-UI
 
-This surface's agent — any LangGraph `CompiledGraph` — can also be served over the [AG-UI protocol](https://github.com/dkedar7/langgraph-stream-parser) for use with AG-UI compatible clients:
+This surface's agent — any LangGraph `CompiledGraph` — can also be served over the [AG-UI protocol](https://github.com/dkedar7/langstage-core) for use with AG-UI compatible clients:
 
 ```bash
-pip install "langgraph-stream-parser[agui]"
+pip install "langstage-core[agui]"
 langstage-agui --agent my_agent.py:graph
 ```
 
@@ -156,7 +156,7 @@ langstage check --agent my_agent.py:graph
 
 ## Task board
 
-The **Board** tab turns LangStage into a lightweight agent control room: delegate a task and it runs on a background copy of your agent while you keep chatting. No extra infrastructure — tasks are persisted in a local SQLite file (the board survives a restart) and executed by an in-process worker pool, built on the [`langgraph-stream-parser`](https://github.com/dkedar7/langgraph-stream-parser) task engine.
+The **Board** tab turns LangStage into a lightweight agent control room: delegate a task and it runs on a background copy of your agent while you keep chatting. No extra infrastructure — tasks are persisted in a local SQLite file (the board survives a restart) and executed by an in-process worker pool, built on the [`langstage-core`](https://github.com/dkedar7/langstage-core) task engine.
 
 - **Delegate** from the Board tab (or let the agent delegate to itself — see below). A task moves `queued → ongoing → review → done`; cancel or retry from any card.
 - **Open a task** (click its card) to **live-tail the agent's full event stream** — content and tool calls, rendered like the chat. Approve/reject a task paused for human review, or send it a **follow-up**.
@@ -239,7 +239,7 @@ app = CoworkApp(
 )
 ```
 
-See [langgraph-stream-parser](https://github.com/dkedar7/langgraph-stream-parser) for details.
+See [langstage-core](https://github.com/dkedar7/langstage-core) for details.
 
 ## Architecture
 

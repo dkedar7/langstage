@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.13.0 — 2026-07-02
+
+### Changed
+- **AG-UI is now the chat/board's only streaming path (ADR 0003).** The
+  `SessionAdapter` streams every turn through `langstage-core`'s in-process AG-UI
+  adapter, emitting the **same** SSE frames the React frontend already consumes —
+  so the UI is unchanged. Removed the `LANGSTAGE_AGUI` opt-in env and the
+  `AppConfig.agui` toggle (they gated a path that no longer exists); the adapter is
+  constructed without `agui=`/`stream_mode=`.
+- **Repointed to `langstage-core` 1.0** (the rename of `langgraph-stream-parser`;
+  ADR 0003). The AG-UI runtime (`ag-ui-langgraph[fastapi]`, via core's `[agui]`
+  extra) moved into **base dependencies** — since AG-UI is the only path, a bare
+  `pip install langstage` must run a turn. (`fastapi` + `uvicorn` were already base
+  deps.) The `[agui]` extra is now a redundant no-op alias.
+
+### Removed
+- The `experimental.agui` TOML key / `LANGSTAGE_AGUI` env / `AppConfig.agui` field.
+  The frontend's content-delta accumulation was already AG-UI-native, so chat
+  rendering is unchanged.
+
 ## 0.11.8 — 2026-06-27
 
 ### Fixed

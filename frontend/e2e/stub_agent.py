@@ -5,7 +5,7 @@ Launch the app against it with::
     langstage run --agent <abs path>/stub_agent.py:graph --no-browser
 
 It's a real compiled LangGraph graph with a MemorySaver checkpointer, so it
-streams through the exact same ``langgraph_stream_parser`` path as the
+streams through the exact same ``langstage_core`` path as the
 production agent — including token-by-token ``messages``-mode streaming, which
 the langstage adapter relies on. But the "model" is a local echo that just
 replays the user's last message, so there's no API key and it's fully

@@ -7,8 +7,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
-from langgraph_stream_parser.adapters import SessionAdapter
-from langgraph_stream_parser.tasks import TaskRunner, set_runner
+from langstage_core.adapters import SessionAdapter
+from langstage_core.tasks import TaskRunner, set_runner
 
 from langstage.config import AppConfig
 from langstage.server.middleware import add_middleware
@@ -49,14 +49,12 @@ def create_fastapi_app(
     canvas_manager = CanvasManager(workspace)
 
     # One session-scoped streaming adapter owns agent execution + the SSE pipe.
-    # max_result_len is large so the UI can show full tool output, not a preview.
+    # Since core 1.0 (ADR 0003) it streams every turn through the in-process AG-UI
+    # adapter — the only path — emitting the same SSE frames, so the frontend is
+    # unchanged. max_result_len is large so the UI shows full tool output.
     adapter = SessionAdapter(
         graph=agent,
-        stream_mode=["updates", "messages"],
         max_result_len=50_000,
-        # [experimental] Route chat through the in-process AG-UI adapter (ADR 0002)
-        # when LANGSTAGE_AGUI is set; same SSE frames, so the frontend is unchanged.
-        agui=bool(config.agui),
         **(stream_parser_config or {}),
     )
 
