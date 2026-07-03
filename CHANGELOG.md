@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.3 — 2026-07-03
+
+### Added
+- **`langstage check --live`: run one real turn as a true readiness gate (ADR 0004).**
+  The static `check` proves the agent is a runnable graph (gh #39) but not that it
+  can actually complete a turn — a bad key, a tool that fails at runtime, or a
+  broken state schema all pass static and die at first chat. `--live` runs one real
+  turn through the shared `langstage-core` preflight (`core.verify()`) and fails the
+  check (exit 1) if it errors. Default `check` is unchanged — still fast, static,
+  and keyless — so nothing breaks; `--live` is opt-in for when you have a working
+  model and want the real gate. Requires `langstage-core>=1.0.6`.
+
 ## 0.13.2 — 2026-07-02
 
 ### Fixed

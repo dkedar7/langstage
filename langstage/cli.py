@@ -114,9 +114,18 @@ def _agent_tool_names(agent) -> set[str] | None:
 @main.command()
 @click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec to check (e.g., my_agent.py:agent)")
 @click.option("--demo", is_flag=True, default=False, help="Check the built-in demo agent instead")
-def check(agent_spec, demo):
+@click.option("--live", is_flag=True, default=False,
+              help="Also run ONE real turn through the agent (needs a working "
+                   "model/key) and fail if it errors — a true readiness gate, "
+                   "beyond the static checks. Uses the shared langstage-core preflight.")
+def check(agent_spec, demo, live):
     """Preflight a bring-your-own agent: load it and report which LangStage
-    features will light up (and which need a convention or tool to unlock)."""
+    features will light up (and which need a convention or tool to unlock).
+
+    The static checks are fast and need no API key. Add ``--live`` to also run one
+    real turn and fail if the agent errors — the same readiness a first chat would
+    prove, so a runnable-but-broken agent (bad key, tool that fails at runtime)
+    doesn't pass here and die at chat time."""
     from langstage_core import load_agent_spec
     from langstage.middleware import agent_uses_canvas_middleware
 
@@ -185,6 +194,22 @@ def check(agent_spec, demo):
                   else "not found - add `from langstage import LANGSTAGE_TOOLS` to your agent's tools"))
     click.echo(f"{ok if has_cron else warn} schedule tools "
                + ("present - agent can create schedules" if has_cron else "not found (LANGSTAGE_TOOLS adds these too)"))
+
+    # --live: the static checks above prove the agent is a runnable graph, not that
+    # it can actually complete a turn (a bad key / a tool that fails at runtime / a
+    # broken state schema all pass static and die at first chat). Run one real turn
+    # through the shared langstage-core preflight and fail the check if it errors —
+    # so a green `check --live` is a true readiness gate. (ADR 0004)
+    if live:
+        from langstage_core.agui import verify as _core_verify
+
+        click.echo("")
+        result = _core_verify(agent)
+        if result.ok:
+            click.echo(f"{ok} live turn: {result.reason}")
+        else:
+            click.echo(f"{fail} live turn failed: {result.reason}")
+            raise SystemExit(1)
 
     click.echo("\nAlways available from the UI regardless of the agent: chat, "
                "tool-call view, file browser, the task board (delegate), and schedules.")

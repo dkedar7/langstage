@@ -154,6 +154,14 @@ langstage check --agent my_agent.py:graph
 [warn] async task tools not found - add `from langstage import LANGSTAGE_TOOLS` ...
 ```
 
+The static checks are fast and need no API key. Add **`--live`** to also run one real
+turn and fail (exit 1) if the agent errors — a true CI readiness gate that catches a
+bad key or a tool that fails at runtime, which the static checks can't:
+
+```bash
+langstage check --agent my_agent.py:graph --live
+```
+
 ## Task board
 
 The **Board** tab turns LangStage into a lightweight agent control room: delegate a task and it runs on a background copy of your agent while you keep chatting. No extra infrastructure — tasks are persisted in a local SQLite file (the board survives a restart) and executed by an in-process worker pool, built on the [`langstage-core`](https://github.com/dkedar7/langstage-core) task engine.
