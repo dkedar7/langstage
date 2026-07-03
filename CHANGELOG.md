@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.1 — 2026-07-02
+
+### Fixed
+- **`langstage run` crashed on a clean `pip install langstage` (gh #46).** The
+  built-in default agent was built at module-import time, so on an install without
+  the `deepagents` extra it dumped a traceback — and the remediation named the wrong
+  package (`langstage-core[demo]` instead of `langstage[deepagents]`). The import is
+  now defensive (falls back to `agent = None`), and `create_default_agent` raises a
+  clean, correctly-packaged error that `langstage run` shows as a one-line message
+  (`pip install "langstage[deepagents]"`, or use `--demo`, or pass `--agent`) instead
+  of a traceback.
+
 ## 0.13.0 — 2026-07-02
 
 ### Changed

@@ -55,27 +55,34 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
         if agent_spec:
             raise click.UsageError("--demo and --agent are mutually exclusive.")
         agent_spec = DEMO_AGENT_SPEC
-    app = CoworkApp(
-        agent_spec=agent_spec,
-        workspace=workspace,
-        port=port,
-        host=host,
-        debug=debug if debug else None,
-        title=title,
-        subtitle=subtitle,
-        welcome_message=welcome_message,
-        theme=theme,
-        agent_name=agent_name,
-        icon_url=icon_url,
-        auth_username=auth_username,
-        auth_password=auth_password,
-        save_workflow_prompt=save_workflow_prompt,
-        run_workflow_prompt=run_workflow_prompt,
-        create_workflow_prompt=create_workflow_prompt,
-        custom_css=custom_css,
-        show_canvas=show_canvas,
-        show_files=show_files,
-    )
+    try:
+        app = CoworkApp(
+            agent_spec=agent_spec,
+            workspace=workspace,
+            port=port,
+            host=host,
+            debug=debug if debug else None,
+            title=title,
+            subtitle=subtitle,
+            welcome_message=welcome_message,
+            theme=theme,
+            agent_name=agent_name,
+            icon_url=icon_url,
+            auth_username=auth_username,
+            auth_password=auth_password,
+            save_workflow_prompt=save_workflow_prompt,
+            run_workflow_prompt=run_workflow_prompt,
+            create_workflow_prompt=create_workflow_prompt,
+            custom_css=custom_css,
+            show_canvas=show_canvas,
+            show_files=show_files,
+        )
+    except RuntimeError as e:
+        # Building the built-in default agent needs the `deepagents` extra + an LLM
+        # key; on a clean `pip install langstage` it isn't there. Surface the clean,
+        # correctly-packaged message (from default_agent.create_default_agent) as a
+        # one-line CLI error instead of a traceback. (gh #46)
+        raise click.ClickException(str(e)) from e
     app.run(open_browser=not no_browser)
 
 
