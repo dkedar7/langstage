@@ -127,6 +127,25 @@ def test_detect_no_canvas_middleware_when_other_middleware_present():
     assert agent_uses_canvas_middleware(_FakeAgentWithOtherMiddleware()) is False
 
 
+class _FakeCompiledWithCanvasNode:
+    # A BYO deep agent exposes no middleware list — langchain fuses the middleware —
+    # but CanvasMiddleware's before_agent hook compiles to a named node. (gh #48)
+    nodes = {"__start__": None, "model": None, "tools": None, "CanvasMiddleware.before_agent": None}
+
+
+class _FakeCompiledWithoutCanvasNode:
+    nodes = {"__start__": None, "model": None, "TodoListMiddleware.after_model": None}
+
+
+def test_detect_canvas_middleware_via_node_name():
+    # gh #48: detection must work for a BYO agent that only exposes graph nodes.
+    assert agent_uses_canvas_middleware(_FakeCompiledWithCanvasNode()) is True
+
+
+def test_no_false_positive_from_other_middleware_nodes():
+    assert agent_uses_canvas_middleware(_FakeCompiledWithoutCanvasNode()) is False
+
+
 def test_detect_handles_none_agent():
     # Should not crash on unexpected input
     assert agent_uses_canvas_middleware(None) is False

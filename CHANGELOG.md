@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.2 — 2026-07-02
+
+### Fixed
+- **Canvas auto-detection never fired for a bring-your-own agent (gh #48).**
+  `CanvasMiddleware` does its work in `wrap_model_call`, which langchain/deepagents
+  fuse into the model node — leaving no `.middleware` attribute or graph node — so an
+  agent that attached `CanvasMiddleware()` via `create_deep_agent(middleware=[...])`
+  was undetectable: the Canvas tab never auto-appeared and `langstage check` reported
+  "no CanvasMiddleware". `CanvasMiddleware` now defines a no-op `before_agent` hook, so
+  langchain compiles a named `CanvasMiddleware.before_agent` graph node, and
+  `agent_uses_canvas_middleware` detects it by node name (covering `CanvasMiddleware`
+  and any subclass) in addition to the stashed-attribute path the bundled default uses.
+
 ## 0.13.1 — 2026-07-02
 
 ### Fixed
