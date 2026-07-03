@@ -100,3 +100,36 @@ def test_check_passes_for_demo_agent():
     result = CliRunner().invoke(cli_mod.main, ["check", "--demo"])
     assert result.exit_code == 0, result.output
     assert "[ ok ] loads" in result.output
+
+
+def test_check_static_default_runs_no_live_turn():
+    """Default `check` stays static/fast/keyless — no live turn (backward-compat)."""
+    result = CliRunner().invoke(cli_mod.main, ["check", "--demo"])
+    assert result.exit_code == 0, result.output
+    assert "live turn" not in result.output
+
+
+def test_check_live_passes_for_demo_agent():
+    """`--live` runs one real turn through core.verify; the keyless stub completes
+    it, so the check is green and reports the live verdict. (ADR 0004)"""
+    result = CliRunner().invoke(cli_mod.main, ["check", "--demo", "--live"])
+    assert result.exit_code == 0, result.output
+    assert "[ ok ] live turn" in result.output
+
+
+def test_check_live_fails_on_runnable_but_broken_agent(tmp_path):
+    """The gap #39 left open: a runnable graph that errors at turn time passes the
+    static checks but must FAIL `--live` (exit 1) — the readiness a first chat proves."""
+    agent = _write(tmp_path, "broken.py",
+                   "from langgraph.graph import StateGraph, START, END, MessagesState\n"
+                   "def boom(s):\n"
+                   "    raise RuntimeError('tool exploded')\n"
+                   "b = StateGraph(MessagesState)\n"
+                   "b.add_node('boom', boom)\n"
+                   "b.add_edge(START, 'boom')\n"
+                   "b.add_edge('boom', END)\n"
+                   "graph = b.compile()\n")
+    result = CliRunner().invoke(cli_mod.main, ["check", "--agent", f"{agent}:graph", "--live"])
+    assert result.exit_code == 1, result.output
+    assert "[ ok ] loads" in result.output  # static gates passed...
+    assert "live turn failed" in result.output  # ...but the real turn caught it
