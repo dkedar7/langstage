@@ -39,6 +39,24 @@ def agent_uses_canvas_middleware(agent: Any) -> bool:
                     return True
         except TypeError:
             continue
+
+    # A bring-your-own agent that attached CanvasMiddleware via
+    # create_deep_agent(middleware=[...]) exposes no middleware list — langchain
+    # fuses it. But CanvasMiddleware's before_agent hook makes langchain compile a
+    # named `CanvasMiddleware.before_agent` graph node, so detect it by node name
+    # (covers CanvasMiddleware and any subclass). (gh #48)
+    canvas_names = {CanvasMiddleware.__name__}
+    pending = [CanvasMiddleware]
+    while pending:
+        for sub in pending.pop().__subclasses__():
+            if sub.__name__ not in canvas_names:
+                canvas_names.add(sub.__name__)
+                pending.append(sub)
+    nodes = getattr(agent, "nodes", None)
+    if isinstance(nodes, dict):
+        for name in nodes:
+            if str(name).split(".", 1)[0] in canvas_names:
+                return True
     return False
 
 from langchain.agents.middleware.types import (
@@ -157,3 +175,16 @@ class CanvasMiddleware(AgentMiddleware):
             return await handler(request)
         self._apply(request)
         return await handler(request)
+
+    def before_agent(self, state: Any, runtime: Any = None) -> None:
+        """No-op detection marker (gh #48).
+
+        The middleware's real work is in ``wrap_model_call``, which fuses into the
+        model node and leaves no trace on the compiled graph — so a bring-your-own
+        agent that attaches ``CanvasMiddleware()`` via
+        ``create_deep_agent(middleware=[...])`` was undetectable, and the Canvas tab
+        never auto-appeared. A ``before_agent`` hook makes langchain compile a named
+        ``CanvasMiddleware.before_agent`` graph node, which ``agent_uses_canvas_middleware``
+        finds. Returns ``None`` (no state change) — it runs once per invocation.
+        """
+        return None
