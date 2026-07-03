@@ -164,7 +164,16 @@ def _make_default_agent(ws_root: str):
 # Module-level default (built from the config/env workspace) for any import-time
 # consumers. CoworkApp rebuilds rooted at the RESOLVED workspace via
 # create_default_agent(), so --workspace/toml/Python reach the agent too. (gh #44)
-agent = _make_default_agent(workspace_root)
+#
+# Built defensively: a clean `pip install langstage` has no `deepagents` extra, and
+# the default agent needs it — so an unguarded build here crashed `langstage run`
+# (and every importer, incl. `--version`/`--help`) at import time with a traceback
+# that named the wrong package. Fall back to None; the runtime path
+# (create_default_agent) surfaces a clean, correctly-packaged error. (gh #46)
+try:
+    agent = _make_default_agent(workspace_root)
+except Exception:  # noqa: BLE001 — missing deepagents / API key must not brick the import
+    agent = None
 
 
 def create_default_agent(workspace: Path):
@@ -175,4 +184,16 @@ def create_default_agent(workspace: Path):
     default. Requires deepagents installed and an LLM API key
     (e.g. ANTHROPIC_API_KEY). (gh #44)
     """
-    return _make_default_agent(str(workspace))
+    try:
+        return _make_default_agent(str(workspace))
+    except RuntimeError as e:
+        # The shared core's factory raises when the `deepagents` extra is missing,
+        # but its message names `langstage-core[demo]` — wrong for a `langstage`
+        # user. Re-message with the package they actually installed. (gh #46)
+        if "deepagents" in str(e).lower():
+            raise RuntimeError(
+                "The built-in default agent needs the 'deepagents' extra: "
+                'pip install "langstage[deepagents]". Or run with --demo for the '
+                "keyless echo agent, or point --agent at your own graph."
+            ) from e
+        raise
