@@ -285,6 +285,26 @@ via `--custom-css`, the path must exist (validated at startup); when set via
 the env var, config file, or Python API, a missing file just logs a warning
 and the default theme is used instead.
 
+## Troubleshooting
+
+### Files the agent creates don't show up in the file browser
+
+If the agent's `bash`/file tools appear to write somewhere other than the
+workspace shown in the UI's file browser, you're likely on
+`langstage < 0.12.2`. Before that version, `--workspace`,
+`langstage.toml`'s `[workspace] root`, and the Python `workspace=` kwarg
+only configured the file browser — the agent's own tools kept running in
+whatever directory the server was launched from, so files the agent wrote
+would silently land outside the workspace and never appear in the browser.
+
+**Fix:** `pip install --upgrade langstage` (0.12.2+ threads the resolved
+workspace into the agent's tools too, not just the file browser).
+
+**Verify it's working:** ask the agent to run `pwd` and confirm the
+reported path matches your configured workspace. If you're not ready to
+upgrade, `LANGSTAGE_WORKSPACE_ROOT` reached the agent's tools correctly
+even on the affected versions, so setting it directly is a safe fallback.
+
 ## Architecture
 
 ```
