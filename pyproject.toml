@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.13.3"
+version = "0.13.4"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -17,7 +17,7 @@ dependencies = [
     # via core's [agui] extra) is a HARD dep. fastapi + uvicorn are already base
     # deps above, so [agui] mainly adds ag-ui-langgraph itself.
     # >=1.0.6 for the shared preflight primitive core.verify() used by `check --live`.
-    "langstage-core[agui]>=1.0.6",
+    "langstage-core[agui]>=1.0.7",
     # Any real use of langstage already has langgraph in the env (it is the
     # thing being hosted); declaring it makes `run --demo` work on a bare install.
     "langgraph>=1.0",
@@ -45,7 +45,7 @@ deepagents = [
 # Redundant since AG-UI moved into base deps (core 1.0); kept as a no-op alias so
 # existing `pip install langstage[agui]` scripts/READMEs still resolve.
 agui = [
-    "langstage-core[agui]>=1.0.6",
+    "langstage-core[agui]>=1.0.7",
 ]
 dev = [
     "pytest>=8",

@@ -1,7 +1,6 @@
 """CoworkApp — main entry point for the application."""
 
 import logging
-import os
 import webbrowser
 from pathlib import Path
 
@@ -73,23 +72,18 @@ class CoworkApp:
             "show_files": show_files,
         })
 
-        # Ensure workspace directory exists
-        self.config.workspace_root.mkdir(parents=True, exist_ok=True)
-
         # Unify the workspace across the WHOLE app on the RESOLVED value (Python
-        # kwarg / CLI --workspace / langstage.toml / env), not just the env var.
-        # The agent's bash/file/canvas tools read langstage.config.WORKSPACE_ROOT
-        # (and some agents read the env var), so set both from the resolved config
-        # BEFORE the agent + tools are built. Otherwise --workspace/toml/Python
-        # reach the file browser but the agent's tools keep running in the launch
-        # cwd — a split-brain where only the env var (lowest documented priority)
-        # actually reached the agent. (gh #44)
-        from langstage import config as _config
+        # kwarg / CLI --workspace / langstage.toml / env) via the shared source of
+        # truth (ADR 0005), BEFORE the agent + tools are built. apply_workspace
+        # ensures the dir, publishes LANGSTAGE_WORKSPACE_ROOT (+ legacy) for agents
+        # that read the env, and records the active workspace that config.WORKSPACE_ROOT
+        # (the agent's bash/file/canvas tools) and the file browser both read — so
+        # --workspace/toml/Python can't reach the browser while the agent runs in the
+        # launch cwd (the #44 split-brain). No chdir: a server serves one workspace but
+        # must not move the process cwd out from under anything else.
+        from langstage_core import apply_workspace
 
-        _resolved_ws = self.config.workspace_root.resolve()
-        _config.WORKSPACE_ROOT = _resolved_ws
-        os.environ["LANGSTAGE_WORKSPACE_ROOT"] = str(_resolved_ws)
-        os.environ["DEEPAGENT_WORKSPACE_ROOT"] = str(_resolved_ws)
+        apply_workspace(self.config.workspace_root)
 
         self.agent = self._resolve_agent(agent)
         self.stream_parser_config = stream_parser_config or {}
