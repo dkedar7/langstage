@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.4 — 2026-07-03
+
+### Changed
+- **The workspace is now one source of truth, not a hand-synced mirror (ADR 0005).**
+  `CoworkApp.__init__` used to reconcile the #44 split-brain imperatively — resolving
+  the workspace, then assigning `config.WORKSPACE_ROOT` and two env vars so the agent's
+  bash/file/canvas tools agreed with the file browser. It now calls
+  `core.apply_workspace(self.config.workspace_root)` once, and `config.WORKSPACE_ROOT`
+  is a **live view** of `core.workspace_root()` (via module `__getattr__`) — so the
+  file browser and the agent tools read the same value by construction, with no mirror
+  to drift. Behavior is unchanged (the full #44 regression suite passes); the split-brain
+  is now structurally impossible. Requires `langstage-core>=1.0.7`.
+
 ## 0.13.3 — 2026-07-03
 
 ### Added

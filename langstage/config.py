@@ -8,7 +8,6 @@ resolved through the shared chain — defaults < deepagents.toml < DEEPAGENT_* e
 import os
 import warnings
 from dataclasses import dataclass, fields, replace
-from pathlib import Path
 from typing import ClassVar, Optional
 
 from langstage_core.host import HostConfig
@@ -47,16 +46,26 @@ def _parse_optional_bool(value: Optional[str]) -> Optional[bool]:
     return None
 
 
-# Module-level constants used by tools.py (bash cwd + file tools) and
-# default_agent.py. Canonical LANGSTAGE_* first, deprecated DEEPAGENT_* fallback.
-# Reading ONLY the legacy names here while default_agent.py honored the canonical
-# LANGSTAGE_WORKSPACE_ROOT created a split-brain: the file browser used the
-# canonical workspace but the agent's bash/file tools ran in cwd (gh #-dogfood).
-# This is the single source — default_agent.py imports WORKSPACE_ROOT from here.
-_ws = _env_canonical_first("LANGSTAGE_WORKSPACE_ROOT", "DEEPAGENT_WORKSPACE_ROOT")
-WORKSPACE_ROOT = Path(_ws) if _ws else Path(os.getcwd())
+# WORKSPACE_ROOT is read by tools.py (bash cwd + file tools) and default_agent.py.
+# Since ADR 0005 it is a LIVE VIEW of the shared source of truth
+# (core.workspace_root()), not a separate mutable constant: CoworkApp.__init__ calls
+# core.apply_workspace(the resolved workspace), and every reader here — the file
+# browser and the agent's bash/file/canvas tools — sees that one value. There is no
+# mirror to hand-sync and drift, which was the #44 split-brain. Before apply_workspace
+# runs, workspace_root() falls back to canonical LANGSTAGE_WORKSPACE_ROOT / legacy
+# DEEPAGENT_WORKSPACE_ROOT / cwd — the same import-time default as before.
 _vfs = _env_canonical_first("LANGSTAGE_VIRTUAL_FS", "DEEPAGENT_VIRTUAL_FS")
 VIRTUAL_FS = (_vfs or "").lower() in ("1", "true", "yes")
+
+
+def __getattr__(name: str):
+    # PEP 562 module getattr: resolve WORKSPACE_ROOT dynamically to the single
+    # source of truth so it can't diverge from what the agent's tools use.
+    if name == "WORKSPACE_ROOT":
+        from langstage_core import workspace_root
+
+        return workspace_root()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 _SAVE_PROMPT = (
     "Please capture this conversation as a detailed workflow markdown file in "
