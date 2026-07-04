@@ -79,6 +79,34 @@ def test_config_tools_agent_agree_on_canonical_workspace(tmp_path):
     assert Path(cfg) == Path(tools) == Path(agent)  # no split-brain
 
 
+def test_config_workspace_root_is_live_view_of_source_of_truth(tmp_path):
+    """ADR 0005: config.WORKSPACE_ROOT is a *live view* of core.workspace_root(),
+    not a separate mutable mirror — so the file browser and the agent tools can't
+    drift apart (the #44 split-brain is structurally impossible). Run in a
+    subprocess so the process-global workspace can't leak.
+    """
+    import os as _os
+
+    ws = tmp_path / "applied"
+    code = (
+        "from langstage_core import apply_workspace, workspace_root;"
+        "import langstage.config as c;"
+        f"apply_workspace(r'{ws}');"
+        # After apply, the module attribute reflects the source of truth with no
+        # separate assignment — reading it again tracks a re-apply.
+        "print('CFG=' + str(c.WORKSPACE_ROOT));"
+        "print('SRC=' + str(workspace_root()))"
+    )
+    env = {k: v for k, v in _os.environ.items() if not k.endswith("WORKSPACE_ROOT")}
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+    assert out.returncode == 0, out.stderr
+    cfg = next(line[4:] for line in out.stdout.splitlines() if line.startswith("CFG="))
+    src = next(line[4:] for line in out.stdout.splitlines() if line.startswith("SRC="))
+    assert cfg == src == str(ws.resolve())
+
+
 def test_cli_workspace_reaches_agent_bash(tmp_path):
     """--workspace / CoworkApp(workspace=) must reach the agent's bash tool, not
     just the file browser. Previously only the env var (lowest documented
