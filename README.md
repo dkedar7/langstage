@@ -216,6 +216,7 @@ langstage --show-config
 | Save workflow prompt | `--save-workflow-prompt` | `LANGSTAGE_SAVE_WORKFLOW_PROMPT` | _(built-in)_ |
 | Run workflow prompt | `--run-workflow-prompt` | `LANGSTAGE_RUN_WORKFLOW_PROMPT` | _(built-in, use `{filename}`)_ |
 | Create workflow prompt | `--create-workflow-prompt` | `LANGSTAGE_CREATE_WORKFLOW_PROMPT` | _(built-in)_ |
+| Custom CSS | `--custom-css` | `LANGSTAGE_CUSTOM_CSS` | _(none)_ — see [Custom CSS Theming](#custom-css-theming) |
 | Show Canvas tab | `--show-canvas/--no-show-canvas` | `LANGSTAGE_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
 | Show Files tab | `--show-files/--no-show-files` | `LANGSTAGE_SHOW_FILES` | `true` |
 
@@ -253,6 +254,36 @@ app = CoworkApp(
 ```
 
 See [langstage-core](https://github.com/dkedar7/langstage-core) for details.
+
+## Custom CSS Theming
+
+Override the UI's color scheme with your own CSS file. LangStage exposes its
+theme as CSS custom properties, so you can restyle without fighting
+specificity:
+
+```css
+/* theme.css */
+:root {
+  --color-primary: #0077b6;
+  --color-surface: #f8fbff;
+}
+
+.dark {
+  --color-surface: #0a1628;
+}
+```
+
+Point LangStage at the file via `--custom-css`, `LANGSTAGE_CUSTOM_CSS`, or
+`custom_css` in `langstage.toml`:
+
+```bash
+langstage run --demo --custom-css ./theme.css
+```
+
+The file is served at `/api/custom-css` and injected into the UI. When set
+via `--custom-css`, the path must exist (validated at startup); when set via
+the env var, config file, or Python API, a missing file just logs a warning
+and the default theme is used instead.
 
 ## Architecture
 
