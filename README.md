@@ -176,7 +176,7 @@ The **Board** tab turns LangStage into a lightweight agent control room: delegat
 - **Agent self-delegation** — the default agent carries five tools (`start_async_task`, `check_async_task`, `list_async_tasks`, `update_async_task`, `cancel_async_task`) so it can spawn async sub-tasks; spawned tasks are linked to their parent on the board. Add them to a custom agent with:
 
   ```python
-  from langgraph_stream_parser.tasks import TASK_TOOLS
+  from langstage_core.tasks import TASK_TOOLS
   agent = create_deep_agent(tools=[*your_tools, *TASK_TOOLS], ...)
   ```
 
