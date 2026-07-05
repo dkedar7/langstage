@@ -5,7 +5,7 @@
 > Renamed from **cowork-dash** (the old package name now just installs this one, and the `cowork-dash` command still works).
 
 <p align="center">
-  <img src="assets/cover.png" alt="Cowork Dash" style="border: 1px solid #d0d7de; border-radius: 6px;" />
+  <img src="assets/header.svg" alt="langstage — the web stage for your LangGraph agent" width="100%" />
 </p>
 
 **Stack**: Python (FastAPI, chat over Server-Sent Events) backend, React (TypeScript + Vite) frontend.

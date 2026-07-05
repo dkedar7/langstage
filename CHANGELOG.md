@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.7 — 2026-07-04
+
+### Fixed
+- **A bare graph's default name "LangGraph" no longer becomes the app title (dogfood
+  F3).** A compiled `StateGraph` gets `.name == "LangGraph"` by default, which the app
+  used as its header title/agent name for a BYO agent — a confusing brand. Generic
+  names (`LangGraph`, `agent`, `graph`) are now ignored, so the `LangStage` default is
+  kept; a real agent `.name` still becomes the title.
+
+### Docs
+- Refreshed the README header to a `langstage` SVG banner (was a `cover.png` labelled
+  "Cowork Dash", the old name).
+
 ## 0.13.6 — 2026-07-04
 
 ### Fixed

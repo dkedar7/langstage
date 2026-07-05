@@ -97,8 +97,13 @@ class CoworkApp:
         if self.config.show_files is None:
             self.config.show_files = True
 
-        # Default title and agent_name from the agent object's .name if not explicitly set
+        # Default title and agent_name from the agent object's .name if not explicitly
+        # set — but a bare CompiledStateGraph's default .name is "LangGraph" (and
+        # "agent"/"graph" are just as generic), which reads as a confusing app title for
+        # a BYO agent. Treat those as "no meaningful name" and keep the LangStage default.
         inferred_name = getattr(self.agent, "name", None)
+        if inferred_name in ("LangGraph", "agent", "graph"):
+            inferred_name = None
         if inferred_name:
             if self.config.title == "LangStage":
                 self.config.title = inferred_name
