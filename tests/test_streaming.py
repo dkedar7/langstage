@@ -61,16 +61,18 @@ async def test_stream_delivers_content_and_complete():
     assert "error" not in types
 
 
-async def test_message_and_cwd_reach_the_agent():
-    """The user message + cwd context must survive prepare_agent_input to the agent.
+async def test_message_and_cwd_reach_the_agent(monkeypatch, tmp_path):
+    """The user message + the resolved working directory must reach the agent.
 
     The stub echoes the human message it receives, so both the message and the
-    injected cwd context appear in the streamed content.
+    injected working-directory context appear in the streamed content.
     """
+    monkeypatch.setattr("langstage_core.host.workspace._ACTIVE", None)
+    monkeypatch.setenv("LANGSTAGE_WORKSPACE_ROOT", str(tmp_path))
     adapter = SessionAdapter(graph=_stub())
     session = adapter.submit_message(
         "s-ctx", "the magic phrase",
-        context_parts=context_parts(cwd="/tmp/test-workspace"),
+        context_parts=context_parts(cwd="/reports"),
     )
     await session.current_task
 
@@ -78,7 +80,9 @@ async def test_message_and_cwd_reach_the_agent():
         e.get("content", "") for e in _drain(session.event_queue) if e.get("type") == "content"
     )
     assert "the magic phrase" in content
-    assert "/tmp/test-workspace" in content
+    # The REAL working directory (workspace + the browsed subfolder) reached the
+    # agent — not the raw virtual "/reports". (gh dogfood-F4)
+    assert str(tmp_path / "reports") in content
 
 
 # --- Error path --------------------------------------------------------------
@@ -99,12 +103,22 @@ async def test_stream_surfaces_errors_as_events():
 # --- Library API contract (guards against core drift) ------------------------
 
 
-def test_context_parts_includes_time_and_cwd():
-    parts = context_parts(cwd="/work")
-    assert any("Current time" in p for p in parts)
-    assert any("/work" in p for p in parts)
-    # Without cwd, only the time line is present.
-    assert len(context_parts()) == 1
+def test_context_parts_reports_real_workspace_not_virtual_root(monkeypatch, tmp_path):
+    # gh dogfood-F4: the "Working directory" must be the REAL filesystem workspace,
+    # not the frontend's virtual path. A "/" cwd (file-browser root) must report the
+    # workspace root, NOT filesystem root — the old bug told a BYO agent its cwd was "/".
+    monkeypatch.setattr("langstage_core.host.workspace._ACTIVE", None)
+    monkeypatch.setenv("LANGSTAGE_WORKSPACE_ROOT", str(tmp_path))
+
+    root_parts = context_parts(cwd="/")
+    assert any("Current time" in p for p in root_parts)
+    wd = next(p for p in root_parts if "Working directory" in p)
+    assert str(tmp_path) in wd
+    assert "[Working directory: /]" not in wd  # the F4 symptom must be gone
+
+    # A browsed subfolder resolves under the workspace, not as a bare virtual path.
+    sub = next(p for p in context_parts(cwd="/notes") if "Working directory" in p)
+    assert str(tmp_path / "notes") in sub
 
 
 def test_prepare_agent_input_contract():
