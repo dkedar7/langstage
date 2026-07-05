@@ -146,3 +146,32 @@ def test_cli_workspace_reaches_agent_bash(tmp_path):
     # not the launch cwd.
     assert os.path.basename(ws.rstrip("/\\")) == "project", ws
     assert os.path.basename(bashpwd.rstrip("/")) == "project", bashpwd
+
+
+def test_run_enters_workspace_cwd(tmp_path):
+    """ADR 0006: run() chdirs to the resolved workspace so a bring-your-own agent's
+    raw relative file writes land in the workspace (visible in the file browser), not
+    the server's launch cwd. Construction itself must NOT chdir (embedding side effect)."""
+    from langgraph.graph import END, START, MessagesState, StateGraph
+    from langstage import CoworkApp
+
+    def _n(s):
+        return {"messages": []}
+
+    b = StateGraph(MessagesState)
+    b.add_node("n", _n)
+    b.add_edge(START, "n")
+    b.add_edge("n", END)
+
+    ws = tmp_path / "ws"
+    origin = os.getcwd()
+    try:
+        app = CoworkApp(agent=b.compile(), workspace=str(ws))
+        # Constructing does not move cwd...
+        assert os.getcwd() == origin
+        # ...run()'s enter-workspace step does.
+        app._enter_workspace()
+        from pathlib import Path
+        assert Path(os.getcwd()).resolve() == ws.resolve()
+    finally:
+        os.chdir(origin)

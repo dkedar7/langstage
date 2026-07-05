@@ -1,6 +1,7 @@
 """CoworkApp — main entry point for the application."""
 
 import logging
+import os
 import webbrowser
 from pathlib import Path
 
@@ -157,9 +158,26 @@ class CoworkApp:
         from langstage.default_agent import create_default_agent
         return create_default_agent(self.config.workspace_root)
 
+    def _enter_workspace(self) -> None:
+        """Make the resolved workspace the process cwd (ADR 0006).
+
+        So a bring-your-own agent's raw relative file ops
+        (``Path("out.txt").write_text(...)``) land in the workspace — where the file
+        browser shows them — instead of the server's launch cwd. Called from ``run()``
+        *after* the agent spec is resolved and ``create_server()`` has wired the file
+        browser at the **absolute** workspace, so neither is affected. The bundled
+        agent (rooted via an absolute ``FilesystemBackend``) is unaffected either way.
+        Done in ``run()`` (not ``__init__``) so embedding ``CoworkApp`` has no cwd side
+        effect. Safe under the one-workspace-per-process model (ADR 0005).
+        """
+        from langstage_core import workspace_root
+
+        os.chdir(workspace_root())
+
     def run(self, open_browser: bool = True) -> None:
         """Start the FastAPI server with uvicorn. Blocks."""
         app = self.create_server()
+        self._enter_workspace()
 
         if open_browser:
             url = f"http://{self.config.host}:{self.config.port}"
