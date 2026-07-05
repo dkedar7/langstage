@@ -131,9 +131,11 @@ class SqliteTaskStore:
     ) -> list[Task]:
         clauses, params = [], []
         if state is not None:
-            clauses.append("state = ?"); params.append(state)
+            clauses.append("state = ?")
+            params.append(state)
         if parent_id is not None:
-            clauses.append("parent_id = ?"); params.append(parent_id)
+            clauses.append("parent_id = ?")
+            params.append(parent_id)
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         db = self._conn()
         async with db.execute(
@@ -170,7 +172,8 @@ class SqliteTaskStore:
                 raise ValueError(f"Unknown task column: {col!r}")
             if col in _JSON_COLUMNS and val is not None:
                 val = json.dumps(val)
-            sets.append(f"{col} = ?"); params.append(val)
+            sets.append(f"{col} = ?")
+            params.append(val)
         params.append(task_id)
         db = self._conn()
         await db.execute(
