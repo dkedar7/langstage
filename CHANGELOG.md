@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.13.8 — 2026-07-05
+
+### Fixed
+- **A relative `--workspace` no longer doubles the agent's working directory (gh #66).**
+  With a relative workspace (e.g. the README Quickstart's `--workspace ./workspace`),
+  the agent was told — and every bring-your-own file/canvas tool read — a doubled
+  `ws/ws` working directory, while the file browser and durable `.langstage` state lived
+  at `ws`: the exact split-brain the 0.12.2 note claimed fixed. Root cause was in core
+  (`workspace_root()` re-resolving a relative root after `run()` chdir'd into the
+  workspace); fixed in **langstage-core 1.0.9**, now the minimum pin. Absolute and
+  default workspaces were unaffected.
+
+### Changed
+- **Migrated the deprecated `@app.on_event` startup/shutdown handlers to a FastAPI
+  `lifespan` context manager (gh #61).** Same behavior (task store + durable checkpointer
+  upgrade + scheduler/runner lifecycle); silences the FastAPI deprecation. Thanks
+  @AshleyAHuang.
+
+### Internal
+- Split semicolon-joined statements in `tasks/sqlite_store.py` for the ruff E702 lint
+  (gh #65). Thanks @AshleyAHuang.
+
 ## 0.13.7 — 2026-07-04
 
 ### Fixed
