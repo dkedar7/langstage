@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from langstage_core import workspace_root
 from langstage_core.adapters import SessionAdapter
 
 from langstage.workspace.file_manager import FileManager
@@ -36,15 +37,24 @@ class CancelRequest(BaseModel):
 
 
 def context_parts(cwd: str | None = None) -> list[str]:
-    """Context lines prepended to each user message (current time + cwd).
+    """Context lines prepended to each user message (current time + working dir).
 
     Forwarded to ``SessionAdapter.submit_message(context_parts=...)``, which
     feeds them through ``prepare_agent_input``.
+
+    ``cwd`` is the file browser's current folder as a *virtual* path (``/`` = the
+    workspace root). We report the **real filesystem** working directory the agent
+    operates in — the resolved workspace (``core.workspace_root()``) with that
+    virtual subfolder applied — not the raw virtual path. Reporting the raw ``/``
+    told the agent its working directory was the filesystem root (misleading, and
+    actively wrong for a bring-your-own agent that resolves paths against it).
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     parts = [f"[Current time: {now}]"]
-    if cwd:
-        parts.append(f"[Working directory: {cwd}]")
+    root = workspace_root()
+    sub = (cwd or "").strip("/\\")
+    working_dir = (root / sub) if sub else root
+    parts.append(f"[Working directory: {working_dir}]")
     return parts
 
 

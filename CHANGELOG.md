@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.5 — 2026-07-04
+
+### Fixed
+- **The `[Working directory: …]` context the chat prepends to each message now
+  reports the real filesystem workspace, not the frontend's virtual path (dogfood).**
+  It used the file browser's current folder verbatim, so an agent at the browser root
+  was told `[Working directory: /]` — misleading, and actively wrong for a
+  bring-your-own agent that resolves paths against it. It now reports
+  `core.workspace_root()` with the browsed subfolder applied (e.g. `<workspace>/notes`),
+  so the agent hears where it actually operates.
+
 ## 0.13.4 — 2026-07-03
 
 ### Changed
