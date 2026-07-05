@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.6 — 2026-07-04
+
+### Fixed
+- **A bring-your-own agent's files now land in the workspace, visible in the file
+  browser (ADR 0006, dogfood F7).** An agent that writes `Path("out.txt").write_text(…)`
+  (a raw cwd-relative path) used to write to the server's *launch* directory — invisible
+  in the file browser (rooted at the workspace) — so the agent could say "saved to the
+  workspace" while the browser showed it empty. `run()` now `chdir`s to the resolved
+  workspace after the agent spec is resolved and the server is wired (both use the
+  absolute path, so they're unaffected), matching the cli. Embedding `CoworkApp`
+  programmatically has no cwd side effect (the chdir is in `run()`, not `__init__`).
+
 ## 0.13.5 — 2026-07-04
 
 ### Fixed
