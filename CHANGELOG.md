@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.9 — 2026-07-06
+
+### Added
+- **A real health/readiness endpoint: `GET /api/health` (gh #67).** `/health` (and every
+  non-`/api/*` path) returned the SPA `index.html` — HTTP 200 regardless of backend state,
+  and 401 once auth was enabled — so a reverse proxy / k8s / uptime probe had no usable
+  liveness signal. The new endpoint is dedicated JSON under `/api/*` (so it can't collide
+  with the SPA catch-all) and **exempt from Basic Auth** (a probe can't carry credentials):
+  - liveness (default) → `200 {"status": "ok", "version": …}` — the process is up;
+  - readiness (`?ready=1`) → `200` only if the agent object loaded **and** the task store
+    is reachable, else `503 {"status": "degraded", "checks": {…}}` — reflecting real
+    backend state instead of the always-served static shell.
+
 ## 0.13.8 — 2026-07-05
 
 ### Fixed

@@ -17,6 +17,10 @@ class BasicAuthMiddleware:
     on the upgrade request.
     """
 
+    # Paths served without auth so an orchestrator / load-balancer liveness probe
+    # (which can't carry credentials) always has an endpoint to hit (gh #67).
+    _AUTH_EXEMPT = frozenset({"/api/health"})
+
     def __init__(self, app: ASGIApp, username: str, password: str) -> None:
         self.app = app
         self._username = username
@@ -24,6 +28,10 @@ class BasicAuthMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        if scope.get("path", "") in self._AUTH_EXEMPT:
             await self.app(scope, receive, send)
             return
 
