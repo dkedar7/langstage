@@ -49,7 +49,8 @@ langstage-agui --agent my_agent.py:graph
 - **Slash commands** — `/save-workflow`, `/create-workflow`, and `/run-workflow` with autocomplete
 - **Print / export** — print conversations via browser Print dialog with optimized CSS
 - **Token usage** — cumulative counter with per-turn breakdown chart
-- **Authentication** — optional HTTP Basic Auth for all endpoints
+- **Authentication** — optional HTTP Basic Auth for all endpoints (except the health probe)
+- **Health checks** — `GET /api/health` (liveness, JSON, auth-exempt) and `?ready=1` (readiness: 200 only if the agent loaded and the task store is reachable, else 503) for reverse proxies, k8s, and uptime monitors
 - **Theming** — light, dark, and system-auto modes
 - **Customization** — title, subtitle, welcome message, agent name, and custom icon
 

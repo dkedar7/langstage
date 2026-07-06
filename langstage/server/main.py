@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from langstage_core.adapters import SessionAdapter
 from langstage_core.tasks import TaskRunner, set_runner
@@ -24,6 +24,16 @@ from langstage.scheduler import CronScheduler, set_scheduler
 from langstage.tasks import SqliteTaskStore
 from langstage.workspace.file_manager import FileManager
 from langstage.workspace.canvas_manager import CanvasManager
+
+
+def _app_version() -> str:
+    """The installed ``langstage`` version, for the health payload (gh #67)."""
+    try:
+        from langstage import __version__
+
+        return __version__
+    except Exception:  # noqa: BLE001 - never let the health probe fail on this
+        return "0.0.0+unknown"
 
 
 def create_fastapi_app(
@@ -128,6 +138,37 @@ def create_fastapi_app(
     scheduler = CronScheduler(runner)
     set_scheduler(scheduler)
     app.include_router(create_cron_router(scheduler))
+
+    # Dedicated health/readiness endpoint under /api/* (so it never collides with the
+    # SPA catch-all) and exempt from Basic Auth in the middleware, so a reverse proxy /
+    # k8s / uptime probe always has an endpoint — even with auth on (gh #67).
+    @app.get("/api/health")
+    async def health(ready: int = 0) -> Response:
+        """Liveness (default) or readiness (`?ready=1`).
+
+        Liveness just proves the process is up. Readiness reflects real backend state:
+        200 only if the agent object loaded AND the task store is reachable, else 503 —
+        fixing the false-positive where the always-served SPA shell made ``/health``
+        report healthy regardless of backend state.
+        """
+        payload = {"status": "ok", "version": _app_version()}
+        if not ready:
+            return JSONResponse(payload)
+
+        checks = {"agent": "ok" if agent is not None else "load_failed"}
+        try:
+            # A bounded query (filtered to a sentinel parent → empty) that still
+            # exercises the DB connection, without loading the whole task table.
+            await task_store.list(parent_id="__health_probe__")
+            checks["task_store"] = "ok"
+        except Exception as exc:  # noqa: BLE001 - any failure means not ready
+            checks["task_store"] = f"unreachable: {type(exc).__name__}"
+
+        ok = all(v == "ok" for v in checks.values())
+        return JSONResponse(
+            {"status": "ok" if ok else "degraded", "version": _app_version(), "checks": checks},
+            status_code=200 if ok else 503,
+        )
 
     # Expose for testing
     app.state.session_adapter = adapter
