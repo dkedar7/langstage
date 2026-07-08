@@ -67,3 +67,26 @@ def test_health_is_not_the_spa_shell(tmp_path):
     # The old /health returned index.html (text/html). The new endpoint is JSON.
     r = _client(tmp_path).get("/api/health")
     assert "text/html" not in r.headers.get("content-type", "")
+
+
+def _uncompiled_graph():
+    """The common BYO mistake: export the builder, forget `.compile()`. It loads
+    (server starts) but isn't runnable — dies every turn with no `astream` (gh #69)."""
+    g = StateGraph(_S)
+    g.add_node("n", lambda s: {"x": s.get("x", 0) + 1})
+    g.set_entry_point("n")
+    return g  # NOT compiled
+
+
+def test_health_readiness_503_for_unrunnable_agent(tmp_path):
+    # gh #69: an uncompiled StateGraph passed readiness (200 "ok") under the old
+    # `agent is not None` check, yet every turn fails. Readiness must now 503.
+    app = CoworkApp(agent=_uncompiled_graph(), workspace=str(tmp_path)).create_server()
+    with TestClient(app) as c:
+        r = c.get("/api/health?ready=1")
+    assert r.status_code == 503, r.text
+    body = r.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["agent"] == "not_runnable"
+    # ...but plain liveness still answers 200 (the process IS up).
+    assert TestClient(app).get("/api/health").status_code == 200
