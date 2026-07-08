@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.10 — 2026-07-07
+
+### Fixed
+- **Readiness (`/api/health?ready=1`) now checks the agent is *runnable*, not just
+  non-`None` (gh #69).** The `agent` check was `agent is not None` — vacuous (a failed
+  load aborts startup, so a serving process always has a non-`None` agent) and blind to
+  the common BYO slip of exporting an **uncompiled `StateGraph`**: it loaded, so readiness
+  said `200 ok`, yet every turn died with `'StateGraph' object has no attribute
+  'aget_state'`. A k8s / ALB probe would mark the pod Ready and route traffic to a server
+  that fails every turn. Readiness now gates on runnability (`callable(agent.astream)`) —
+  the same check `langstage check` uses (gh #39) — and returns `503 not_runnable` otherwise.
+
 ## 0.13.9 — 2026-07-06
 
 ### Added

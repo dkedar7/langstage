@@ -155,7 +155,14 @@ def create_fastapi_app(
         if not ready:
             return JSONResponse(payload)
 
-        checks = {"agent": "ok" if agent is not None else "load_failed"}
+        # "loaded" (`is not None`) is vacuous — a failed load aborts startup, so a
+        # serving process always has a non-None agent. And "loaded" ≠ "runnable": an
+        # uncompiled StateGraph (the common BYO slip) loads fine but dies every turn
+        # with no `astream`. Gate readiness on runnability — the exact check
+        # `langstage check` uses (gh #39) — so a probe can't mark an unrunnable server
+        # Ready (gh #69).
+        agent_runnable = callable(getattr(agent, "astream", None))
+        checks = {"agent": "ok" if agent_runnable else "not_runnable"}
         try:
             # A bounded query (filtered to a sentinel parent → empty) that still
             # exercises the DB connection, without loading the whole task table.
