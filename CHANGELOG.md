@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.11 — 2026-07-08
+
+### Added
+- **The built-in OpenAPI/Swagger docs are now advertised as the canonical REST reference
+  (gh #71).** Because the backend is FastAPI, a complete, always-in-sync schema is already
+  served at `/openapi.json`, `/docs` (Swagger UI), and `/redoc` — but it was mentioned
+  nowhere, so a client author had to reverse-engineer request shapes. A new README **REST
+  API** section points at all three, and `langstage run` prints the docs URL on startup.
+
+### Fixed
+- **The OpenAPI schema now reports the real package version (gh #71).** The FastAPI app was
+  constructed with a hardcoded `version="2.0.0"`; it now uses the installed `langstage`
+  version, with a titled/described schema, so `/openapi.json` and `/docs` are accurate.
+
 ## 0.13.10 — 2026-07-07
 
 ### Fixed

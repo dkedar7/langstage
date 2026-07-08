@@ -323,6 +323,23 @@ Browser  <--SSE / REST-->  FastAPI  <--astream_events-->  LangGraph Agent
 
 The frontend is pre-built and bundled into the Python package as static files. No Node.js required at runtime.
 
+## REST API
+
+Because the backend is FastAPI, LangStage serves a **complete, always-in-sync OpenAPI
+schema** for the whole REST surface (chat, files, canvas, cron, tasks, health) — use it as
+the canonical reference for a programmatic client instead of reverse-engineering shapes:
+
+| Route | What |
+|---|---|
+| `/docs` | Interactive **Swagger UI** — try every endpoint, see exact request/response schemas |
+| `/redoc` | **ReDoc** — a clean, readable reference of the same schema |
+| `/openapi.json` | The raw OpenAPI document — feed it to a client generator (`openapi-generator`, etc.) |
+
+All three honor auth: with `--auth-password` set they return `401` without credentials
+(like every route except `/api/health`). A couple of shapes worth knowing (and that `/docs`
+spells out): `POST /api/files/upload` takes `path` as a **query** parameter (not a form
+field); `/api/stream` is the SSE event stream keyed by `session_id`.
+
 ## Development
 
 ```bash
