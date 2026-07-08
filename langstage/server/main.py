@@ -91,7 +91,18 @@ def create_fastapi_app(
             set_scheduler(None)
             set_runner(None)
 
-    app = FastAPI(title=config.title, version="2.0.0", lifespan=lifespan)
+    # Real package version (not a hardcoded "2.0.0") so the built-in OpenAPI schema
+    # (/openapi.json, /docs, /redoc) reports the version users actually run (gh #71).
+    app = FastAPI(
+        title=f"{config.title} REST API",
+        version=_app_version(),
+        description=(
+            "The LangStage web-stage REST API — chat (SSE), files, canvas, cron, and the "
+            "task board. Interactive docs at /docs and /redoc; schema at /openapi.json. "
+            "All endpoints require Basic Auth when --auth-password is set, except /api/health."
+        ),
+        lifespan=lifespan,
+    )
 
     # Middleware
     add_middleware(

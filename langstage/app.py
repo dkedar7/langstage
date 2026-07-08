@@ -184,8 +184,12 @@ class CoworkApp:
         app = self.create_server()
         self._enter_workspace()
 
+        url = f"http://{self.config.host}:{self.config.port}"
+        # Point power users at the built-in, always-in-sync REST API docs — the
+        # FastAPI OpenAPI schema is served but was undocumented/undiscoverable (gh #71).
+        print(f"LangStage: {url}  |  REST API docs: {url}/docs")
+
         if open_browser:
-            url = f"http://{self.config.host}:{self.config.port}"
             # Open browser after a short delay (server needs to start first)
             import threading
             threading.Timer(1.5, webbrowser.open, args=[url]).start()
