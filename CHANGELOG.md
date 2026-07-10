@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.12 — 2026-07-09
+
+### Added
+- **`langstage check --json` and `langstage config --json` — machine-readable diagnostics
+  so the advertised CI readiness gate is actually gateable (gh #73).** `check` produced 6+
+  distinct signals that collapsed into a coarse exit code (only a load failure or a `--live`
+  runtime error set exit 1; every static finding was a warning that left exit 0), so CI could
+  gate on almost nothing the command discovered. `check --json` now emits a stable object —
+  `{spec, loads, agent_name, checks:{checkpointer, canvas, write_todos, async_tasks,
+  schedules}, live, ok}` — preserving the exit-code contract, so a pipeline can gate on any
+  individual check, e.g. `langstage check -a app.py:graph --json | jq -e '.loads and
+  .checks.canvas.ok'`. `config --json` emits each field's value + source (and the TOML files
+  read) so a deploy step can assert how a container resolved its env / `langstage.toml`. The
+  human default output is unchanged.
+
 ## 0.13.11 — 2026-07-08
 
 ### Added
