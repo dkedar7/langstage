@@ -88,11 +88,35 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
 
 @main.command()
 @click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
-def config(workspace):
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Emit the resolved config as JSON (each field's value + source, plus the "
+                   "TOML files read) so a deploy step can assert what a container resolved.")
+def config(workspace, as_json):
     """Show the resolved configuration: each value, its source, and the
     env var / langstage.toml key that sets it."""
+    from dataclasses import fields as _fields
+
     overrides = {"workspace_root": workspace} if workspace else None
-    click.echo(AppConfig.resolve(overrides=overrides).describe())
+    cfg = AppConfig.resolve(overrides=overrides)
+    if not as_json:
+        click.echo(cfg.describe())
+        return
+
+    import json as _json
+
+    def _jsonable(v):
+        # Config values are scalars or Paths; keep JSON-native types, stringify the rest.
+        return v if isinstance(v, (str, int, float, bool, type(None))) else str(v)
+
+    src = cfg.sources
+    payload = {
+        "config": {
+            f.name: {"value": _jsonable(getattr(cfg, f.name)), "source": src.get(f.name, "default")}
+            for f in _fields(cfg)
+        },
+        "toml_read_from": [str(p) for p in getattr(cfg, "_toml_paths", [])],
+    }
+    click.echo(_json.dumps(payload, indent=2))
 
 
 def _agent_tool_names(agent) -> set[str] | None:
@@ -118,14 +142,24 @@ def _agent_tool_names(agent) -> set[str] | None:
               help="Also run ONE real turn through the agent (needs a working "
                    "model/key) and fail if it errors — a true readiness gate, "
                    "beyond the static checks. Uses the shared langstage-core preflight.")
-def check(agent_spec, demo, live):
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Emit the result as a stable JSON object (loads, agent_name, per-check "
+                   "ok/detail, live) instead of human lines, preserving the exit-code "
+                   "contract — so CI can gate on individual findings (e.g. "
+                   "`... --json | jq -e '.loads and .checks.canvas.ok'`).")
+def check(agent_spec, demo, live, as_json):
     """Preflight a bring-your-own agent: load it and report which LangStage
     features will light up (and which need a convention or tool to unlock).
 
     The static checks are fast and need no API key. Add ``--live`` to also run one
     real turn and fail if the agent errors — the same readiness a first chat would
     prove, so a runnable-but-broken agent (bad key, tool that fails at runtime)
-    doesn't pass here and die at chat time."""
+    doesn't pass here and die at chat time.
+
+    Add ``--json`` for a machine-readable object (same exit codes) so a pipeline can
+    gate on any individual check, not just the coarse pass/fail."""
+    import json as _json
+
     from langstage_core import load_agent_spec
     from langstage.middleware import agent_uses_canvas_middleware
 
@@ -135,65 +169,109 @@ def check(agent_spec, demo, live):
 
     ok = click.style("[ ok ]", fg="green")
     warn = click.style("[warn]", fg="yellow")
+    fail = click.style("[fail]", fg="red")
 
-    click.echo(f"Checking agent: {spec}\n")
+    # The structured result is built alongside the human lines so the two can't
+    # diverge; `--json` prints it and suppresses the human output (gh #73).
+    report = {
+        "spec": spec,
+        "loads": False,
+        "agent_name": None,
+        "checks": {},
+        "live": {"ran": False},
+        "ok": False,
+    }
+
+    def say(msg):
+        if not as_json:
+            click.echo(msg)
+
+    def finish(code):
+        # Single exit point: stamp overall ok, emit JSON in --json mode, preserve the
+        # exit-code contract (1 = load failure / not runnable / --live error; else 0).
+        report["ok"] = code == 0
+        if as_json:
+            click.echo(_json.dumps(report, indent=2))
+        raise SystemExit(code)
+
+    say(f"Checking agent: {spec}\n")
     try:
         agent = load_agent_spec(spec)
     except Exception as e:  # noqa: BLE001 - report load failure cleanly
-        click.echo(f"{click.style('[fail]', fg='red')} failed to load: {e}")
-        raise SystemExit(1)
+        report["error"] = f"{type(e).__name__}: {e}"
+        say(f"{fail} failed to load: {e}")
+        finish(1)
 
     # Loading the object is not enough — the server drives the agent via
     # astream(), so a non-runnable object (an uncompiled StateGraph, a dict, an
     # int) starts fine and then dies mid-stream with "'X' object has no attribute
     # 'astream'". Preflight exists to catch exactly that, so gate the all-clear
     # on runnability instead of reporting `[ ok ] loads` for any object. (gh #39)
-    fail = click.style("[fail]", fg="red")
     if not callable(getattr(agent, "astream", None)):
         if callable(getattr(agent, "compile", None)):
             # The single most common BYO mistake: exported the builder, not the
             # compiled graph (forgot `.compile()`).
-            click.echo(f"{fail} not runnable: this is an uncompiled "
-                       f"{type(agent).__name__} - call .compile() and export the result")
+            detail = (f"not runnable: this is an uncompiled {type(agent).__name__} - "
+                      "call .compile() and export the result")
         else:
-            click.echo(f"{fail} not runnable: loaded a {type(agent).__name__}, which is not "
-                       "a LangGraph graph (no astream()). Export a compiled graph "
-                       "(module:attr or path/to/file.py:attr).")
-        raise SystemExit(1)
+            detail = (f"not runnable: loaded a {type(agent).__name__}, which is not a LangGraph "
+                      "graph (no astream()). Export a compiled graph (module:attr or file.py:attr).")
+        report["error"] = detail
+        say(f"{fail} {detail}")
+        finish(1)
 
-    click.echo(f"{ok} loads")
+    report["loads"] = True
+    say(f"{ok} loads")
     name = getattr(agent, "name", None)
+    report["agent_name"] = name
     if name:
-        click.echo(f"{ok} agent name: {name}")
+        say(f"{ok} agent name: {name}")
 
     # Checkpointer - LangStage auto-attaches an in-memory one if absent.
-    if getattr(agent, "checkpointer", None) is not None:
-        click.echo(f"{ok} checkpointer present (memory + interrupts + review gate)")
-    else:
-        click.echo(f"{warn} no checkpointer - LangStage will attach an in-memory one "
-                   "(supply your own for durability across restarts)")
+    has_ckpt = getattr(agent, "checkpointer", None) is not None
+    report["checks"]["checkpointer"] = {
+        "ok": has_ckpt,
+        "detail": "present (memory + interrupts + review gate)" if has_ckpt
+        else "none - in-memory attached (supply your own for durability)",
+    }
+    say(f"{ok} checkpointer present (memory + interrupts + review gate)" if has_ckpt
+        else f"{warn} no checkpointer - LangStage will attach an in-memory one "
+             "(supply your own for durability across restarts)")
 
     # Canvas
-    if agent_uses_canvas_middleware(agent):
-        click.echo(f"{ok} CanvasMiddleware detected - Canvas tab will show")
-    else:
-        click.echo(f"{warn} no CanvasMiddleware - Canvas hidden (attach it to enable)")
+    has_canvas = agent_uses_canvas_middleware(agent)
+    report["checks"]["canvas"] = {
+        "ok": has_canvas,
+        "detail": "CanvasMiddleware detected" if has_canvas else "no CanvasMiddleware",
+    }
+    say(f"{ok} CanvasMiddleware detected - Canvas tab will show" if has_canvas
+        else f"{warn} no CanvasMiddleware - Canvas hidden (attach it to enable)")
 
     # Capability tools (best-effort introspection)
     tools = _agent_tool_names(agent)
-    if tools is None:
-        click.echo(f"{warn} could not introspect tools - the checks below are best-effort")
+    introspected = tools is not None
+    if not introspected:
+        say(f"{warn} could not introspect tools - the checks below are best-effort")
         tools = set()
     has_task = any(t.endswith("async_task") or t.endswith("async_tasks") for t in tools)
     has_cron = "schedule_run" in tools
     has_todos = "write_todos" in tools
-    click.echo(f"{ok if has_todos else warn} write_todos "
-               + ("present - Plan tab will populate" if has_todos else "not found - Plan tab may stay empty"))
-    click.echo(f"{ok if has_task else warn} async task tools "
-               + ("present - agent can self-delegate" if has_task
-                  else "not found - add `from langstage import LANGSTAGE_TOOLS` to your agent's tools"))
-    click.echo(f"{ok if has_cron else warn} schedule tools "
-               + ("present - agent can create schedules" if has_cron else "not found (LANGSTAGE_TOOLS adds these too)"))
+
+    def _detail(present, absent_msg):
+        if present:
+            return "present"
+        return absent_msg if introspected else f"{absent_msg} (tools not introspectable)"
+
+    report["checks"]["write_todos"] = {"ok": has_todos, "detail": _detail(has_todos, "not found")}
+    report["checks"]["async_tasks"] = {"ok": has_task, "detail": _detail(has_task, "not found")}
+    report["checks"]["schedules"] = {"ok": has_cron, "detail": _detail(has_cron, "not found")}
+    say(f"{ok if has_todos else warn} write_todos "
+        + ("present - Plan tab will populate" if has_todos else "not found - Plan tab may stay empty"))
+    say(f"{ok if has_task else warn} async task tools "
+        + ("present - agent can self-delegate" if has_task
+           else "not found - add `from langstage import LANGSTAGE_TOOLS` to your agent's tools"))
+    say(f"{ok if has_cron else warn} schedule tools "
+        + ("present - agent can create schedules" if has_cron else "not found (LANGSTAGE_TOOLS adds these too)"))
 
     # --live: the static checks above prove the agent is a runnable graph, not that
     # it can actually complete a turn (a bad key / a tool that fails at runtime / a
@@ -203,16 +281,19 @@ def check(agent_spec, demo, live):
     if live:
         from langstage_core.agui import verify as _core_verify
 
-        click.echo("")
+        say("")
         result = _core_verify(agent)
+        report["live"] = {"ran": True, "ok": bool(result.ok)}
         if result.ok:
-            click.echo(f"{ok} live turn: {result.reason}")
+            say(f"{ok} live turn: {result.reason}")
         else:
-            click.echo(f"{fail} live turn failed: {result.reason}")
-            raise SystemExit(1)
+            report["live"]["error"] = result.reason
+            say(f"{fail} live turn failed: {result.reason}")
+            finish(1)
 
-    click.echo("\nAlways available from the UI regardless of the agent: chat, "
-               "tool-call view, file browser, the task board (delegate), and schedules.")
+    say("\nAlways available from the UI regardless of the agent: chat, "
+        "tool-call view, file browser, the task board (delegate), and schedules.")
+    finish(0)
 
 
 if __name__ == "__main__":

@@ -168,6 +168,19 @@ bad key or a tool that fails at runtime, which the static checks can't:
 langstage check --agent my_agent.py:graph --live
 ```
 
+Add **`--json`** for a machine-readable object (same exit codes) so CI can gate on any
+individual finding, not just the coarse pass/fail — for example, fail the build unless the
+agent loads **and** Canvas is wired:
+
+```bash
+langstage check --agent my_agent.py:graph --json \
+  | jq -e '.loads and .checks.canvas.ok' > /dev/null
+```
+
+`langstage config --json` likewise emits the resolved config (each field's value + source,
+plus the TOML files read), so a deploy step can assert a container resolved its
+env / `langstage.toml` the way it was meant to.
+
 ## Task board
 
 The **Board** tab turns LangStage into a lightweight agent control room: delegate a task and it runs on a background copy of your agent while you keep chatting. No extra infrastructure — tasks are persisted in a local SQLite file (the board survives a restart) and executed by an in-process worker pool, built on the [`langstage-core`](https://github.com/dkedar7/langstage-core) task engine.

@@ -133,3 +133,79 @@ def test_check_live_fails_on_runnable_but_broken_agent(tmp_path):
     assert result.exit_code == 1, result.output
     assert "[ ok ] loads" in result.output  # static gates passed...
     assert "live turn failed" in result.output  # ...but the real turn caught it
+
+
+# ── check --json / config --json (gh #73: machine-readable CI gate) ──────────
+
+
+def test_check_json_emits_structured_report_for_demo():
+    """gh #73: `check --json` emits a stable object CI can gate on — not human lines."""
+    import json
+
+    result = CliRunner().invoke(cli_mod.main, ["check", "--demo", "--json"])
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)  # the WHOLE output is JSON (no human lines mixed in)
+    assert report["spec"] == "langstage_core.demo.stub:graph"
+    assert report["loads"] is True
+    assert report["ok"] is True
+    # every advertised check key is present with an ok/detail shape
+    for key in ("checkpointer", "canvas", "write_todos", "async_tasks", "schedules"):
+        assert set(report["checks"][key]) == {"ok", "detail"}
+    assert report["live"] == {"ran": False}
+    # no ANSI/human markers leaked into the JSON stream
+    assert "[ ok ]" not in result.output and "[warn]" not in result.output
+
+
+def test_check_json_load_failure_still_json_and_exit_1():
+    """A load failure preserves exit 1 AND still emits JSON (loads:false, ok:false, error)."""
+    import json
+
+    result = CliRunner().invoke(cli_mod.main, ["check", "--agent", "nope.py:missing", "--json"])
+    assert result.exit_code == 1, result.output
+    report = json.loads(result.output)
+    assert report["loads"] is False
+    assert report["ok"] is False
+    assert "error" in report
+
+
+def test_check_json_gate_example_from_the_readme(tmp_path):
+    """The advertised gate `.loads and .checks.canvas.ok` is False for a canvas-less agent."""
+    import json
+
+    result = CliRunner().invoke(cli_mod.main, ["check", "--demo", "--json"])
+    report = json.loads(result.output)
+    assert (report["loads"] and report["checks"]["canvas"]["ok"]) is False
+
+
+def test_check_json_live_failure_records_error_and_exits_1(tmp_path):
+    """`--live --json` on a runnable-but-broken agent → exit 1 with live.ok false + error."""
+    import json
+
+    agent = _write(tmp_path, "broken.py",
+                   "from langgraph.graph import StateGraph, START, END, MessagesState\n"
+                   "def boom(s):\n"
+                   "    raise RuntimeError('tool exploded')\n"
+                   "b = StateGraph(MessagesState)\n"
+                   "b.add_node('boom', boom)\n"
+                   "b.add_edge(START, 'boom')\n"
+                   "b.add_edge('boom', END)\n"
+                   "graph = b.compile()\n")
+    result = CliRunner().invoke(cli_mod.main, ["check", "--agent", f"{agent}:graph", "--live", "--json"])
+    assert result.exit_code == 1, result.output
+    report = json.loads(result.output)
+    assert report["loads"] is True  # static gates passed
+    assert report["live"]["ran"] is True and report["live"]["ok"] is False
+    assert "error" in report["live"]
+
+
+def test_config_json_emits_value_and_source_per_field():
+    """gh #73: `config --json` lets automation read the resolved config structurally."""
+    import json
+
+    result = CliRunner().invoke(cli_mod.main, ["config", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert "config" in payload and "toml_read_from" in payload
+    # a representative field carries both its value and its source
+    assert set(payload["config"]["port"]) == {"value", "source"}
+    assert payload["config"]["port"]["value"] == 8050
