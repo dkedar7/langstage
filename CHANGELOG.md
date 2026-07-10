@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.13 — 2026-07-10
+
+### Changed
+- **`/api/files/upload` now treats `path` as the full destination path, symmetric with every
+  other files route (gh #75).** `upload` alone interpreted `path` as a *parent directory* and
+  appended the multipart filename, while `read`/`preview`/`download`/`delete`/`mkdir` treat
+  `path` as the full target. So a `path`-symmetric client doing `POST upload?path=P` then
+  `GET read?path=P` didn't get its file back — the upload silently landed at
+  `P/<multipart-filename>` (creating a stray directory `P`), returned `200`, and the read of
+  `P` then failed. Now `upload?path=P` stores the file **at** `P` and round-trips. The
+  directory-drop mode is still available **explicitly** — end `path` with `/`, or point it at
+  an existing directory, and the multipart filename is appended (this is what the file-browser
+  UI uses, so it's unchanged). The OpenAPI `description` and the README REST section document
+  the contract.
+
 ## 0.13.12 — 2026-07-09
 
 ### Added

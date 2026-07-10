@@ -199,3 +199,60 @@ async def test_auth_default_username(workspace, mock_agent):
         # wrong username should fail
         resp = await c.get("/api/config", auth=("user", "secret"))
         assert resp.status_code == 401
+
+
+# ── /api/files/upload path semantics (gh #75) ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_upload_path_is_the_full_destination_and_round_trips(client):
+    # gh #75: upload?path=P must store the file AT P (symmetric with read/download/delete),
+    # so a `path`-symmetric client's upload->read round-trips. Previously `path` was treated
+    # as a parent dir and the file landed at P/<filename>, silently creating a directory P.
+    up = await client.post(
+        "/api/files/upload?path=reports/q3.md",
+        files={"file": ("rt.txt", b"roundtrip", "text/plain")},
+    )
+    assert up.status_code == 200, up.text
+    assert up.json()["path"] == "reports/q3.md"  # stored AS the file, not reports/q3.md/rt.txt
+
+    got = await client.get("/api/files/read?path=reports/q3.md")
+    assert got.status_code == 200, got.text
+    assert got.json()["content"] == "roundtrip"
+
+
+@pytest.mark.asyncio
+async def test_upload_into_an_existing_directory_appends_filename(client):
+    # Backward-compat: the file-browser UI uploads into the directory being viewed (an
+    # existing dir, no trailing slash). That must still drop the file INTO it.
+    up = await client.post(
+        "/api/files/upload?path=subdir",  # subdir exists in the workspace fixture
+        files={"file": ("note.txt", b"hi", "text/plain")},
+    )
+    assert up.status_code == 200, up.text
+    assert up.json()["path"] == "subdir/note.txt"
+
+    got = await client.get("/api/files/read?path=subdir/note.txt")
+    assert got.status_code == 200 and got.json()["content"] == "hi"
+
+
+@pytest.mark.asyncio
+async def test_upload_trailing_slash_forces_directory_drop(client):
+    # A trailing '/' explicitly means "drop into this directory under the multipart
+    # filename", even when the directory doesn't exist yet.
+    up = await client.post(
+        "/api/files/upload?path=fresh/",
+        files={"file": ("a.txt", b"abc", "text/plain")},
+    )
+    assert up.status_code == 200, up.text
+    assert up.json()["path"] == "fresh/a.txt"
+
+
+@pytest.mark.asyncio
+async def test_upload_path_escape_returns_400(client):
+    # The workspace boundary still holds for uploads.
+    up = await client.post(
+        "/api/files/upload?path=../escapee.txt",
+        files={"file": ("x.txt", b"x", "text/plain")},
+    )
+    assert up.status_code == 400
