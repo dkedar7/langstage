@@ -351,7 +351,10 @@ the canonical reference for a programmatic client instead of reverse-engineering
 All three honor auth: with `--auth-password` set they return `401` without credentials
 (like every route except `/api/health`). A couple of shapes worth knowing (and that `/docs`
 spells out): `POST /api/files/upload` takes `path` as a **query** parameter (not a form
-field); `/api/stream` is the SSE event stream keyed by `session_id`.
+field), and `path` is the **full destination path** — `upload?path=P` stores the file at
+`P`, so it round-trips with `read`/`download`/`delete?path=P` (end `path` with `/`, or point
+it at an existing directory, to drop the upload inside under its own filename instead);
+`/api/stream` is the SSE event stream keyed by `session_id`.
 
 ## Development
 
