@@ -118,15 +118,42 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.post("/delete")
-    async def delete_path(body: PathRequest):
-        """Delete a file or directory."""
+    def _delete(target: str):
         try:
-            result = file_manager.delete_path(body.path)
-            return result
+            return file_manager.delete_path(target)
         except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Not found: {body.path}")
+            raise HTTPException(status_code=404, detail=f"Not found: {target}")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @r.post("/delete")
+    async def delete_path(
+        path: str | None = Query(
+            None,
+            description="File/dir path relative to workspace. Query form is symmetric "
+            'with read/download/upload (so delete?path=P round-trips); a JSON body '
+            '{"path": ...} also works.',
+        ),
+        body: PathRequest | None = None,
+    ):
+        """Delete a file or directory. Accepts ``path`` as a **query** parameter —
+        ``delete?path=P``, symmetric with read/download/upload so the documented
+        round-trip holds — or a JSON body ``{"path": ...}`` (used by the file
+        browser UI). (gh #81)"""
+        target = path if path is not None else (body.path if body else None)
+        if not target:
+            raise HTTPException(
+                status_code=422,
+                detail='Provide `path` as a query parameter or a JSON body {"path": ...}.',
+            )
+        return _delete(target)
+
+    @r.delete("/delete")
+    async def delete_path_verb(
+        path: str = Query(..., description="File/dir path relative to workspace."),
+    ):
+        """``DELETE /api/files/delete?path=P`` — the natural REST verb, symmetric
+        with the other files routes. (gh #81)"""
+        return _delete(path)
 
     return r

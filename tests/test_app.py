@@ -256,3 +256,57 @@ async def test_upload_path_escape_returns_400(client):
         files={"file": ("x.txt", b"x", "text/plain")},
     )
     assert up.status_code == 400
+
+
+# ── /api/files/delete: path query param + DELETE verb (gh #81) ───────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_query_param_round_trips_with_upload(client):
+    # gh #81: the README promises delete?path=P round-trips with upload?path=P.
+    up = await client.post(
+        "/api/files/upload?path=del/a.txt",
+        files={"file": ("a.txt", b"bye", "text/plain")},
+    )
+    assert up.status_code == 200, up.text
+    # DELETE verb + query param — the natural REST shape the docs imply.
+    d = await client.delete("/api/files/delete?path=del/a.txt")
+    assert d.status_code == 200, d.text
+    assert d.json()["path"] == "del/a.txt"
+    assert (await client.get("/api/files/read?path=del/a.txt")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_post_with_query_param(client):
+    # POST + query param (mirroring upload?path=) also works.
+    await client.post(
+        "/api/files/upload?path=del/b.txt",
+        files={"file": ("b.txt", b"x", "text/plain")},
+    )
+    d = await client.post("/api/files/delete?path=del/b.txt")
+    assert d.status_code == 200, d.text
+    assert (await client.get("/api/files/read?path=del/b.txt")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_post_json_body_still_works(client):
+    # Back-compat: the file-browser UI posts a JSON body {"path": ...}.
+    await client.post(
+        "/api/files/upload?path=del/c.txt",
+        files={"file": ("c.txt", b"x", "text/plain")},
+    )
+    d = await client.post("/api/files/delete", json={"path": "del/c.txt"})
+    assert d.status_code == 200, d.text
+    assert (await client.get("/api/files/read?path=del/c.txt")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_without_path_returns_422(client):
+    d = await client.post("/api/files/delete")
+    assert d.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_missing_file_returns_404(client):
+    d = await client.delete("/api/files/delete?path=nope/missing.txt")
+    assert d.status_code == 404
