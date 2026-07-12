@@ -17,7 +17,9 @@ def create_cron_router(scheduler: CronScheduler) -> APIRouter:
 
     @router.get("")
     async def list_jobs():
-        return scheduler.list_jobs()
+        # Enriched with each schedule's last run state so a client can surface a
+        # run stuck awaiting review (gh #78).
+        return await scheduler.list_jobs_with_state()
 
     @router.post("", status_code=201)
     async def create_job(body: CronCreate):

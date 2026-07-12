@@ -13,17 +13,36 @@ from langstage.scheduler import (
 )
 
 
+class FakeStore:
+    """Minimal task store: task_id -> state, matching the bit of TaskStore.get()
+    the scheduler's overlap check reads."""
+
+    def __init__(self):
+        self.states: dict[str, str] = {}
+
+    async def get(self, task_id):
+        state = self.states.get(task_id)
+        return {"task_id": task_id, "state": state} if state is not None else None
+
+
 class FakeRunner:
-    """Records enqueue calls (the scheduler is now a producer onto the runner)."""
+    """Records enqueue calls (the scheduler is now a producer onto the runner)
+    and exposes a store so overlap protection can query prior-run state."""
 
     def __init__(self):
         self.enqueued = []
+        self.store = FakeStore()
+        self._n = 0
 
     async def enqueue(self, *, title, prompt, agent_spec=None, parent_id=None):
+        self._n += 1
+        task_id = f"task-{self._n}"
         self.enqueued.append(
-            {"title": title, "prompt": prompt, "agent_spec": agent_spec, "parent_id": parent_id}
+            {"title": title, "prompt": prompt, "agent_spec": agent_spec,
+             "parent_id": parent_id, "task_id": task_id}
         )
-        return "task-fake"
+        self.store.states[task_id] = "queued"
+        return task_id
 
 
 # ── cron validation ──────────────────────────────────────────────────
@@ -95,6 +114,91 @@ async def test_run_now():
     assert await s.run_now(job.id) is True
     assert await s.run_now("missing") is False
     assert len(runner.enqueued) == 1
+
+
+# ── overlap protection (gh #78) ──────────────────────────────────────
+
+
+async def test_fire_skips_while_previous_run_unresolved():
+    runner = FakeRunner()
+    s = CronScheduler(runner)
+    job = s.add_job(name="j", cron="* * * * *", prompt="p")
+
+    await s._fire(job)                       # first automatic fire enqueues
+    assert len(runner.enqueued) == 1
+    tid = job.last_task_id
+    assert tid
+
+    # The run parks at the HITL review gate; an automatic re-fire must skip.
+    runner.store.states[tid] = "review_needed"
+    await s._fire(job)
+    assert len(runner.enqueued) == 1, "must not enqueue while prev run awaits review"
+    assert "skipped" in (job.last_status or "")
+    assert "review_needed" in job.last_status
+    assert job.run_count == 1, "a skipped fire is not a run"
+
+    # Same for still-ongoing / still-queued previous runs.
+    for state in ("ongoing", "queued"):
+        runner.store.states[tid] = state
+        await s._fire(job)
+    assert len(runner.enqueued) == 1
+
+
+async def test_fire_proceeds_once_previous_run_finishes():
+    runner = FakeRunner()
+    s = CronScheduler(runner)
+    job = s.add_job(name="j", cron="* * * * *", prompt="p")
+
+    await s._fire(job)
+    runner.store.states[job.last_task_id] = "done"
+    await s._fire(job)                       # prev resolved → fire again
+    assert len(runner.enqueued) == 2
+    assert job.run_count == 2
+    assert job.last_status == "queued"
+
+
+async def test_run_now_bypasses_overlap_protection():
+    runner = FakeRunner()
+    s = CronScheduler(runner)
+    job = s.add_job(name="j", cron="* * * * *", prompt="p")
+
+    await s._fire(job)
+    runner.store.states[job.last_task_id] = "review_needed"
+    # Explicit manual trigger runs even though the previous run is unresolved.
+    assert await s.run_now(job.id) is True
+    assert len(runner.enqueued) == 2
+
+
+async def test_list_jobs_with_state_reports_last_run_state():
+    runner = FakeRunner()
+    s = CronScheduler(runner)
+    job = s.add_job(name="j", cron="* * * * *", prompt="p")
+
+    enriched = await s.list_jobs_with_state()
+    assert enriched[0]["last_run_state"] is None      # no run yet
+
+    await s._fire(job)
+    runner.store.states[job.last_task_id] = "review_needed"
+    enriched = await s.list_jobs_with_state()
+    assert enriched[0]["last_task_id"] == job.last_task_id
+    assert enriched[0]["last_run_state"] == "review_needed"
+
+
+async def test_overlap_protection_is_noop_without_a_store():
+    # A runner without a store must not break firing (best-effort protection).
+    class NoStoreRunner:
+        def __init__(self):
+            self.enqueued = []
+
+        async def enqueue(self, *, title, prompt, agent_spec=None, parent_id=None):
+            self.enqueued.append(title)
+            return "t"
+
+    s = CronScheduler(NoStoreRunner())
+    job = s.add_job(name="j", cron="* * * * *", prompt="p")
+    await s._fire(job)
+    await s._fire(job)                       # no store to check → proceeds
+    assert len(s._runner.enqueued) == 2
 
 
 async def test_next_run_populated_on_create_for_started_scheduler():
