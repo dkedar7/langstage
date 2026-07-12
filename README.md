@@ -195,6 +195,7 @@ The **Board** tab turns LangStage into a lightweight agent control room: delegat
   ```
 
 - **Scheduled runs** (the Schedules tab) enqueue onto the same board.
+- **A schedule never overlaps its own run.** If the previous fire's task is still queued, running, or **awaiting human review**, the next *automatic* fire is skipped (the schedule row shows `skipped: previous run still …`) instead of piling up duplicate tasks. This matters when the scheduled agent has a human-in-the-loop gate — e.g. the default agent gates `bash` — because such a run parks at **review** on the board for you to approve, and the schedule waits for you rather than stacking stuck reviews. Manual **Run now** bypasses this. `GET /api/cron` surfaces each schedule's `last_task_id` + `last_run_state` so a client can flag one awaiting review.
 
 Task REST API: `GET /api/tasks`, `POST /api/tasks` (delegate), `GET /api/tasks/{id}/events`, and `POST /api/tasks/{id}/{cancel,retry,resume,message}`. Concurrency is bounded by `LANGSTAGE_TASK_CONCURRENCY` (default 3).
 

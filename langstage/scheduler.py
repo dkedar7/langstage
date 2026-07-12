@@ -31,6 +31,18 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     croniter = None  # type: ignore
 
+# Task states a scheduled run can still be "in flight" in. A schedule must not
+# re-fire while its previous run is unresolved (gh #78) — otherwise unattended
+# fires pile up as stuck tasks, most painfully ``review_needed``, which waits for
+# a human that an unattended schedule never gets. Imported from the task engine
+# so the set stays in lockstep with the runner's state machine.
+try:
+    from langstage_core.tasks import ONGOING, QUEUED, REVIEW_NEEDED
+
+    _UNRESOLVED_TASK_STATES = frozenset({QUEUED, ONGOING, REVIEW_NEEDED})
+except Exception:  # pragma: no cover - defensive; core is always present in practice
+    _UNRESOLVED_TASK_STATES = frozenset({"queued", "ongoing", "review_needed"})
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -58,8 +70,9 @@ class CronJob:
     enabled: bool = True
     next_run: Optional[str] = None
     last_run: Optional[str] = None
-    last_status: Optional[str] = None   # "ok" | "running" | "error: ..."
+    last_status: Optional[str] = None   # "queued" | "skipped: ..." | "error: ..."
     run_count: int = 0
+    last_task_id: Optional[str] = None  # id of the last task enqueued onto the board (gh #78)
 
     @property
     def session_id(self) -> str:
@@ -85,6 +98,17 @@ class CronScheduler:
     # ── queries ──────────────────────────────────────────────────────
     def list_jobs(self) -> list[dict[str, Any]]:
         return [j.to_dict() for j in self._jobs.values()]
+
+    async def list_jobs_with_state(self) -> list[dict[str, Any]]:
+        """Like :meth:`list_jobs`, but each job is enriched with
+        ``last_run_state`` — the current board state of its most recent run
+        (``queued`` / ``ongoing`` / ``review_needed`` / ``done`` / …), or
+        ``None`` if it hasn't run yet. Lets a client surface e.g. a schedule
+        whose last run is stuck awaiting review (gh #78)."""
+        jobs = self.list_jobs()
+        for d in jobs:
+            d["last_run_state"] = await self._task_state(d.get("last_task_id"))
+        return jobs
 
     def get(self, job_id: str) -> Optional[CronJob]:
         return self._jobs.get(job_id)
@@ -128,7 +152,8 @@ class CronScheduler:
         job = self._jobs.get(job_id)
         if job is None:
             return False
-        await self._fire(job)
+        # Manual run-now is an explicit user action → bypass overlap protection.
+        await self._fire(job, force=True)
         return True
 
     # ── lifecycle ────────────────────────────────────────────────────
@@ -176,15 +201,32 @@ class CronScheduler:
             logger.exception("cron job %s loop crashed", job.id)
             job.last_status = "error: loop crashed"
 
-    async def _fire(self, job: CronJob) -> None:
+    async def _fire(self, job: CronJob, *, force: bool = False) -> None:
         # Producer: enqueue a task onto the durable runner and return. The
         # runner executes it on the board (queued → ongoing → done), so the
         # scheduler no longer runs the agent or drains queues itself.
+        #
+        # Overlap protection (gh #78): an *automatic* fire is SKIPPED while the
+        # schedule's previous run is still unresolved (queued/ongoing/awaiting
+        # review). Without this, a schedule whose agent trips a human-in-the-loop
+        # review gate silently piles up stuck ``review_needed`` tasks that never
+        # complete — and the built-in default agent gates ``bash``, so that is the
+        # common case, not an edge. Manual run-now passes ``force=True``.
+        if not force and job.last_task_id is not None:
+            prev_state = await self._task_state(job.last_task_id)
+            if prev_state in _UNRESOLVED_TASK_STATES:
+                job.last_status = f"skipped: previous run still {prev_state}"
+                logger.info(
+                    "cron job %s skipped fire: previous run %s still %s",
+                    job.id, job.last_task_id, prev_state,
+                )
+                return
         try:
-            await self._runner.enqueue(
+            task_id = await self._runner.enqueue(
                 title=job.name,
                 prompt=job.prompt,
             )
+            job.last_task_id = task_id
             job.last_status = "queued"
         except asyncio.CancelledError:
             raise
@@ -194,6 +236,20 @@ class CronScheduler:
         finally:
             job.last_run = _now_iso()
             job.run_count += 1
+
+    async def _task_state(self, task_id: Optional[str]) -> Optional[str]:
+        """Current board state of ``task_id`` via the runner's store. Returns
+        None if there's no id, no store, or the task is gone."""
+        if not task_id:
+            return None
+        store = getattr(self._runner, "store", None)
+        if store is None:
+            return None
+        try:
+            task = await store.get(task_id)
+        except Exception:  # pragma: no cover - defensive
+            return None
+        return task.get("state") if task else None
 
 
 # ── process-global singleton (so agent tools can reach the scheduler) ──

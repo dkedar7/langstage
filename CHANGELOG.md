@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.14 — 2026-07-11
+
+### Fixed
+- **Scheduled runs no longer overlap their own in-flight run — unattended schedules that hit a
+  human-in-the-loop review gate stop piling up stuck tasks (gh #78).** A cron fire enqueues onto
+  the same task board as a manual delegation, so if the scheduled agent tripped a review gate its
+  task parked at `review_needed` waiting for a human who — for an *unattended* schedule — never
+  came, and **every subsequent fire added another stuck task**. This wasn't an edge case: the
+  built-in default agent gates `bash` (`interrupt_on=dict(bash=True)`), so scheduling it silently
+  stalled at review whenever it used bash. The scheduler now applies cron-style **overlap
+  protection**: an automatic fire is **skipped** while the schedule's previous run is still
+  unresolved (`queued` / `ongoing` / `review_needed`), and the schedule row surfaces it
+  (`last_status = "skipped: previous run still review_needed"`). `GET /api/cron` now also returns
+  `last_task_id` and `last_run_state` per schedule so a client can flag a run awaiting review.
+  Manual **Run now** (`POST /api/cron/{id}/run`) is an explicit action and still fires regardless.
+
 ## 0.13.13 — 2026-07-10
 
 ### Changed
