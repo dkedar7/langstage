@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.17 — 2026-07-12
+
+### Fixed
+- **Schedules now show times in UTC, so the "9am" presets mean what they say (gh #83).** The
+  scheduler interprets cron in UTC (a `0 9 * * *` schedule fires at 09:00 UTC, stable across host
+  timezones and DST), but the Schedules tab rendered `next_run` / `last_run` in the browser's
+  **local** timezone — so on a non-UTC host the "Daily 9am" preset displayed a mismatched time
+  (e.g. `5:00 AM`), and the shown next-run contradicted the entered cron. The tab now renders
+  those times in **UTC** with a `UTC` label, the hour-specific presets are labeled `9am UTC`, and
+  the cron field notes "times are UTC". Interpretation is unchanged (still UTC — the right default
+  for an unattended, possibly-containerized scheduler); `GET /api/cron` already returned explicit
+  `…+00:00` timestamps. README documents the UTC behavior.
+
 ## 0.13.16 — 2026-07-12
 
 ### Fixed
