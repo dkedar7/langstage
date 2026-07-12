@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.16 — 2026-07-12
+
+### Fixed
+- **Agent-created schedules actually work now — `schedule_run` no longer fails with "no running
+  event loop" and leaves a zombie schedule (gh #82).** `schedule_run` is a **sync** tool, so
+  LangGraph runs it in a **worker thread**; on a started server `add_job()` called
+  `asyncio.create_task()` from that thread, which raised `RuntimeError: no running event loop`.
+  The tool reported failure — but the job was **already inserted** and never rolled back, so it
+  showed up in `GET /api/cron` and the Schedules tab with **no run-loop started** and never
+  fired (a zombie). Since the built-in default agent carries `LANGSTAGE_TOOLS`, this was the
+  documented path, not an edge case. The scheduler now **captures its event loop at `start()`**
+  and starts a job's run-loop **thread-safely** (`call_soon_threadsafe` when called off the
+  loop), so `schedule_run` works from the tool thread; and `add_job()` **rolls back** the insert
+  if the run-loop can't start, so a failure never leaves a zombie. The REST/UI path was
+  unaffected (its handler already runs on the loop).
+
 ## 0.13.15 — 2026-07-11
 
 ### Added
