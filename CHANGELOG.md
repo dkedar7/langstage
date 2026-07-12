@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.15 — 2026-07-11
+
+### Added
+- **`langstage init` — scaffold a commented `langstage.toml`, the write side of the config
+  surface (gh #77).** `config` / `--show-config` already read every resolved value and the exact
+  env var **and** `langstage.toml` key that sets it, but there was no *write* side: to create a
+  config file you had to reverse-map that flat output into TOML sections yourself (`ui.title` →
+  `[ui] title = …`) — the exact "remember the key names" burden the config surface exists to
+  remove. `langstage init` now writes a starter file with **every** option present but commented
+  out, grouped into its TOML section and annotated with its env-var equivalent. It's generated
+  from the *same* field → (env, toml-key, default) metadata `config` reads, so the two stay in
+  lockstep by construction and a `config → init → config` round-trip is exact. `langstage init`
+  writes `./langstage.toml` (refuses if it exists), `--force` overwrites, and `--path` targets a
+  directory or file.
+
 ## 0.13.14 — 2026-07-11
 
 ### Fixed
