@@ -10,18 +10,32 @@ interface SchedulesPanelProps {
 }
 
 // Natural-language presets so the common cases don't require writing raw cron.
+// Schedules run in UTC (the server interprets cron against UTC), so the presets
+// that name a specific hour say "UTC" to match — otherwise "9am" would mislead a
+// user in another timezone. (gh #83)
 const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Every 15 min", cron: "*/15 * * * *" },
   { label: "Hourly", cron: "0 * * * *" },
-  { label: "Daily 9am", cron: "0 9 * * *" },
-  { label: "Weekdays 9am", cron: "0 9 * * 1-5" },
-  { label: "Weekly Mon", cron: "0 9 * * 1" },
+  { label: "Daily 9am UTC", cron: "0 9 * * *" },
+  { label: "Weekdays 9am UTC", cron: "0 9 * * 1-5" },
+  { label: "Mon 9am UTC", cron: "0 9 * * 1" },
 ];
 
 function fmt(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString();
+    // Show times in UTC (with a UTC label) because the cron is interpreted in
+    // UTC — rendering next_run in the browser's local zone made "9am" input
+    // display as a mismatched local time. (gh #83)
+    const s = new Date(iso).toLocaleString([], {
+      timeZone: "UTC",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    return `${s} UTC`;
   } catch {
     return iso;
   }
@@ -109,7 +123,7 @@ export function SchedulesPanel({ jobs, onCreate, onDelete, onRun }: SchedulesPan
         />
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-[var(--color-text-muted)]">
-            e.g. <code>*/15 * * * *</code> · <code>0 9 * * 1-5</code> · in-memory while the app runs
+            e.g. <code>*/15 * * * *</code> · <code>0 9 * * 1-5</code> · times are UTC · in-memory while the app runs
           </span>
           <button
             type="submit"

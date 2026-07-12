@@ -24,6 +24,12 @@ test.describe('langstage', () => {
 
     await page.getByRole('button', { name: 'Schedules' }).click();
 
+    // Presets that name an hour are labeled UTC, matching the UTC cron
+    // interpretation (gh #83).
+    await expect(
+      page.getByRole('button', { name: 'Weekdays 9am UTC' })
+    ).toBeVisible();
+
     // The scheduler is in-memory and shared across the test run, so use a
     // unique name to avoid colliding with jobs from other tests/retries.
     const name = `Nightly digest ${Date.now()}`;
@@ -37,6 +43,8 @@ test.describe('langstage', () => {
     // The new job appears in the list with its name and cron expression.
     await expect(page.getByText(name)).toBeVisible();
     await expect(page.getByText('0 9 * * 1-5').first()).toBeVisible();
+    // next_run is rendered in UTC (09:00 UTC), matching the entered cron. (gh #83)
+    await expect(page.getByText(/09:00 UTC/).first()).toBeVisible();
   });
 
   test('rejects an invalid cron expression', async ({ page }) => {
