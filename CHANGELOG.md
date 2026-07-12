@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.18 — 2026-07-12
+
+### Fixed
+- **`/api/files/delete` now accepts `path` as a query parameter and a `DELETE` verb, so the
+  documented `delete?path=P` round-trip actually works (gh #81).** The README advertises delete
+  as symmetric with `read` / `download` / `upload` (all query-param `path`) and promises
+  `upload?path=P` round-trips with `delete?path=P` — but delete only accepted `POST` + a JSON
+  body `{"path": ...}`, so `DELETE …?path=P` returned 405 and `POST …?path=P` returned 422, and a
+  client written straight from the docs silently left files behind. `delete` now takes `path` as
+  a query parameter via **either `POST` or `DELETE`**, matching the other files routes; the
+  `POST` + JSON body form still works (the file-browser UI uses it). `/openapi.json` reflects
+  both methods + the `path` parameter.
+
 ## 0.13.17 — 2026-07-12
 
 ### Fixed
