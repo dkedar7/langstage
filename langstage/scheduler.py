@@ -94,6 +94,10 @@ class CronScheduler:
         self._jobs: dict[str, CronJob] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._started = False
+        # The event loop the scheduler runs on, captured at start(). Lets
+        # _start_job spawn a run-loop from a non-loop thread (the sync
+        # schedule_run tool runs in a worker thread) instead of failing. (gh #82)
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     # ── queries ──────────────────────────────────────────────────────
     def list_jobs(self) -> list[dict[str, Any]]:
@@ -136,7 +140,14 @@ class CronScheduler:
         # create (only a follow-up GET showed it). (gh #37)
         job.next_run = self._compute_next(job.cron)
         if self._started:
-            self._start_job(job)
+            try:
+                self._start_job(job)
+            except Exception:
+                # Never leave a registered-but-unstarted (zombie) schedule: if the
+                # run-loop can't be started, roll back the insert and surface the
+                # error to the caller (the schedule_run tool / POST handler). (gh #82)
+                self._jobs.pop(job.id, None)
+                raise
         return job
 
     def remove_job(self, job_id: str) -> bool:
@@ -159,6 +170,10 @@ class CronScheduler:
     # ── lifecycle ────────────────────────────────────────────────────
     def start(self) -> None:
         """Start run-loops for all enabled jobs (call once the loop is running)."""
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:  # pragma: no cover - start() is always called on the loop
+            self._loop = None
         self._started = True
         for job in self._jobs.values():
             if job.enabled and job.id not in self._tasks:
@@ -169,6 +184,7 @@ class CronScheduler:
             task.cancel()
         self._tasks.clear()
         self._started = False
+        self._loop = None
 
     # ── internals ────────────────────────────────────────────────────
     @staticmethod
@@ -182,7 +198,27 @@ class CronScheduler:
         return nxt.astimezone(timezone.utc).isoformat(timespec="seconds")
 
     def _start_job(self, job: CronJob) -> None:
-        self._tasks[job.id] = asyncio.create_task(self._run_loop(job))
+        """Create the job's run-loop task. Safe to call from any thread (gh #82):
+        the sync ``schedule_run`` tool runs in a worker thread with no running
+        loop, so ``asyncio.create_task`` there raised ``RuntimeError: no running
+        event loop`` and left a zombie. When off the scheduler's loop we hand the
+        spawn to that loop via ``call_soon_threadsafe`` instead."""
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is not None and (self._loop is None or running is self._loop):
+            self._spawn_run_loop(job)
+        elif self._loop is not None:
+            self._loop.call_soon_threadsafe(self._spawn_run_loop, job)
+        else:  # pragma: no cover - no loop anywhere; add_job() rolls back the insert
+            raise RuntimeError("scheduler has no running event loop to start the job on")
+
+    def _spawn_run_loop(self, job: CronJob) -> None:
+        """Create the run-loop task. Runs on the scheduler's loop thread; guarded
+        against a job removed between scheduling and this (possibly deferred) call."""
+        if job.id in self._jobs and job.id not in self._tasks:
+            self._tasks[job.id] = asyncio.create_task(self._run_loop(job))
 
     async def _run_loop(self, job: CronJob) -> None:
         try:

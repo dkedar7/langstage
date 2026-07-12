@@ -226,6 +226,70 @@ async def test_schedule_run_tool_reports_next_run_on_started_scheduler():
         s.shutdown()
 
 
+# ── agent-created schedules run off the loop thread (gh #82) ─────────
+
+
+async def _wait_for_task(scheduler, job_id, tries=50):
+    """call_soon_threadsafe defers the run-loop spawn to the loop; let it run."""
+    for _ in range(tries):
+        if job_id in scheduler._tasks:
+            return True
+        await asyncio.sleep(0.01)
+    return False
+
+
+async def test_off_loop_add_job_starts_run_loop_not_zombie():
+    # The sync schedule_run tool runs in a worker thread; add_job from there used
+    # to raise "no running event loop" and leave a registered-but-unstarted job.
+    s = CronScheduler(FakeRunner())
+    s.start()  # captures the loop
+    try:
+        job = await asyncio.to_thread(
+            lambda: s.add_job(name="n", cron="* * * * *", prompt="p", created_by="agent")
+        )
+        assert job.id in s._jobs
+        assert await _wait_for_task(s, job.id), "run-loop must be started (no zombie)"
+    finally:
+        s.shutdown()
+
+
+async def test_schedule_run_tool_from_worker_thread_succeeds():
+    # The exact bug: the tool returned "no running event loop" and the schedule
+    # never fired. Now it reports success and the job has a live run-loop.
+    s = CronScheduler(FakeRunner())
+    s.start()
+    set_scheduler(s)
+    try:
+        out = await asyncio.to_thread(
+            lambda: schedule_run.invoke({"name": "nightly", "cron": "* * * * *", "prompt": "p"})
+        )
+        assert "no running event loop" not in out
+        assert "Scheduled 'nightly'" in out
+        jobs = s.list_jobs()
+        assert len(jobs) == 1
+        assert await _wait_for_task(s, jobs[0]["id"]), "agent schedule must have a run-loop"
+    finally:
+        set_scheduler(None)
+        s.shutdown()
+
+
+async def test_add_job_rolls_back_when_run_loop_cannot_start(monkeypatch):
+    # If starting the run-loop fails, add_job must not leave a zombie in _jobs.
+    s = CronScheduler(FakeRunner())
+    s.start()
+
+    def boom(job):
+        raise RuntimeError("cannot start")
+
+    monkeypatch.setattr(s, "_start_job", boom)
+    try:
+        with pytest.raises(RuntimeError):
+            s.add_job(name="x", cron="* * * * *", prompt="p")
+        assert s.list_jobs() == [], "a failed start must roll back the insert"
+    finally:
+        s.shutdown()
+
+
 # ── agent tools ──────────────────────────────────────────────────────
 
 
