@@ -119,6 +119,33 @@ def config(workspace, as_json):
     click.echo(_json.dumps(payload, indent=2))
 
 
+@main.command()
+@click.option("--path", "target", default="langstage.toml", type=click.Path(),
+              help="Target file or directory (default: ./langstage.toml).")
+@click.option("--force", is_flag=True, default=False, help="Overwrite an existing file.")
+def init(target, force):
+    """Scaffold a commented langstage.toml (the inverse of `config`).
+
+    Writes a starter config with every option present but commented out, grouped
+    into its TOML section and annotated with its env-var equivalent - generated
+    from the same metadata `config` reads, so the two never drift.
+    """
+    from pathlib import Path
+
+    from langstage.config_template import render_langstage_toml
+
+    dest = Path(target)
+    # A directory target (existing dir, or a path ending in a separator) → drop
+    # langstage.toml inside it; otherwise `target` is the file to write.
+    if dest.is_dir() or str(target).endswith(("/", "\\")):
+        dest = dest / "langstage.toml"
+    if dest.exists() and not force:
+        raise click.ClickException(f"{dest} already exists. Use --force to overwrite.")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(render_langstage_toml(), encoding="utf-8")
+    click.echo(f"Wrote {dest}  -  edit it, then `langstage config` to verify.")
+
+
 def _agent_tool_names(agent) -> set[str] | None:
     """Best-effort: pull bound tool names out of a compiled graph. Returns None
     if the graph can't be introspected (capabilities may still work)."""

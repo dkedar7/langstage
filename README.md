@@ -213,6 +213,16 @@ Never remember a variable name — print the resolved configuration (each value,
 langstage --show-config
 ```
 
+**Scaffold a config file** with the inverse command. `langstage init` writes a fully-commented `langstage.toml` — every option present but commented out, grouped into its TOML section and annotated with its env-var equivalent — so you never have to guess the section nesting:
+
+```bash
+langstage init                 # write ./langstage.toml (refuses if it exists)
+langstage init --force         # overwrite
+langstage init --path ./cfg/   # target a directory or file
+```
+
+`init` is generated from the same field table `config` reads, so the two stay in lockstep — a `config → init → config` round-trip is exact.
+
 | Option | CLI Flag | Env Var | Default |
 |--------|----------|---------|---------|
 | Agent spec | `--agent` | `LANGSTAGE_AGENT_SPEC` | Built-in default agent (requires `deepagents` extra — see Quick Start) |
