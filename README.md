@@ -106,6 +106,23 @@ from langstage import run_app
 run_app(agent=your_agent, workspace="./workspace")
 ```
 
+### From a Jupyter notebook
+
+The **same** `app.run()` works in a notebook — no threads, no `nest_asyncio`, no extra code. LangStage sees the kernel's running event loop and serves on a background thread, returning a handle immediately, so the cell doesn't block and the kernel stays interactive:
+
+```python
+from langstage import CoworkApp
+
+app = CoworkApp(agent=your_agent, workspace="./workspace")
+server = app.run()      # -> LangStage running at http://localhost:8050
+
+# ... keep using the notebook; the app is live in another tab ...
+
+server.stop()           # shut it down when you're done
+```
+
+In a plain script or via the CLI, `run()` blocks exactly as it always has.
+
 ### Enabling the Canvas
 
 The canvas is opt-in. Attach `CanvasMiddleware` to your agent and the Canvas tab appears in the UI automatically:

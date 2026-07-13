@@ -1,7 +1,10 @@
 """CoworkApp — main entry point for the application."""
 
+import asyncio
 import logging
 import os
+import threading
+import time
 import webbrowser
 from pathlib import Path
 
@@ -16,6 +19,54 @@ from langstage.server.main import create_fastapi_app
 # are optional. This keeps `import langstage` working on a base install.
 
 logger = logging.getLogger(__name__)
+
+#: How long run() waits for the background server to bind before giving up (gh #87).
+_STARTUP_TIMEOUT = 20.0
+
+
+def _in_running_event_loop() -> bool:
+    """True when called from inside an already-running asyncio loop.
+
+    That's exactly the Jupyter/IPython kernel case (and any async context):
+    ``uvicorn.run()`` wraps ``asyncio.run()``, which raises
+    ``RuntimeError: Cannot run the event loop while another loop is running``
+    there — so ``run()`` must serve on a background thread instead (gh #87).
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+class BackgroundServer:
+    """Handle for a LangStage server running on a background thread.
+
+    Returned by :meth:`CoworkApp.run` when it's called from a notebook (or any
+    running event loop), where blocking the caller would be useless — the kernel
+    stays interactive and you get a handle to stop the server (gh #87).
+    """
+
+    def __init__(self, server: uvicorn.Server, thread: threading.Thread, url: str):
+        self._server = server
+        self._thread = thread
+        self.url = url
+
+    @property
+    def running(self) -> bool:
+        return self._thread.is_alive()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        """Ask the server to shut down and wait for its thread to exit."""
+        self._server.should_exit = True
+        self._thread.join(timeout=timeout)
+
+    def __repr__(self) -> str:  # pragma: no cover - cosmetic
+        state = "running" if self.running else "stopped"
+        return f"<LangStage {state} at {self.url}>"
+
+    def _repr_html_(self) -> str:  # pragma: no cover - notebook display hook
+        return f'LangStage running at <a href="{self.url}" target="_blank">{self.url}</a>'
 
 
 class CoworkApp:
@@ -179,8 +230,19 @@ class CoworkApp:
 
         os.chdir(workspace_root())
 
-    def run(self, open_browser: bool = True) -> None:
-        """Start the FastAPI server with uvicorn. Blocks."""
+    def run(self, open_browser: bool = True):
+        """Start the FastAPI server with uvicorn.
+
+        **Scripts / CLI** (no running event loop): blocks, as always.
+
+        **Notebooks** (a Jupyter kernel — or any already-running asyncio loop):
+        serves on a background thread and returns a :class:`BackgroundServer`
+        immediately, so ``app.run()`` just works with no extra code and the kernel
+        stays interactive. Blocking would be useless there, and ``uvicorn.run()``
+        can't start inside a running loop at all — it raised ``RuntimeError:
+        Cannot run the event loop while another loop is running`` (gh #87).
+        Call ``.stop()`` on the returned handle to shut it down.
+        """
         app = self.create_server()
         self._enter_workspace()
 
@@ -191,15 +253,51 @@ class CoworkApp:
 
         if open_browser:
             # Open browser after a short delay (server needs to start first)
-            import threading
             threading.Timer(1.5, webbrowser.open, args=[url]).start()
 
-        uvicorn.run(
-            app,
-            host=self.config.host,
-            port=self.config.port,
-            log_level="debug" if self.config.debug else "info",
-        )
+        log_level = "debug" if self.config.debug else "info"
+        if not _in_running_event_loop():
+            uvicorn.run(app, host=self.config.host, port=self.config.port, log_level=log_level)
+            return None
+
+        return self._serve_in_background(app, url, log_level)
+
+    def _serve_in_background(self, app, url: str, log_level: str) -> "BackgroundServer":
+        """Serve on a daemon thread with its own event loop (notebook path, gh #87).
+
+        The thread gets a fresh loop via ``Server.run()`` → ``asyncio.run()``, so it
+        never touches the kernel's loop. We wait for the bind to land and raise a
+        clean error on failure — otherwise a port clash just kills the thread
+        silently (and, if served on the kernel's own loop, uvicorn's
+        ``sys.exit(STARTUP_FAILURE)`` takes the whole kernel down with it).
+        """
+        config = uvicorn.Config(app, host=self.config.host, port=self.config.port,
+                                log_level=log_level)
+        server = uvicorn.Server(config)
+
+        def _serve() -> None:
+            try:
+                server.run()  # own thread, own loop (asyncio.run) — never the kernel's
+            except SystemExit:
+                # uvicorn calls sys.exit(STARTUP_FAILURE) when the bind fails. Swallow
+                # it so a notebook doesn't get an unhandled-thread traceback; the
+                # started-check below turns it into a clean, actionable error.
+                pass
+
+        thread = threading.Thread(target=_serve, daemon=True, name="langstage-server")
+        thread.start()
+
+        deadline = time.monotonic() + _STARTUP_TIMEOUT
+        while not server.started and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if not server.started:
+            server.should_exit = True
+            thread.join(timeout=2.0)
+            raise RuntimeError(
+                f"LangStage failed to start on {self.config.host}:{self.config.port} "
+                "(is the port already in use?). Pass a different port=..."
+            )
+        return BackgroundServer(server, thread, url)
 
     def create_server(self):
         """Return the FastAPI app without starting it.
@@ -222,15 +320,19 @@ def run_app(
     agent_spec: str | None = None,
     workspace: str | Path = ".",
     **kwargs,
-) -> None:
-    """Shorthand: create CoworkApp and run it."""
+):
+    """Shorthand: create CoworkApp and run it.
+
+    Blocks in a script; in a notebook it serves on a background thread and returns
+    a :class:`BackgroundServer` handle, like :meth:`CoworkApp.run` (gh #87).
+    """
     app = CoworkApp(
         agent=agent,
         agent_spec=agent_spec,
         workspace=workspace,
         **kwargs,
     )
-    app.run()
+    return app.run()
 
 
 def _has_checkpointer(agent) -> bool:

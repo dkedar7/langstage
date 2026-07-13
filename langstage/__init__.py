@@ -4,7 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from langstage_core.tasks import TASK_TOOLS
 
-from langstage.app import CoworkApp, run_app
+from langstage.app import BackgroundServer, CoworkApp, run_app
 from langstage.scheduler import CRON_TOOLS
 
 #: One-import bundle of host-provided agent tools. Add to a bring-your-own agent
@@ -22,4 +22,4 @@ try:
 except PackageNotFoundError:  # pragma: no cover - editable/source checkout
     __version__ = "0.0.0+local"
 
-__all__ = ["CoworkApp", "run_app", "LANGSTAGE_TOOLS"]
+__all__ = ["CoworkApp", "run_app", "BackgroundServer", "LANGSTAGE_TOOLS"]

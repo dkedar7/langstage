@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.19 — 2026-07-13
+
+### Fixed
+- **`app.run()` now just works in a Jupyter notebook — no extra code (gh #87).** The documented
+  Python API (`CoworkApp(...).run()` / `run_app(...)`) was **unusable from a notebook**: `run()`
+  calls `uvicorn.run()`, which wraps `asyncio.run()`, and a Jupyter kernel already has a running
+  event loop — so it died with `RuntimeError: Cannot run the event loop while another loop is
+  running`, *after* printing the `LangStage: http://…` banner, so it looked like it was starting.
+  Notebook users are squarely in the audience (the family ships **langstage-jupyter**), yet the
+  README's "From Python" example was exactly what failed there; the only way out was a manual
+  `threading.Thread(...)` wrapper. `run()` now detects an already-running event loop and serves
+  on a **background thread**, returning a `BackgroundServer` handle immediately — the cell doesn't
+  block, the kernel stays interactive, and `handle.stop()` shuts it down. Scripts and the CLI are
+  unchanged (no running loop → `run()` blocks exactly as before). A failed bind (port in use) now
+  raises a clean, actionable error instead of silently killing the server thread — and no longer
+  risks taking the whole kernel down via uvicorn's `sys.exit(STARTUP_FAILURE)`.
+
 ## 0.13.18 — 2026-07-12
 
 ### Fixed
