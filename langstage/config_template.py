@@ -58,8 +58,13 @@ def _render_value(name: str, value: Any) -> str:
     if value is None:
         return _EXAMPLES.get(name, '""')
     s = str(value)  # str or Path
-    if len(s) > 80:
-        s = s[:77] + "..."  # illustrative only (the line is commented out)
+    # Emit the FULL default as a valid single-line TOML basic string — never a
+    # truncated "…" preview. The scaffold's own header promises the shown value is
+    # the built-in default and that a `config -> init -> config` round-trip is
+    # exact, and it invites uncommenting any line; a truncated string is
+    # syntactically valid but semantically broken, so uncommenting e.g. a workflow
+    # prompt silently wrote a corrupt value. TOML basic strings can be any length
+    # on one line, and `_toml_quote` escapes quotes/backslashes/newlines. (gh #88)
     return _toml_quote(s)
 
 
