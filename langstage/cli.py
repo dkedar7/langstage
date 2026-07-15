@@ -88,7 +88,11 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
         #    attribute, an unimportable module — all raised by the shared loader. This
         #    mirrors how the sibling `check` command reports the identical failures as
         #    `[fail] failed to load: …` rather than dumping a traceback. (gh #90)
-        raise click.ClickException(str(e)) from e
+        # Fall back to the exception class name when its message is empty — e.g. a
+        # module that raises `NotImplementedError()` (`str(e) == ""`), which would
+        # otherwise surface as a bare `Error: ` with nothing after the colon. This
+        # keeps `run` in sync with `check`'s identical fallback. (gh #92)
+        raise click.ClickException(str(e) or type(e).__name__) from e
     app.run(open_browser=not no_browser)
 
 
@@ -150,6 +154,18 @@ def init(target, force):
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(render_langstage_toml(), encoding="utf-8")
     click.echo(f"Wrote {dest}  -  edit it, then `langstage config` to verify.")
+
+
+def _load_error_detail(e: BaseException) -> str:
+    """Format a load-time exception as one actionable line, prefixed with its class.
+
+    Falls back to the bare class name when ``str(e)`` is empty — e.g.
+    ``NotImplementedError()``, which any model that doesn't support tool-calling
+    raises from ``bind_tools()`` inside ``create_react_agent(...)``. Without the
+    fallback the human `check` line and the `--json` error would end in a bare
+    `: ` with nothing after it. Shared by both so they can't drift. (gh #92)
+    """
+    return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
 
 
 def _agent_tool_names(agent) -> set[str] | None:
@@ -231,8 +247,9 @@ def check(agent_spec, demo, live, as_json):
     try:
         agent = load_agent_spec(spec)
     except Exception as e:  # noqa: BLE001 - report load failure cleanly
-        report["error"] = f"{type(e).__name__}: {e}"
-        say(f"{fail} failed to load: {e}")
+        detail = _load_error_detail(e)  # falls back to the class name for a message-less exc (gh #92)
+        report["error"] = detail
+        say(f"{fail} failed to load: {detail}")
         finish(1)
 
     # Loading the object is not enough — the server drives the agent via

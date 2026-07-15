@@ -110,6 +110,51 @@ def test_run_malformed_spec_is_clean_error():
     _assert_clean_run_error(result)
 
 
+# ── message-less load exceptions surface the class name, not a blank error (gh #92) ──
+#
+# A load failure whose `str(exc)` is empty — e.g. `NotImplementedError()`, which any
+# model that doesn't support tool-calling raises from `bind_tools()` inside
+# `create_react_agent(...)` — used to print a bare `Error: ` / `[fail] failed to load: `
+# with nothing after the colon (a follow-on gap from the #90 broadening). Both surfaces
+# must now fall back to the exception class name.
+
+_EMPTY_MSG_AGENT = "raise NotImplementedError\n"  # str(NotImplementedError()) == ""
+
+
+def test_run_message_less_load_error_falls_back_to_class_name(tmp_path):
+    """`run`: a message-less load exception surfaces its class name, not `Error: ` (empty)."""
+    agent = _write(tmp_path, "emptyerr.py", _EMPTY_MSG_AGENT)
+    result = CliRunner().invoke(
+        cli_mod.main, ["run", "--agent", f"{agent}:graph", "--no-browser"]
+    )
+    assert result.exit_code != 0, result.output
+    # Fail-before/pass-after: pre-fix the whole message was empty (`Error: \n`).
+    assert "Error: NotImplementedError" in result.output, result.output
+
+
+def test_check_message_less_load_error_falls_back_to_class_name(tmp_path):
+    """`check` human line: names the class instead of ending at `failed to load: `."""
+    agent = _write(tmp_path, "emptyerr.py", _EMPTY_MSG_AGENT)
+    result = CliRunner().invoke(cli_mod.main, ["check", "--agent", f"{agent}:graph"])
+    assert result.exit_code == 1, result.output
+    assert "failed to load: NotImplementedError" in result.output, result.output
+
+
+def test_check_json_message_less_load_error_trims_trailing_colon(tmp_path):
+    """`check --json`: the error is the bare class name, not `NotImplementedError: `
+    with a dangling colon-space (the pre-fix `f"{type(e).__name__}: {e}"` on empty e)."""
+    import json
+
+    agent = _write(tmp_path, "emptyerr.py", _EMPTY_MSG_AGENT)
+    result = CliRunner().invoke(
+        cli_mod.main, ["check", "--agent", f"{agent}:graph", "--json"]
+    )
+    assert result.exit_code == 1, result.output
+    report = json.loads(result.output)
+    assert report["loads"] is False
+    assert report["error"] == "NotImplementedError", report["error"]
+
+
 def test_check_fails_on_uncompiled_stategraph(tmp_path):
     """Preflight must catch the #1 BYO mistake — exporting the builder, not the
     compiled graph — instead of a confident `[ ok ] loads` + exit 0. (gh #39)"""
