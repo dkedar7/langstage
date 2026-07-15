@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.21 — 2026-07-14
+
+### Added
+- **A startup warning when binding a non-loopback host with no authentication (gh #89).**
+  `langstage run --host 0.0.0.0` (the natural choice on a remote box or in a container) with
+  no `--auth-password` exposes the **entire** REST surface — chat, the workspace file browser
+  (read/write/delete/upload), and the task board — unauthenticated to anyone who can reach the
+  port, and nothing signaled it: the startup banner was identical to a safe `localhost` bind.
+  `run()` now prints a clear warning to stderr when the resolved host is non-loopback
+  (`0.0.0.0`, `::`, or a concrete address — anything but `localhost` / `127.0.0.0/8` / `::1`)
+  **and** no auth password is set, naming the host and pointing at the fix (`--auth-password`
+  / `LANGSTAGE_AUTH_PASSWORD`, or a `localhost` bind behind an SSH tunnel). It **warns but
+  still starts** — the least-surprising behavior, and auth is a one-flag fix. Auth itself was
+  already correct (it returns `401`/`200` and keeps `/api/health` exempt when a password is
+  set); the gap was purely that the dangerous default was silent. README documents it.
+
 ## 0.13.20 — 2026-07-14
 
 ### Fixed
