@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.23 — 2026-07-15
+
+### Fixed
+- **`langstage run` / `check` no longer print an EMPTY error when the load exception has no
+  message (gh #92).** A follow-on gap from #90: `run` broadened its `except` to surface loader
+  failures as `Error: <str(e)>`, but `str()` is empty for a message-less exception — most
+  commonly `NotImplementedError()`, which `BaseChatModel.bind_tools()` raises for any model that
+  doesn't support tool-calling, so `create_react_agent(model, tools=[...])` produces a bare
+  `NotImplementedError('')` at import. The result was `Error: ` / `[fail] failed to load: ` with
+  **nothing after the colon** — zero diagnostic signal at exactly the moment `run`/`check` exist
+  to help. Both surfaces now fall back to the exception **class name** when the message is empty:
+  `run` prints `Error: NotImplementedError`, `check` prints `[fail] failed to load:
+  NotImplementedError`, and `check --json` reports `"error": "NotImplementedError"` (the dangling
+  `": "` trimmed). The human `check` line and the `--json` error now share one formatter so they
+  can't drift, and a non-empty message is unchanged (still `Type: message`). Exit code stays `1`.
+
 ## 0.13.22 — 2026-07-14
 
 ### Fixed
