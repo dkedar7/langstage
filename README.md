@@ -263,6 +263,8 @@ langstage init --path ./cfg/   # target a directory or file
 | Show Canvas tab | `--show-canvas/--no-show-canvas` | `LANGSTAGE_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
 | Show Files tab | `--show-files/--no-show-files` | `LANGSTAGE_SHOW_FILES` | `true` |
 
+> **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
+
 ## Slash Commands
 
 Type `/` in the chat input to access built-in commands:

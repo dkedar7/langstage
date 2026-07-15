@@ -31,6 +31,46 @@ def test_template_uncommented_round_trips_to_defaults():
     assert data["debug"] is False
 
 
+def test_template_long_prompt_defaults_are_full_not_truncated():
+    """gh #88: the long workflow-prompt defaults must be emitted in FULL, not cut
+    to a `...` preview. A truncated string is valid TOML but semantically broken, so
+    uncommenting the line (which the header invites) silently wrote a corrupt value,
+    breaking the advertised "exact round-trip" guarantee."""
+    from langstage.config import _CREATE_PROMPT, _RUN_PROMPT, _SAVE_PROMPT
+
+    txt = render_langstage_toml()
+    # No truncated/broken default may leak into the scaffold at all.
+    assert "..." not in txt, "init must not emit a truncated `...` default"
+
+    # Uncomment every simple `# key = ...` line (as a user would) and re-parse.
+    live = "\n".join(re.sub(r"^# (\w+ = )", r"\1", ln) for ln in txt.splitlines())
+    data = tomllib.loads(live)
+    # The three workflow prompts round-trip EXACTLY to the built-in defaults.
+    assert data["workflow"]["save_prompt"] == _SAVE_PROMPT
+    assert data["workflow"]["run_prompt"] == _RUN_PROMPT
+    assert data["workflow"]["create_prompt"] == _CREATE_PROMPT
+
+
+def test_init_uncommented_prompt_resolves_to_the_builtin_default():
+    """gh #88: end-to-end — `init`, uncomment run_prompt, then resolve. The config
+    must resolve to the FULL built-in default, not a truncated fragment (the exact
+    `config -> init -> config` round-trip the README promises)."""
+    from pathlib import Path
+
+    from langstage.config import _RUN_PROMPT
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        assert runner.invoke(main, ["init"]).exit_code == 0
+        toml = Path("langstage.toml")
+        text = "\n".join(
+            re.sub(r"^# (run_prompt = )", r"\1", ln) for ln in toml.read_text().splitlines()
+        )
+        toml.write_text(text)
+        cfg = AppConfig.resolve()
+        assert cfg.run_workflow_prompt == _RUN_PROMPT
+
+
 def test_template_covers_every_configurable_key():
     """Lockstep with `config`: every field `config` can read has a line here."""
     txt = render_langstage_toml()

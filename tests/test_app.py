@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
 from httpx import AsyncClient, ASGITransport
 
+from langstage.app import _exposure_warning, _is_loopback_host
 from langstage.config import AppConfig
 from langstage.server.main import create_fastapi_app
 
@@ -310,3 +311,74 @@ async def test_delete_without_path_returns_422(client):
 async def test_delete_missing_file_returns_404(client):
     d = await client.delete("/api/files/delete?path=nope/missing.txt")
     assert d.status_code == 404
+
+
+# ── non-loopback host + no auth exposure warning (gh #89) ────────────────────
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["localhost", "127.0.0.1", "127.0.0.2", "::1", "[::1]", None, "",
+     "LOCALHOST", "  localhost  "],
+)
+def test_is_loopback_host_true(host):
+    assert _is_loopback_host(host) is True
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["0.0.0.0", "::", "192.168.1.10", "10.0.0.5", "myserver.internal", "example.com"],
+)
+def test_is_loopback_host_false(host):
+    assert _is_loopback_host(host) is False
+
+
+def test_exposure_warning_fires_for_non_loopback_without_auth():
+    """The dangerous default: a network-reachable bind with no password. The
+    warning must name the host and point at the fix."""
+    msg = _exposure_warning("0.0.0.0", "")
+    assert msg is not None
+    assert "0.0.0.0" in msg
+    assert "auth" in msg.lower()
+    assert "--auth-password" in msg or "LANGSTAGE_AUTH_PASSWORD" in msg
+
+
+def test_exposure_warning_silent_when_auth_set():
+    """A password closes the hole — no warning even on 0.0.0.0."""
+    assert _exposure_warning("0.0.0.0", "hunter2") is None
+
+
+def test_exposure_warning_silent_on_loopback():
+    """The safe, default case (localhost) never warns, with or without auth."""
+    assert _exposure_warning("localhost", "") is None
+    assert _exposure_warning("127.0.0.1", "") is None
+    assert _exposure_warning(None, "") is None
+
+
+def _make_run_app(workspace, mock_agent, monkeypatch, host):
+    """Build a CoworkApp whose run() won't bind a socket or move the process cwd."""
+    import langstage.app as app_mod
+    from langstage.app import CoworkApp
+
+    monkeypatch.setattr(app_mod.uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod.CoworkApp, "_enter_workspace", lambda self: None)
+    return CoworkApp(agent=mock_agent, workspace=workspace, host=host, port=8050,
+                     title="T", agent_name="A", show_canvas=False, show_files=False)
+
+
+def test_run_prints_exposure_warning_to_stderr(workspace, mock_agent, monkeypatch, capsys):
+    """End-to-end: run() on 0.0.0.0 with no auth prints the warning (to stderr) and
+    still starts the server (warn-but-start). uvicorn is stubbed so nothing binds."""
+    app = _make_run_app(workspace, mock_agent, monkeypatch, host="0.0.0.0")
+    app.run(open_browser=False)
+    err = capsys.readouterr().err
+    assert "WARNING" in err
+    assert "0.0.0.0" in err
+
+
+def test_run_no_warning_on_localhost(workspace, mock_agent, monkeypatch, capsys):
+    """The default localhost bind must not print the exposure warning."""
+    app = _make_run_app(workspace, mock_agent, monkeypatch, host="localhost")
+    app.run(open_browser=False)
+    err = capsys.readouterr().err
+    assert "WARNING" not in err

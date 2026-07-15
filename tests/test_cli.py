@@ -69,6 +69,47 @@ def _write(tmp_path, name, body):
     return p
 
 
+# ── run: clean CLI error on a bad --agent spec, not a raw traceback (gh #90) ──
+
+
+def _assert_clean_run_error(result):
+    """A bad `run --agent` must exit non-zero with click's clean `Error: …` line —
+    NOT let the loader's raw exception escape as an unhandled traceback."""
+    assert result.exit_code != 0, result.output
+    # The raw loader exception must not leak out unhandled (that's the traceback bug).
+    assert not isinstance(
+        result.exception, (FileNotFoundError, AttributeError, ValueError, ImportError)
+    ), f"raw {type(result.exception).__name__} escaped instead of a clean ClickException"
+    # click formats a ClickException as a one-line "Error: <message>".
+    assert "Error:" in result.output, result.output
+
+
+def test_run_bad_agent_path_is_clean_error(tmp_path):
+    """CASE 1 — `--agent` points at a file that doesn't exist (a path typo)."""
+    missing = tmp_path / "bad.py"  # never created
+    result = CliRunner().invoke(
+        cli_mod.main, ["run", "--agent", f"{missing}:graph", "--no-browser"]
+    )
+    _assert_clean_run_error(result)
+
+
+def test_run_missing_attr_is_clean_error(tmp_path):
+    """CASE 2 — file exists but has no such attribute (AttributeError)."""
+    agent = _write(tmp_path, "mod.py", "x = 1\n")
+    result = CliRunner().invoke(
+        cli_mod.main, ["run", "--agent", f"{agent}:graph", "--no-browser"]
+    )
+    _assert_clean_run_error(result)
+
+
+def test_run_malformed_spec_is_clean_error():
+    """CASE 3 — malformed spec, missing the required ':attr' suffix (ValueError)."""
+    result = CliRunner().invoke(
+        cli_mod.main, ["run", "--agent", "mymodule", "--no-browser"]
+    )
+    _assert_clean_run_error(result)
+
+
 def test_check_fails_on_uncompiled_stategraph(tmp_path):
     """Preflight must catch the #1 BYO mistake — exporting the builder, not the
     compiled graph — instead of a confident `[ ok ] loads` + exit 0. (gh #39)"""

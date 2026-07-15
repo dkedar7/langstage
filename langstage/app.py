@@ -1,8 +1,10 @@
 """CoworkApp — main entry point for the application."""
 
 import asyncio
+import ipaddress
 import logging
 import os
+import sys
 import threading
 import time
 import webbrowser
@@ -37,6 +39,48 @@ def _in_running_event_loop() -> bool:
     except RuntimeError:
         return False
     return True
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """True when binding ``host`` only exposes the server on the local machine.
+
+    Loopback = ``localhost``, the ``127.0.0.0/8`` block, or ``::1``. Everything
+    else — ``0.0.0.0`` (all IPv4 interfaces), ``::`` (all IPv6), or a concrete LAN
+    address — is reachable from other machines. A falsy host means "use uvicorn's
+    default", which is loopback, so treat it as safe. An unresolvable hostname is
+    treated as non-loopback (err toward warning) since it may resolve off-box.
+    """
+    if not host:
+        return True
+    h = host.strip().lower().strip("[]")  # tolerate an IPv6 literal like "[::1]"
+    if h == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def _exposure_warning(host: str | None, auth_password: str | None) -> str | None:
+    """Return a startup warning when the server is about to be exposed off-box with
+    no authentication, else ``None``.
+
+    A non-loopback host with no auth password means the WHOLE REST surface — chat,
+    the workspace file browser (read/write/delete/upload), the task board, config —
+    is reachable, unauthenticated, by anyone who can hit the port, and nothing else
+    signals it (the banner is identical to a loopback bind). Warn but still start —
+    the least-surprising option, and auth is a one-flag fix. (gh #89)
+    """
+    if auth_password:
+        return None
+    if _is_loopback_host(host):
+        return None
+    return (
+        f"WARNING: binding {host} with no authentication. The chat, workspace "
+        "files, and task APIs are reachable by anyone on the network. Set "
+        "--auth-password (or LANGSTAGE_AUTH_PASSWORD) to require credentials, or "
+        "bind localhost (the default) and use an SSH tunnel."
+    )
 
 
 class BackgroundServer:
@@ -250,6 +294,14 @@ class CoworkApp:
         # Point power users at the built-in, always-in-sync REST API docs — the
         # FastAPI OpenAPI schema is served but was undocumented/undiscoverable (gh #71).
         print(f"LangStage: {url}  |  REST API docs: {url}/docs")
+
+        # Loudly flag the silent-open-server footgun: a non-loopback bind (0.0.0.0,
+        # a LAN IP) with no auth password exposes the entire REST surface to the
+        # network with no other signal. Print to stderr so it stands out from the
+        # banner and survives stdout redirection. (gh #89)
+        exposure = _exposure_warning(self.config.host, self.config.auth_password)
+        if exposure:
+            print(exposure, file=sys.stderr)
 
         if open_browser:
             # Open browser after a short delay (server needs to start first)
