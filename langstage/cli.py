@@ -77,11 +77,17 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
             show_canvas=show_canvas,
             show_files=show_files,
         )
-    except RuntimeError as e:
-        # Building the built-in default agent needs the `deepagents` extra + an LLM
-        # key; on a clean `pip install langstage` it isn't there. Surface the clean,
-        # correctly-packaged message (from default_agent.create_default_agent) as a
-        # one-line CLI error instead of a traceback. (gh #46)
+    except (RuntimeError, ValueError, FileNotFoundError, AttributeError, ImportError) as e:
+        # Two distinct failure classes, both surfaced as a clean one-line CLI error
+        # instead of a raw traceback:
+        #  - RuntimeError: building the built-in default agent needs the `deepagents`
+        #    extra + an LLM key; on a clean `pip install langstage` it isn't there.
+        #    (gh #46)
+        #  - ValueError / FileNotFoundError / AttributeError / ImportError: the common
+        #    `--agent` typos — malformed spec, a path that doesn't exist, a missing
+        #    attribute, an unimportable module — all raised by the shared loader. This
+        #    mirrors how the sibling `check` command reports the identical failures as
+        #    `[fail] failed to load: …` rather than dumping a traceback. (gh #90)
         raise click.ClickException(str(e)) from e
     app.run(open_browser=not no_browser)
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.22 — 2026-07-14
+
+### Fixed
+- **`langstage run --agent <spec>` reports a bad spec as a clean one-line error, not a raw
+  traceback (gh #90).** `run` only caught `RuntimeError` around building the app (the
+  missing-`deepagents`-extra case, #46), so every *other* common `--agent` mistake — a path
+  that doesn't exist (`FileNotFoundError`), a file with no such attribute (`AttributeError`),
+  or a malformed spec missing the required `:attr` suffix (`ValueError`) — escaped as a
+  multi-frame Python traceback for what is usually a one-character typo. That contradicted the
+  clean-error intent of #46 and was inconsistent with the sibling `check`, which already
+  reports the identical failures as `[fail] failed to load: …`. `run` now catches the loader's
+  exception classes too (`ValueError` / `FileNotFoundError` / `AttributeError` / `ImportError`,
+  alongside `RuntimeError`) and surfaces them as `Error: …` (a `click.ClickException`),
+  matching `check`'s error UX. Exit code stays `1`.
+
 ## 0.13.21 — 2026-07-14
 
 ### Added
