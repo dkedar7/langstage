@@ -46,6 +46,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install with NO extras (declared deps only)
+        env:
+          # This job exercises the backend import + CLI on a bare install; it has no Node
+          # and doesn't test the web UI. `pip install .` is a real (non-editable) wheel
+          # build, which now runs the frontend build hook (gh #94), so skip it here and
+          # install a backend-only wheel. Real release wheels (built with Node) still ship
+          # the SPA, guarded by the hook.
+          LANGSTAGE_SKIP_FRONTEND_BUILD: '1'
         run: |
           python -m pip install --upgrade pip
           pip install .

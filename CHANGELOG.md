@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.13.24 — 2026-07-16
+
+### Fixed
+- **A clean `pip install langstage` now actually ships the web UI — `GET /` serves the
+  React SPA, not the JSON placeholder (gh #94).** Regression in 0.13.20–0.13.23: the
+  published wheels contained **no** `langstage/static/` at all, so a fresh install fell
+  through to the "no pre-built frontend" placeholder branch in `server/main.py` and the
+  entire chat workspace — the whole point of the stage — was missing. Root cause was pure
+  packaging: the Vite build output (`langstage/static/`) is git-ignored, and
+  `[tool.hatch.build] artifacts = ["langstage/static/**"]` only *re-includes* git-ignored
+  files that **already exist** at build time — it never builds them. Nothing in the manual
+  `uv build` release path ran `npm run build` first (the old `build_frontend.py` was an
+  untracked dev script), so the wheel was assembled with an empty tree and shipped no UI.
+  Fixed with a Hatchling wheel build hook (`hatch_build.py`) that builds the SPA
+  (`npm ci && npm run build`) into `langstage/static/` before the wheel is packed, with a
+  skip-if-already-built guard and a **publish guard that fails the build if
+  `langstage/static/index.html` is still missing** — so an empty-UI wheel can never reach
+  PyPI again. The hook is a no-op for the sdist and for editable installs (`pip install -e`)
+  and honours `LANGSTAGE_SKIP_FRONTEND_BUILD=1`, so Node is only needed to cut a real
+  release wheel — the Python test/dev loop and a backend-only `pip install .` don't require
+  it. Publishing 0.13.24 replaces the broken 0.13.20–0.13.23 cut.
+
 ## 0.13.23 — 2026-07-15
 
 ### Fixed

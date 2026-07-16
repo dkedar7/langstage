@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.13.23"
+version = "0.13.24"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -66,6 +66,17 @@ cowork-dash = "langstage.cli:main"
 
 [tool.hatch.build]
 artifacts = ["langstage/static/**"]
+
+# Build the React/Vite SPA into langstage/static/ before the wheel is assembled, so a
+# published wheel actually ships the web UI (gh #94). Without this, `artifacts` above only
+# re-includes the git-ignored static/ tree *if it already exists* — a plain `uv build`
+# never built it, so 0.13.20–0.13.23 shipped no frontend. See hatch_build.py. The hook is
+# a no-op for editable installs (`pip install -e`) and skips when the SPA is already built,
+# so Node is only needed to cut a real release wheel. `uv build` builds the wheel from the
+# sdist, and both hatch_build.py and frontend/ (needed by the hook) are VCS-tracked and so
+# ship in the default sdist.
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["langstage", "cowork_dash"]

@@ -36,6 +36,16 @@ def _app_version() -> str:
         return "0.0.0+unknown"
 
 
+def _static_dir() -> Path:
+    """Directory holding the pre-built React SPA (``langstage/static``).
+
+    Populated at packaging time by the ``hatch_build.py`` build hook (gh #94), so a
+    wheel installed from PyPI serves the real UI. A single source of truth for the
+    path — also the seam the packaging/serving tests patch (see
+    ``tests/test_frontend_packaging.py``)."""
+    return Path(__file__).parent.parent / "static"
+
+
 def create_fastapi_app(
     agent,
     workspace: Path,
@@ -208,7 +218,7 @@ def create_fastapi_app(
             return FileResponse(icon_local_path)
 
     # Static file serving (pre-built React app)
-    static_dir = Path(__file__).parent.parent / "static"
+    static_dir = _static_dir()
     if static_dir.exists() and (static_dir / "index.html").exists():
         # Serve static assets
         assets_dir = static_dir / "assets"
