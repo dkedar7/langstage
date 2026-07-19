@@ -13,6 +13,7 @@ from langstage_core.tasks import TaskRunner, set_runner
 
 from langstage.config import AppConfig
 from langstage.server.middleware import add_middleware
+from langstage.server.models import HealthResponse
 from langstage.server.routes_config import create_config_router
 from langstage.server.routes_files import create_files_router
 from langstage.server.routes_canvas import create_canvas_router
@@ -179,7 +180,7 @@ def create_fastapi_app(
     # Dedicated health/readiness endpoint under /api/* (so it never collides with the
     # SPA catch-all) and exempt from Basic Auth in the middleware, so a reverse proxy /
     # k8s / uptime probe always has an endpoint — even with auth on (gh #67).
-    @app.get("/api/health")
+    @app.get("/api/health", response_model=HealthResponse, response_model_exclude_unset=True)
     async def health(ready: int = 0) -> Response:
         """Liveness (default) or readiness (`?ready=1`).
 
@@ -229,7 +230,13 @@ def create_fastapi_app(
     app.state.task_store = task_store
 
     # Serve custom CSS (always register so it returns 404 instead of SPA catch-all)
-    @app.get("/api/custom-css")
+    # Stylesheet, not JSON — declare the real media type rather than letting the
+    # schema advertise an empty application/json body (gh #98).
+    @app.get(
+        "/api/custom-css",
+        response_class=Response,
+        responses={200: {"content": {"text/css": {}}}},
+    )
     async def get_custom_css():
         if not custom_css_content:
             return Response(status_code=404)

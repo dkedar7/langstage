@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.13.26 — 2026-07-19
+
+### Fixed
+- **`/openapi.json` now actually describes response bodies, so it can be fed to a client
+  generator as the README promises (gh #98).** The README sells the served schema as the
+  canonical reference for a programmatic client *"instead of reverse-engineering shapes"*, but
+  **all 32** `/api/*` routes had `"schema": {}` for their 200 response — no route declared a
+  response type, so `openapi-generator` typed every return as untyped `object`/`any` and an
+  author still had to reverse-engineer every payload from source or live traffic. Request params
+  and bodies were typed; responses, the one thing the README said you could skip, were not.
+  Every JSON route now declares a `response_model`, and the four non-JSON routes
+  (`/api/files/download`, `/api/canvas/assets/*`, `/api/stream`, `/api/custom-css`) declare their
+  real media type — `application/octet-stream`, `text/event-stream`, `text/css` — instead of
+  advertising an empty JSON body, which would have led a generator to emit a JSON-decoding
+  client for a byte stream. The issue's own metric goes from **32/32 empty to 0/32**.
+
+  Two deliberate safeguards, because attaching a `response_model` to a live route changes
+  runtime behavior and not just documentation:
+  - **`extra="allow"` on every model.** FastAPI *filters* responses through the response model,
+    silently dropping undeclared keys. The pre-existing (and entirely unused) `models.py` had
+    already drifted — `AppConfigResponse` declared 7 fields while `GET /api/config` returns 12 —
+    so wiring it naively would have quietly deleted `save_workflow_prompt`, `run_workflow_prompt`,
+    `create_workflow_prompt`, `show_canvas` and `show_files` from the payload the SPA boots on.
+  - **`response_model_exclude_unset=True` on every route.** Typing a route can *add* keys too: an
+    optional field with a `None` default renders as an explicit `null` the old wire never sent
+    (`FileEntry.children` did exactly this). Excluding unset fields keeps each body
+    byte-identical to what the handler produced, so this release is schema-only at the wire.
+
+  Model shapes were captured from a live `--demo` server rather than inferred from source. A
+  regression test asserts no `/api/*` route advertises an empty schema, that every `$ref`
+  resolves, that non-JSON routes declare their real media type, that `/api/config` still carries
+  all 12 fields, and that every model in `models.py` sets `extra="allow"` — so a future model
+  added without it can't start silently filtering a live endpoint.
+
 ## 0.13.25 — 2026-07-18
 
 ### Fixed
