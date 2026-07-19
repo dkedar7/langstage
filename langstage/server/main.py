@@ -46,6 +46,22 @@ def _static_dir() -> Path:
     return Path(__file__).parent.parent / "static"
 
 
+def frontend_bundled() -> bool:
+    """Is the built SPA actually present in this install?
+
+    The one predicate behind every place the missing-frontend condition surfaces —
+    the serving branch below, the startup warning in ``app.py``, the ``/api/health``
+    readiness payload, and ``langstage check`` (gh #96). They previously could not
+    all agree because only the serving branch tested for it, so a frontend-less
+    wheel served a JSON placeholder while the terminal, the health probe, and the
+    doctor all reported a clean bill of health (gh #94).
+
+    Routed through :func:`_static_dir` so the existing test seam keeps working.
+    """
+    static_dir = _static_dir()
+    return static_dir.exists() and (static_dir / "index.html").exists()
+
+
 def create_fastapi_app(
     agent,
     workspace: Path,
@@ -192,7 +208,15 @@ def create_fastapi_app(
         except Exception as exc:  # noqa: BLE001 - any failure means not ready
             checks["task_store"] = f"unreachable: {type(exc).__name__}"
 
+        # Readiness gate is computed BEFORE the frontend check is added, deliberately.
+        # A missing SPA makes the web UI unavailable but leaves the REST/WS surface
+        # fully functional, and a backend-only install is a supported configuration
+        # (the packaging hook honours LANGSTAGE_SKIP_FRONTEND_BUILD=1). Failing
+        # readiness on it would mark those deployments permanently un-Ready and pull
+        # a working API out of a load balancer. So it is *reported*, not *gating* —
+        # a monitor that cares can assert on `checks.frontend` explicitly. (gh #96)
         ok = all(v == "ok" for v in checks.values())
+        checks["frontend"] = "ok" if frontend_bundled() else "missing"
         return JSONResponse(
             {"status": "ok" if ok else "degraded", "version": _app_version(), "checks": checks},
             status_code=200 if ok else 503,
@@ -219,7 +243,7 @@ def create_fastapi_app(
 
     # Static file serving (pre-built React app)
     static_dir = _static_dir()
-    if static_dir.exists() and (static_dir / "index.html").exists():
+    if frontend_bundled():
         # Serve static assets
         assets_dir = static_dir / "assets"
         if assets_dir.exists():

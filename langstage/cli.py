@@ -341,6 +341,24 @@ def check(agent_spec, demo, live, as_json):
             say(f"{fail} live turn failed: {result.reason}")
             finish(1)
 
+    # Everything above preflights the *agent*. This one preflights the *install*:
+    # a wheel that shipped without the SPA serves a JSON placeholder at `/` and
+    # gives no other signal, so a CI gate could pass a deploy whose entire UI is
+    # missing. Reported as a warning, not a failure — the REST/WS API works fine
+    # without it and a backend-only install is supported — so the exit-code
+    # contract is unchanged. (gh #96)
+    from langstage.server.main import frontend_bundled
+
+    has_frontend = frontend_bundled()
+    report["checks"]["frontend"] = {
+        "ok": has_frontend,
+        "detail": "bundled SPA present" if has_frontend
+        else "bundled frontend missing - web UI unavailable (JSON placeholder only)",
+    }
+    say(f"{ok} bundled frontend present - web UI will serve" if has_frontend
+        else f"{warn} bundled frontend missing - web UI unavailable "
+             "(JSON placeholder only); reinstall or `cd frontend && npm run build`")
+
     say("\nAlways available from the UI regardless of the agent: chat, "
         "tool-call view, file browser, the task board (delegate), and schedules.")
     finish(0)

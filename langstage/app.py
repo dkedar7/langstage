@@ -83,6 +83,32 @@ def _exposure_warning(host: str | None, auth_password: str | None) -> str | None
     )
 
 
+def _frontend_warning() -> str | None:
+    """Return a startup warning when the built SPA is missing, else ``None``.
+
+    The one thing this package exists to serve — the web UI — can be entirely
+    absent and nothing in the terminal says so: the banner prints a happy URL,
+    uvicorn logs "Application startup complete", and ``/api/health`` returns ok.
+    The failure is invisible until a human opens a browser and finds raw JSON
+    where the workspace should be. That is exactly how frontend-less wheels
+    shipped to PyPI as 0.13.20–0.13.23 and sat there unnoticed (gh #94, #96).
+
+    Warn but still start — the REST/WS API is fully usable without the SPA, and a
+    backend-only install is supported. (gh #96)
+    """
+    from langstage.server.main import frontend_bundled
+
+    if frontend_bundled():
+        return None
+    return (
+        "WARNING: bundled frontend not found (langstage/static/index.html missing) - "
+        "the web UI is unavailable; GET / will serve a JSON placeholder. This usually "
+        "means the installed wheel shipped without the SPA. Reinstall with "
+        "`pip install --upgrade --force-reinstall langstage`, or build it locally with "
+        "`cd frontend && npm run build`."
+    )
+
+
 class BackgroundServer:
     """Handle for a LangStage server running on a background thread.
 
@@ -302,6 +328,12 @@ class CoworkApp:
         exposure = _exposure_warning(self.config.host, self.config.auth_password)
         if exposure:
             print(exposure, file=sys.stderr)
+
+        # Same treatment for the silent-missing-UI footgun: stderr, so it stands out
+        # from the banner and survives stdout redirection. (gh #96)
+        missing_frontend = _frontend_warning()
+        if missing_frontend:
+            print(missing_frontend, file=sys.stderr)
 
         if open_browser:
             # Open browser after a short delay (server needs to start first)

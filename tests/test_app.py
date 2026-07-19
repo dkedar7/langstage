@@ -372,7 +372,10 @@ def test_run_prints_exposure_warning_to_stderr(workspace, mock_agent, monkeypatc
     app = _make_run_app(workspace, mock_agent, monkeypatch, host="0.0.0.0")
     app.run(open_browser=False)
     err = capsys.readouterr().err
-    assert "WARNING" in err
+    # Assert the exposure warning specifically. run() emits more than one kind of
+    # startup WARNING since gh #96 (the missing-frontend notice is the other), so a
+    # bare "WARNING" substring no longer identifies which one fired.
+    assert "no authentication" in err
     assert "0.0.0.0" in err
 
 
@@ -381,4 +384,7 @@ def test_run_no_warning_on_localhost(workspace, mock_agent, monkeypatch, capsys)
     app = _make_run_app(workspace, mock_agent, monkeypatch, host="localhost")
     app.run(open_browser=False)
     err = capsys.readouterr().err
-    assert "WARNING" not in err
+    # Scoped to the exposure warning — the missing-frontend warning (gh #96) is a
+    # separate condition with its own coverage in tests/test_frontend_visibility.py,
+    # and legitimately fires here because a source checkout has no built SPA.
+    assert "no authentication" not in err
