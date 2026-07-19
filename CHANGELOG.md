@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.13.25 — 2026-07-18
+
+### Fixed
+- **A missing bundled frontend is now a loud, machine-readable condition instead of a
+  browser-only surprise (gh #96).** 0.13.24 stopped frontend-less wheels from being *built*;
+  this makes one that already shipped — or a mis-set install — impossible to miss at runtime.
+  Previously the one thing this package exists to serve could be entirely absent while every
+  signal stayed green: `langstage run` printed a happy URL, uvicorn logged `Application startup
+  complete`, `/api/health` returned `{"status":"ok"}`, and `langstage check` passed. The only
+  way to find out was to open a browser and get raw JSON where the workspace should be — which
+  is precisely how the 0.13.20–0.13.23 cut sat unnoticed on PyPI (gh #94). The absence now
+  surfaces at three touch-points, all driven by one shared `frontend_bundled()` predicate so
+  they cannot drift apart:
+  - **Startup warning** — a `WARNING:` line to **stderr** (like the non-loopback auth warning
+    from #89, so it stands out from the banner and survives stdout redirection) naming the
+    missing artifact, the consequence, and both fixes.
+  - **`/api/health?ready=1`** — a `checks.frontend` field (`"ok"` / `"missing"`), giving uptime
+    monitors, k8s, and CI a hook to catch a broken deploy that a plain `200` hides. It is
+    **reported, not gating**: the readiness verdict is computed before it is added, because the
+    REST/WS surface is fully functional without the SPA and a backend-only install is supported
+    (the packaging hook honours `LANGSTAGE_SKIP_FRONTEND_BUILD=1`). Failing readiness would pull
+    a working API out of a load balancer.
+  - **`langstage check`** — a `[warn] bundled frontend missing …` line and a `checks.frontend`
+    object under `--json`, so a preflight can assert the UI actually shipped, not just that the
+    agent loads. Warning-level: the exit-code contract is unchanged.
+
 ## 0.13.24 — 2026-07-16
 
 ### Fixed
