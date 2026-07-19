@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from langstage_core.adapters import SessionAdapter
 
+from langstage.server.models import OkResponse, SessionAck, SessionInfo
 from langstage.server.routes_chat import context_parts
 
 
@@ -16,17 +17,17 @@ class InjectRequest(BaseModel):
 def create_session_router(adapter: SessionAdapter) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["session"])
 
-    @router.get("/sessions")
+    @router.get("/sessions", response_model=list[SessionInfo], response_model_exclude_unset=True)
     async def list_sessions():
         """List all sessions with connection status."""
         return adapter.list_sessions()
 
-    @router.delete("/session/{session_id}")
+    @router.delete("/session/{session_id}", response_model=OkResponse, response_model_exclude_unset=True)
     async def delete_session(session_id: str):
         adapter.delete_session(session_id)
         return {"ok": True}
 
-    @router.post("/session/{session_id}/inject", status_code=202)
+    @router.post("/session/{session_id}/inject", status_code=202, response_model=SessionAck, response_model_exclude_unset=True)
     async def inject_message(session_id: str, body: InjectRequest):
         """Inject a user message into a running session.
 

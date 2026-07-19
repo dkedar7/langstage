@@ -4,6 +4,12 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from langstage.server.models import (
+    FileContent,
+    FileOpResult,
+    FilePreview,
+    FileTree,
+)
 from langstage.workspace.file_manager import FileManager
 
 
@@ -15,7 +21,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
     """Create the files router with the given FileManager."""
     r = APIRouter(prefix="/api/files")
 
-    @r.get("/tree")
+    @r.get("/tree", response_model=FileTree, response_model_exclude_unset=True)
     async def get_tree(
         path: str = Query("/", description="Directory path relative to workspace"),
         depth: int = Query(1, description="Directory depth to load"),
@@ -30,7 +36,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             # return a clean 400 instead of letting it fall through to a 500.
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.get("/read")
+    @r.get("/read", response_model=FileContent, response_model_exclude_unset=True)
     async def read_file(
         path: str = Query(..., description="File path relative to workspace"),
     ):
@@ -45,7 +51,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             # Path escapes the workspace — boundary holds; return 400, not 500.
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.get("/preview")
+    @r.get("/preview", response_model=FilePreview, response_model_exclude_unset=True)
     async def preview_file(
         path: str = Query(..., description="File path relative to workspace"),
     ):
@@ -60,7 +66,13 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             # Path escapes the workspace — boundary holds; return 400, not 500.
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.get("/download")
+    # Binary passthrough, not JSON: declare the real media type so the schema
+    # does not advertise an (empty) application/json body (gh #98).
+    @r.get(
+        "/download",
+        response_class=FileResponse,
+        responses={200: {"content": {"application/octet-stream": {}}}},
+    )
     async def download_file(
         path: str = Query(..., description="File path relative to workspace"),
     ):
@@ -73,7 +85,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.post("/upload")
+    @r.post("/upload", response_model=FileOpResult, response_model_exclude_unset=True)
     async def upload_file(
         path: str = Query(
             ...,
@@ -107,7 +119,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.post("/mkdir")
+    @r.post("/mkdir", response_model=FileOpResult, response_model_exclude_unset=True)
     async def create_folder(body: PathRequest):
         """Create a new directory in the workspace."""
         try:
@@ -126,7 +138,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.post("/delete")
+    @r.post("/delete", response_model=FileOpResult, response_model_exclude_unset=True)
     async def delete_path(
         path: str | None = Query(
             None,
@@ -148,7 +160,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             )
         return _delete(target)
 
-    @r.delete("/delete")
+    @r.delete("/delete", response_model=FileOpResult, response_model_exclude_unset=True)
     async def delete_path_verb(
         path: str = Query(..., description="File/dir path relative to workspace."),
     ):

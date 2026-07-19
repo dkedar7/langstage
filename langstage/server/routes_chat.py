@@ -13,6 +13,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from langstage.server.models import SessionAck
+
 from langstage_core import workspace_root
 from langstage_core.adapters import SessionAdapter
 
@@ -64,7 +66,12 @@ def create_chat_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["chat"])
 
-    @router.get("/stream")
+    # Server-sent events, not JSON — say so in the schema (gh #98).
+    @router.get(
+        "/stream",
+        response_class=StreamingResponse,
+        responses={200: {"content": {"text/event-stream": {}}}},
+    )
     async def sse_stream(request: Request, session_id: str | None = None):
         """SSE endpoint: the client opens this as an EventSource.
 
@@ -97,7 +104,7 @@ def create_chat_router(
             },
         )
 
-    @router.post("/chat")
+    @router.post("/chat", response_model=SessionAck, response_model_exclude_unset=True)
     async def send_message(body: ChatRequest):
         """Send a user message and start agent streaming."""
         if adapter.get(body.session_id) is None:
@@ -107,7 +114,7 @@ def create_chat_router(
         )
         return {"status": "ok", "session_id": body.session_id}
 
-    @router.post("/chat/interrupt")
+    @router.post("/chat/interrupt", response_model=SessionAck, response_model_exclude_unset=True)
     async def respond_to_interrupt(body: InterruptRequest):
         """Resume the agent from an interrupt with user decisions."""
         if adapter.get(body.session_id) is None:
@@ -115,7 +122,7 @@ def create_chat_router(
         adapter.submit_decisions(body.session_id, body.decisions)
         return {"status": "ok", "session_id": body.session_id}
 
-    @router.post("/chat/cancel")
+    @router.post("/chat/cancel", response_model=SessionAck, response_model_exclude_unset=True)
     async def cancel_stream(body: CancelRequest):
         """Cancel the in-flight agent stream for a session."""
         if adapter.get(body.session_id) is None:
