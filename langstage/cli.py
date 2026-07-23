@@ -364,5 +364,66 @@ def check(agent_spec, demo, live, as_json):
     finish(0)
 
 
+@main.command()
+@click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec (e.g., my_agent.py:agent)")
+@click.option("--demo", is_flag=True, default=False, help="Run one turn against the built-in keyless demo agent - no API key needed")
+@click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
+@click.option("--json", "as_json", is_flag=True, default=False,
+              help="Emit the reply as JSON ({content, tool_calls}) for scripting/CI, "
+                   "instead of just the assistant text.")
+@click.argument("prompt")
+def chat(agent_spec, demo, workspace, as_json, prompt):
+    """Run ONE turn against the agent and print the assistant reply to stdout.
+
+    The headless companion to the web stage - prompt in, answer out, with no server
+    and no SSE dance. Keyless-testable with ``--demo``; honors the same
+    ``--workspace`` / ``langstage.toml`` / ``LANGSTAGE_*`` resolution as ``run``.
+    Reuses the same streaming core the server drives (the shared ``SessionAdapter``),
+    so the reply is exactly what a browser would render, buffered into one turn.
+
+    Exits non-zero if the agent errors (like ``check --live``), so it doubles as a
+    readiness gate that also *shows* the answer. Add ``--json`` for a machine-readable
+    object a pipeline can assert on.
+    """
+    if demo:
+        if agent_spec:
+            raise click.UsageError("--demo and --agent are mutually exclusive.")
+        agent_spec = DEMO_AGENT_SPEC
+    if not agent_spec:
+        raise click.UsageError("Provide --agent <spec> (or --demo).")
+
+    try:
+        # Reuse CoworkApp for agent-load + workspace + checkpointer resolution (the
+        # exact wiring `run` uses), so `chat` resolves --workspace/toml/env the same
+        # way — without starting a server. A load failure surfaces as a clean
+        # one-line CLI error, mirroring `run` / `check`. (gh #90, #101)
+        app = CoworkApp(agent_spec=agent_spec, workspace=workspace)
+    except (RuntimeError, ValueError, FileNotFoundError, AttributeError, ImportError) as e:
+        raise click.ClickException(str(e) or type(e).__name__) from e
+
+    from langstage.oneturn import run_turn_sync
+
+    # No per-message time/cwd context injected here (unlike the web chat): the CLI
+    # is a clean "prompt in -> answer out" smoke test, so the reply isn't cluttered.
+    result = run_turn_sync(app.agent, prompt)
+
+    if as_json:
+        import json as _json
+
+        payload = {"content": result.content, "tool_calls": result.tool_calls}
+        if not result.ok:
+            payload["error"] = result.error or f"turn did not complete: {result.outcome}"
+        click.echo(_json.dumps(payload, indent=2))
+    else:
+        if result.content:
+            click.echo(result.content)
+        if not result.ok:
+            reason = result.error or f"turn did not complete: {result.outcome}"
+            click.echo(f"Error: {reason}", err=True)
+
+    if not result.ok:
+        raise SystemExit(1)
+
+
 if __name__ == "__main__":
     main()

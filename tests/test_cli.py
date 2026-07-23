@@ -295,3 +295,65 @@ def test_config_json_emits_value_and_source_per_field():
     # a representative field carries both its value and its source
     assert set(payload["config"]["port"]) == {"value", "source"}
     assert payload["config"]["port"]["value"] == 8050
+
+
+# ── chat: headless one-turn (gh #101) ────────────────────────────────────────
+
+
+def test_chat_demo_prints_the_reply():
+    """`chat --demo` drives one real turn and prints the assistant reply to stdout —
+    the answer `check --live` throws away."""
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--demo", "hello there"])
+    assert result.exit_code == 0, result.output
+    # the keyless stub echoes the user's message back
+    assert "hello there" in result.output
+
+
+def test_chat_json_emits_content_and_tool_calls():
+    import json
+
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--demo", "--json", "hi json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert "hi json" in payload["content"]
+    assert payload["tool_calls"] == []  # demo has no tools
+
+
+def test_chat_demo_and_agent_are_mutually_exclusive():
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--demo", "--agent", "x.py:g", "hi"])
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
+def test_chat_requires_a_prompt():
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--demo"])
+    assert result.exit_code != 0  # PROMPT is a required argument
+
+
+def test_chat_requires_an_agent_or_demo():
+    result = CliRunner().invoke(cli_mod.main, ["chat", "hi"])
+    assert result.exit_code != 0
+    assert "Provide --agent" in result.output
+
+
+def test_chat_nonzero_exit_when_the_agent_errors(tmp_path):
+    """Like `check --live`, a turn that errors exits non-zero — so `chat` doubles as
+    a readiness gate that also shows the answer. The error goes to stderr."""
+    agent = _write(tmp_path, "broken.py",
+                   "from langgraph.graph import StateGraph, START, END, MessagesState\n"
+                   "def boom(s):\n"
+                   "    raise RuntimeError('tool exploded')\n"
+                   "b = StateGraph(MessagesState)\n"
+                   "b.add_node('boom', boom)\n"
+                   "b.add_edge(START, 'boom')\n"
+                   "b.add_edge('boom', END)\n"
+                   "graph = b.compile()\n")
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--agent", f"{agent}:graph", "hi"])
+    assert result.exit_code == 1, result.output
+    assert "tool exploded" in result.output
+
+
+def test_chat_bad_agent_spec_is_a_clean_error():
+    """A load failure surfaces as click's one-line `Error: …`, mirroring run/check."""
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--agent", "mymodule", "hi"])
+    _assert_clean_run_error(result)

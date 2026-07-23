@@ -53,6 +53,22 @@ class SessionAck(_Schema):
     session_id: str
 
 
+class ChatComplete(_Schema):
+    """``POST /api/chat/complete`` — one buffered turn assembled into a single
+    JSON body (the synchronous, non-SSE sibling of the streaming chat pair).
+
+    ``content`` is the assistant's final text; ``tool_calls`` the calls it made;
+    ``session_id`` the (possibly newly created) session the turn ran on, so a
+    caller can continue the same thread over SSE afterwards if it wants. A turn
+    that pauses on a human-review interrupt carries an extra ``outcome`` +
+    ``interrupt`` (allowed by ``extra="allow"``); an errored turn is surfaced as
+    an HTTP 500, not a 200 body (gh #101)."""
+
+    session_id: str
+    content: str
+    tool_calls: list[dict[str, Any]] = []
+
+
 class StatusResponse(_Schema):
     """``{"status": "ok"}`` — the canvas mutation acknowledgement."""
 

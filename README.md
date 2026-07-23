@@ -223,7 +223,7 @@ Schedules (cron) REST API: `GET /api/cron`, `POST /api/cron` (create), `DELETE /
 
 ## Configuration
 
-Configuration priority: **Python args > CLI args > environment variables > defaults**.
+Configuration priority (highest wins): **Python args > CLI args > environment variables > `langstage.toml` > defaults**.
 
 Never remember a variable name — print the resolved configuration (each value, its source, and the env var / `langstage.toml` key that sets it):
 
@@ -262,6 +262,7 @@ langstage init --path ./cfg/   # target a directory or file
 | Custom CSS | `--custom-css` | `LANGSTAGE_CUSTOM_CSS` | _(none)_ — see [Custom CSS Theming](#custom-css-theming) |
 | Show Canvas tab | `--show-canvas/--no-show-canvas` | `LANGSTAGE_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
 | Show Files tab | `--show-files/--no-show-files` | `LANGSTAGE_SHOW_FILES` | `true` |
+| Task concurrency | _(env / `langstage.toml` only)_ | `LANGSTAGE_TASK_CONCURRENCY` | `3` |
 
 > **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
 

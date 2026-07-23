@@ -1,6 +1,5 @@
 """FastAPI application factory."""
 
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -166,8 +165,11 @@ def create_fastapi_app(
     task_db = workspace / ".langstage" / "tasks.db"
     task_db.parent.mkdir(parents=True, exist_ok=True)
     task_store = SqliteTaskStore(task_db)
-    task_concurrency = int(os.getenv("LANGSTAGE_TASK_CONCURRENCY", "3"))
-    runner = TaskRunner(adapter, task_store, concurrency=task_concurrency)
+    # Resolved through the unified config chain (defaults < langstage.toml < env <
+    # overrides), so it appears in --show-config and a malformed value is caught by
+    # the resolver — not a raw os.getenv here that dumped an unhandled ValueError
+    # traceback at startup where a bad --port is reported cleanly. (gh #102)
+    runner = TaskRunner(adapter, task_store, concurrency=config.task_concurrency)
     set_runner(runner)
     app.include_router(create_tasks_router(runner, task_store))
 
