@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.13.27 — 2026-07-23
+
+### Added
+- **A headless one-turn chat: the `langstage chat` CLI and a buffered
+  `POST /api/chat/complete` endpoint (gh #101).** There was no low-ceremony
+  "prompt in -> answer out" path. The SSE chat pair is stateful (you must open a
+  *persistent* `GET /api/stream` first — that's what creates the session — then
+  `POST /api/chat`, then parse the event stream; a bare `POST /api/chat` 404s
+  without the stream); `check --live` runs exactly one real turn but throws the
+  reply away; the task board returns the turn but is async, poll-based, and
+  persists a SQLite row. Both new surfaces are the synchronous, chat-shaped
+  primitive that was missing — for a CLI smoke test, a cron "ask the agent X and
+  email me the answer" script, or a CI assertion on the agent's *actual output*:
+  - `langstage chat --agent my_agent.py:graph "…"` drives one turn and prints the
+    assistant reply to stdout (`--json` for `{content, tool_calls}`); keyless with
+    `--demo`, honors the same `--workspace` / `langstage.toml` / `LANGSTAGE_*`
+    resolution as `run`, and exits non-zero if the agent errors (like
+    `check --live`) so it doubles as a readiness gate that also *shows* the answer.
+  - `POST /api/chat/complete {content, session_id?}` runs one turn to completion
+    and returns `{session_id, content, tool_calls}` in a single JSON body — no
+    pre-opened stream, no SSE parsing, no persisted task row. It creates the
+    session when `session_id` is absent; an errored turn is surfaced as HTTP 500.
+    Typed with a `response_model` (`extra="allow"` + `response_model_exclude_unset`)
+    like every route since #98, so it shows up in `/openapi.json` and `/docs`.
+  - Both share **one** implementation (`langstage/oneturn.py`) that buffers the
+    same `SessionAdapter` streaming path the web server drives — the reply is
+    exactly what a browser would render, just assembled — so the streaming chat
+    path is untouched (a bare `POST /api/chat` still 404s without a stream).
+
+### Fixed
+- **`LANGSTAGE_TASK_CONCURRENCY` now resolves through the unified config chain
+  instead of a raw `os.getenv` (gh #102).** It is a *documented* `LANGSTAGE_*` env
+  var (README → Task board), but unlike every other one it was read directly with
+  `int(os.getenv("LANGSTAGE_TASK_CONCURRENCY", "3"))` in `server/main.py`, outside
+  the resolver every documented option goes through — with two user-visible
+  consequences: it was **invisible to `langstage --show-config` / `config`** (a
+  user who set it had no way to confirm what it resolved to, and no
+  `langstage.toml` key or legacy alias existed), and **a bad value crashed the
+  server at startup with an unhandled `ValueError` traceback**, where the exact
+  same misconfiguration of `--port` is caught by `run` and reported as a clean
+  one-line `Error:`. It is now a first-class `AppConfig` field wired into the
+  `_ENV` / `_TOML` maps like the other keys — so it appears in `--show-config`
+  with its value + source, gains a `tasks.concurrency` `langstage.toml` key and
+  the deprecated `DEEPAGENT_TASK_CONCURRENCY` alias, and a malformed value is
+  caught by the resolver and reported as a clean CLI error. The `TaskRunner`
+  still clamps the resolved value to `>= 1`, so the effective bound is unchanged.
+
+### Docs
+- **The README "Configuration priority" chain now includes `langstage.toml`
+  (gh #100).** The line read *"Python args > CLI args > environment variables >
+  defaults"* — dropping the exact `langstage.toml` layer that section teaches the
+  reader to create with `langstage init`, and contradicting both the
+  `init`-generated file header (*"… > env vars > this file > defaults"*) and the
+  `--show-config` help (*"defaults < langstage.toml < env < CLI"*). It now reads
+  *"Python args > CLI args > environment variables > `langstage.toml` > defaults"*,
+  matching the tool's own output and the resolver's real four-layer behavior; the
+  identical statement in the `CoworkApp` docstring was corrected to match.
+
 ## 0.13.26 — 2026-07-19
 
 ### Fixed
