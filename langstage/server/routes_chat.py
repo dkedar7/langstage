@@ -13,7 +13,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from langstage.server.models import SessionAck
+from langstage.server.models import ChatComplete, SessionAck
+from langstage.oneturn import complete_turn
 
 from langstage_core import workspace_root
 from langstage_core.adapters import SessionAdapter
@@ -26,6 +27,16 @@ logger = logging.getLogger(__name__)
 class ChatRequest(BaseModel):
     session_id: str
     content: str
+    cwd: str | None = None
+
+
+class ChatCompleteRequest(BaseModel):
+    """Body for the buffered one-turn endpoint. ``session_id`` is optional — omit
+    it for a stateless call (a fresh session is created and returned); pass one to
+    continue an existing thread. No pre-opened SSE stream required."""
+
+    content: str
+    session_id: str | None = None
     cwd: str | None = None
 
 
@@ -113,6 +124,48 @@ def create_chat_router(
             body.session_id, body.content, context_parts=context_parts(body.cwd)
         )
         return {"status": "ok", "session_id": body.session_id}
+
+    @router.post(
+        "/chat/complete",
+        response_model=ChatComplete,
+        response_model_exclude_unset=True,
+    )
+    async def chat_complete(body: ChatCompleteRequest):
+        """Run ONE turn to completion and return the whole assistant reply as a
+        single JSON response — the synchronous, non-SSE sibling of the streaming
+        chat pair.
+
+        Removes all the ordering the SSE path requires: there is **no** persistent
+        ``GET /api/stream`` to open first (that's what creates a session for the
+        streaming path, so a bare ``POST /api/chat`` 404s without it), no SSE frames
+        to parse, and no task row persisted. Creates the session when ``session_id``
+        is absent, drives the turn on the same ``SessionAdapter`` the streaming
+        routes use, and returns ``{session_id, content, tool_calls}``. A turn that
+        errors is surfaced as HTTP 500; one that pauses for human review returns 200
+        with the assembled-so-far reply plus ``outcome`` + ``interrupt``.
+        """
+        result = await complete_turn(
+            adapter,
+            body.content,
+            session_id=body.session_id,
+            context_parts=context_parts(body.cwd),
+        )
+        if result.outcome == "error":
+            raise HTTPException(
+                status_code=500, detail=result.error or "agent turn failed"
+            )
+        payload: dict = {
+            "session_id": result.session_id,
+            "content": result.content,
+            "tool_calls": result.tool_calls,
+        }
+        # A one-shot path can't resume a review gate; surface it (200) so the caller
+        # knows the reply is partial rather than silently returning it as complete.
+        if result.outcome != "complete":
+            payload["outcome"] = result.outcome
+            if result.interrupt is not None:
+                payload["interrupt"] = result.interrupt
+        return payload
 
     @router.post("/chat/interrupt", response_model=SessionAck, response_model_exclude_unset=True)
     async def respond_to_interrupt(body: InterruptRequest):
