@@ -66,21 +66,28 @@ def test_show_config_lists_task_concurrency():
     assert "LANGSTAGE_TASK_CONCURRENCY" in result.output
 
 
-# ── graceful malformed-value handling (parity with --port) ───────────────────
+# ── graceful malformed-value handling (parity with every numeric key) ────────
 
 
-def test_bad_value_is_a_clean_run_error(monkeypatch):
-    """A non-integer value must produce click's one-line `Error: …` (as a bad
-    --port does), NOT an unhandled ValueError traceback from server/main.py."""
+def test_bad_value_degrades_to_the_default_with_a_note(monkeypatch, capsys):
+    """A non-integer value no longer crashes with an unhandled ValueError traceback
+    (the original #102 bug). Now that ``task_concurrency`` resolves through the
+    unified resolver, it inherits langstage-core's graceful numeric-env handling
+    (>= 1.0.23): the bad value is ignored, a one-line ``note:`` names it, and the
+    field falls back to its default — parity with `--port` and every other numeric
+    env var, which all degrade the same way rather than crashing.
+
+    Deliberately does NOT drive the ``run`` command (which would start a real
+    server and block); the config resolver is where the behaviour lives.
+    """
     monkeypatch.setenv("LANGSTAGE_TASK_CONCURRENCY", "oops")
-    result = CliRunner().invoke(cli_mod.main, ["run", "--demo", "--no-browser"])
-    assert result.exit_code != 0, result.output
-    # The raw ValueError must not escape unhandled (that was the traceback bug).
-    assert not isinstance(result.exception, ValueError), (
-        "raw ValueError escaped instead of a clean ClickException"
-    )
-    assert "Error:" in result.output, result.output
-    assert "invalid literal for int" in result.output
+    cfg = AppConfig.from_env()  # must NOT raise
+
+    assert cfg.task_concurrency == 3  # the default, not a crash
+    assert cfg.sources["task_concurrency"] == "default"
+    err = capsys.readouterr().err
+    assert "ignoring malformed LANGSTAGE_TASK_CONCURRENCY" in err
+    assert "invalid literal for int" in err
 
 
 # ── the resolved value still bounds the TaskRunner exactly as before ─────────
