@@ -5,10 +5,12 @@ workspace_root, host, port, debug, title) and adds cowork's UI keys, all
 resolved through the shared chain — defaults < deepagents.toml < DEEPAGENT_* env
 < overrides (Python/CLI args). cowork gains `deepagents.toml` support this way.
 """
+
 import os
+import sys
 import warnings
 from dataclasses import dataclass, fields, replace
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 
 from langstage_core.host import HostConfig
 
@@ -66,6 +68,48 @@ def __getattr__(name: str):
 
         return workspace_root()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# The documented three-value UI theme enum. It was enforced on ONLY the --theme
+# CLI flag (a click.Choice); env (LANGSTAGE_THEME), TOML (ui.theme), and the
+# Python-API AppConfig(theme=...) resolved any string silently -- so an invalid
+# value was reported by --show-config as legitimately resolved and shipped to the
+# client, where the UI silently ignored it (gh #104). Enforced now on all three
+# non-CLI paths via AppConfig below. Case-sensitive, exactly matching the CLI's
+# click.Choice(["light", "dark", "auto"]), so the accepted set is identical across
+# all four sources.
+_VALID_THEMES = ("light", "dark", "auto")
+_DEFAULT_THEME = "auto"
+
+# Dedupe the invalid-theme note across the several resolve() calls one process
+# makes (import-time module constants, --show-config, the launcher), mirroring the
+# malformed env/TOML-value notes in langstage_core.host. Keyed on the bad value.
+_warned_invalid_theme: set = set()
+
+
+def _warn_invalid_theme(value: Any) -> None:
+    """One-line stderr note when a theme from env / TOML / the Python constructor
+    isn't one of the accepted values.
+
+    Crashing an entrypoint on ambient config (an env var or langstage.toml) is
+    worse than degrading, so -- like the graceful malformed-numeric handling
+    langstage-core adopted (>= 1.0.23): degrade to the default and print a
+    one-line note -- an invalid theme falls back to the default and names both the
+    bad value and the accepted set here. The interactive --theme flag keeps its
+    hard click.Choice rejection; only the ambient paths degrade. ASCII-only so it
+    can't crash a cp1252 Windows console. (gh #104)
+    """
+    key = repr(value)
+    if key in _warned_invalid_theme:
+        return
+    _warned_invalid_theme.add(key)
+    accepted = ", ".join(_VALID_THEMES)
+    print(
+        f"note: ignoring invalid theme {value!r} "
+        f"(expected one of: {accepted}); using default {_DEFAULT_THEME!r} instead.",
+        file=sys.stderr,
+    )
+
 
 _SAVE_PROMPT = (
     "Please capture this conversation as a detailed workflow markdown file in "
@@ -153,6 +197,37 @@ class AppConfig(HostConfig):
         "show_files": "ui.show_files",
         "task_concurrency": "tasks.concurrency",
     }
+
+    def __post_init__(self) -> None:
+        # Enforce the theme enum on EVERY construction path -- crucially including
+        # the direct Python-API constructor AppConfig(theme=...), which never
+        # touches resolve(). resolve() builds its result via cls(**values) too, so
+        # this one hook also covers the env (LANGSTAGE_THEME) and TOML (ui.theme)
+        # paths. An invalid value degrades to the default with a note rather than
+        # crashing the entrypoint (see _warn_invalid_theme); resolve() below then
+        # repoints the recorded source to "default" so --show-config never credits
+        # the rejected env var / TOML key with the degraded value. (gh #104)
+        if self.theme not in _VALID_THEMES:
+            _warn_invalid_theme(self.theme)
+            self.theme = _DEFAULT_THEME
+            self._theme_degraded = True
+        else:
+            self._theme_degraded = False
+
+    @classmethod
+    def resolve(cls, **kwargs: Any) -> "AppConfig":
+        """Resolve through the shared chain, then finalize the theme enum.
+
+        __post_init__ (run inside the base resolve()'s cls(**values)) has already
+        degraded an invalid env/TOML/override theme to the default and emitted the
+        note; here we only correct the recorded source so --show-config reports
+        ``theme = auto [default]`` instead of crediting the env var / TOML key that
+        supplied the rejected value. A valid theme keeps its real source. (gh #104)
+        """
+        obj = super().resolve(**kwargs)
+        if getattr(obj, "_theme_degraded", False):
+            obj._sources["theme"] = "default"  # type: ignore[attr-defined]
+        return obj  # type: ignore[return-value]
 
     @classmethod
     def from_env(cls) -> "AppConfig":
