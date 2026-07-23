@@ -223,7 +223,7 @@ Schedules (cron) REST API: `GET /api/cron`, `POST /api/cron` (create), `DELETE /
 
 ## Configuration
 
-Configuration priority: **Python args > CLI args > environment variables > defaults**.
+Configuration priority (highest wins): **Python args > CLI args > environment variables > `langstage.toml` > defaults**.
 
 Never remember a variable name — print the resolved configuration (each value, its source, and the env var / `langstage.toml` key that sets it):
 

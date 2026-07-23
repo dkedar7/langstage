@@ -142,7 +142,8 @@ class BackgroundServer:
 class CoworkApp:
     """Main entry point. Wraps a LangGraph agent with a web UI.
 
-    Configuration priority: Python args > CLI args > env vars > defaults.
+    Configuration priority (highest wins): Python args > CLI args > env vars >
+    langstage.toml > defaults.
     """
 
     def __init__(
