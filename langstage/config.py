@@ -111,6 +111,13 @@ class AppConfig(HostConfig):
     # None means auto-resolve (canvas auto-detects middleware; files defaults True).
     show_canvas: Optional[bool] = None
     show_files: Optional[bool] = None
+    # Task-board worker-pool size (the async delegate/schedule concurrency cap).
+    # A first-class resolved field — not a raw os.getenv in server/main.py — so it
+    # shows up in --show-config with a value+source, gains a langstage.toml key, and
+    # a malformed value is caught by the resolver and reported as a clean CLI error
+    # (like --port), instead of an unhandled ValueError traceback at startup. The
+    # TaskRunner still clamps it to >= 1, so the effective bound is unchanged. (gh #102)
+    task_concurrency: int = 3
 
     _ENV: ClassVar[dict] = {
         "subtitle": ("DEEPAGENT_SUBTITLE", str),
@@ -126,6 +133,9 @@ class AppConfig(HostConfig):
         "custom_css": ("DEEPAGENT_CUSTOM_CSS", str),
         "show_canvas": ("DEEPAGENT_SHOW_CANVAS", _parse_optional_bool),
         "show_files": ("DEEPAGENT_SHOW_FILES", _parse_optional_bool),
+        # Canonical LANGSTAGE_TASK_CONCURRENCY wins; DEEPAGENT_TASK_CONCURRENCY is the
+        # deprecated fallback (resolved by _env_pair, same as every other key). (gh #102)
+        "task_concurrency": ("DEEPAGENT_TASK_CONCURRENCY", int),
     }
     _TOML: ClassVar[dict] = {
         "subtitle": "ui.subtitle",
@@ -141,6 +151,7 @@ class AppConfig(HostConfig):
         "custom_css": "ui.custom_css",
         "show_canvas": "ui.show_canvas",
         "show_files": "ui.show_files",
+        "task_concurrency": "tasks.concurrency",
     }
 
     @classmethod
