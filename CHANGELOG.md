@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.13.28 — 2026-07-23
+
+### Fixed
+- **The `theme` enum is now enforced on the env / TOML / Python-API paths, not
+  just the `--theme` CLI flag (gh #104).** `theme` is documented as a three-value
+  enum — `--theme [light|dark|auto]` in the CLI `--help`, `theme = "auto"` in the
+  `init` template, `# "light" | "dark" | "auto"` in `config.py` — but that enum was
+  enforced on **only** the `--theme` flag (a click `Choice`). `LANGSTAGE_THEME`,
+  `ui.theme` in `langstage.toml`, and the Python `AppConfig(theme=…)` constructor
+  all resolved any string silently: an invalid value flowed through `AppConfig`,
+  was reported by `--show-config` / `config` as a legitimately-resolved setting,
+  and shipped to the client via `GET /api/config`, where the bundled UI (which
+  only matches `dark`/`light`/`auto`) silently ignored it — the same
+  "advertised != honored" gap the Configuration surface exists to rule out, with
+  `--show-config` confirming a value the CLI would have rejected.
+  - The three ambient paths (env / TOML / the `AppConfig(theme=…)` constructor)
+    now **degrade** an invalid value to the default `"auto"` and print a one-line
+    stderr `note:` naming the bad value and the accepted set — `note: ignoring
+    invalid theme 'purple' (expected one of: light, dark, auto); using default
+    'auto' instead.` This follows the "degrade, don't crash on ambient config"
+    contract langstage-core adopted for malformed numeric config (>= 1.0.23):
+    crashing an entrypoint on an env var or a config file is worse than degrading,
+    so an invalid `theme` in `langstage.toml` must not brick the server.
+    `--show-config` then reports `theme = auto [default]` — never crediting the
+    rejected env var / TOML key as the source — and the client can no longer
+    receive an un-honorable theme.
+  - The interactive `--theme` flag keeps its immediate hard `Choice` rejection
+    (`Error: Invalid value for '--theme': 'purple' is not one of 'light', 'dark',
+    'auto'.`, exit 2): rejecting an interactive argument on the spot is fine;
+    degrading ambient config is the safer default.
+  - The enum is **case-sensitive**, exactly matching the CLI's
+    `Choice(["light", "dark", "auto"])`, so the accepted set is identical across
+    all four sources. It is enforced in `AppConfig` by a post-resolution
+    normalization: `__post_init__` covers the direct Python constructor and,
+    through `resolve()`'s `cls(**values)`, the env and TOML paths too; `resolve()`
+    then repoints the recorded source to `default` so `--show-config` attributes
+    the degraded value correctly. A valid value still resolves normally with its
+    real source.
+
 ## 0.13.27 — 2026-07-23
 
 ### Added
