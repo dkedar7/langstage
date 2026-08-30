@@ -246,6 +246,20 @@ def test_check_json_emits_structured_report_for_demo():
     assert "[ ok ]" not in result.output and "[warn]" not in result.output
 
 
+def test_agent_tool_names_detects_todo_middleware_node():
+    """DeepAgents can expose middleware tools through graph nodes, not ToolNode only."""
+
+    class Agent:
+        nodes = {
+            "__start__": None,
+            "model": None,
+            "tools": None,
+            "TodoListMiddleware.after_model": None,
+        }
+
+    assert "write_todos" in (cli_mod._agent_tool_names(Agent()) or set())
+
+
 def test_check_json_load_failure_still_json_and_exit_1():
     """A load failure preserves exit 1 AND still emits JSON (loads:false, ok:false, error)."""
     import json

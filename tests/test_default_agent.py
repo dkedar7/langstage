@@ -42,6 +42,21 @@ def test_default_agent_imports_and_exposes_middleware():
     )
 
 
+def test_default_agent_adds_todo_middleware_when_deepagents_stops_defaulting_it():
+    from langstage.default_agent import _deepagents_has_builtin_todo_middleware
+
+    assert _deepagents_has_builtin_todo_middleware("0.3.3") is True
+    assert _deepagents_has_builtin_todo_middleware("0.7.11") is False
+
+
+def test_default_agent_exposes_write_todos_for_plan():
+    """The bundled default agent must keep the Plan tab's `write_todos` tool bound."""
+    from langstage.cli import _agent_tool_names
+    from langstage.default_agent import agent
+
+    assert "write_todos" in (_agent_tool_names(agent) or set())
+
+
 def test_agent_tools_exclude_canvas_tools():
     """Canvas tools should only be injected via CanvasMiddleware — never baked
     into the core tool list. Regression guard against accidental re-duplication.

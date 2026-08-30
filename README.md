@@ -165,7 +165,7 @@ Point `--agent` at any compiled LangGraph graph — `langstage run --agent my_ag
 
 | Feature | How |
 | --- | --- |
-| **Plan** tab populates | agent calls `write_todos` (the deepagents convention) |
+| **Plan** tab populates | agent exposes `write_todos` (for example via DeepAgents `TodoListMiddleware`) |
 | **Rich inline content** (charts, images, DataFrames, HTML) | a tool returns the `display_inline` shape |
 | **Canvas** tab | attach `CanvasMiddleware` to your agent |
 | **Agent self-delegation + agent-created schedules** | add the host tools — `from langstage import LANGSTAGE_TOOLS` → `tools=[*my_tools, *LANGSTAGE_TOOLS]` |

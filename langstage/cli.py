@@ -327,8 +327,22 @@ def _agent_tool_names(agent) -> set[str] | None:
     if the graph can't be introspected (capabilities may still work)."""
     try:
         names: set[str] = set()
+
+        def add_from_tools(tools) -> None:
+            for tool in tools or ():
+                name = getattr(tool, "name", getattr(tool, "__name__", ""))
+                if name:
+                    names.add(name)
+
+        for owner in (agent, getattr(agent, "builder", None)):
+            for attr in ("middleware", "_middleware"):
+                for middleware in getattr(owner, attr, None) or ():
+                    add_from_tools(getattr(middleware, "tools", None))
+
         nodes = getattr(agent, "nodes", None) or {}
-        for node in nodes.values():
+        for node_name, node in nodes.items():
+            if isinstance(node_name, str) and node_name.startswith("TodoListMiddleware."):
+                names.add("write_todos")
             target = getattr(node, "bound", node)
             tbn = getattr(target, "tools_by_name", None)
             if isinstance(tbn, dict):

@@ -1,10 +1,15 @@
 """Default deepagent when no --agent is provided."""
 
+# ruff: noqa: E402 - load .env before importing modules that read configuration.
+
+import re
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from langchain.agents.middleware import TodoListMiddleware
 from langstage_core.demo import create_default_agent as _build_default_agent
 from langstage_core.demo.agent import DEFAULT_MODEL
 from langstage_core.tasks import TASK_TOOLS
@@ -134,8 +139,22 @@ AGENT_TOOLS = [
     *TASK_TOOLS,  # start/check/list/update/cancel_async_task — agent self-delegation
 ]
 
-# Middleware list — canvas is opt-in via CanvasMiddleware.
+def _deepagents_has_builtin_todo_middleware(version_text: str | None = None) -> bool:
+    """DeepAgents < 0.7 injected write_todos by default; newer releases do not."""
+    try:
+        raw = version_text if version_text is not None else version("deepagents")
+    except PackageNotFoundError:
+        return False
+    match = re.match(r"^(\d+)\.(\d+)", raw)
+    if not match:
+        return False
+    return (int(match.group(1)), int(match.group(2))) < (0, 7)
+
+
+# Middleware list used by the bundled default agent.
 AGENT_MIDDLEWARE = [CanvasMiddleware()]
+if not _deepagents_has_builtin_todo_middleware():
+    AGENT_MIDDLEWARE.append(TodoListMiddleware())
 
 # Global agent for physical filesystem mode (writes to disk via the shared
 # demo factory's FilesystemBackend + InMemorySaver boilerplate). Cowork supplies
