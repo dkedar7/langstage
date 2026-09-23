@@ -30,7 +30,7 @@ test.describe('langstage', () => {
       page.getByRole('button', { name: 'Weekdays 9am UTC' })
     ).toBeVisible();
 
-    // The scheduler is in-memory and shared across the test run, so use a
+    // Schedules persist in the test workspace across runs (gh #151), so use a
     // unique name to avoid colliding with jobs from other tests/retries.
     const name = `Nightly digest ${Date.now()}`;
     await page.getByPlaceholder(/^Name/).fill(name);

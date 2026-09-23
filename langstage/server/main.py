@@ -21,7 +21,7 @@ from langstage.server.routes_chat import create_chat_router
 from langstage.server.routes_cron import create_cron_router
 from langstage.server.routes_tasks import create_tasks_router
 from langstage.scheduler import CronScheduler, set_scheduler
-from langstage.tasks import SqliteTaskStore
+from langstage.tasks import SqliteCronStore, SqliteTaskStore
 from langstage.workspace.file_manager import FileManager
 from langstage.workspace.canvas_manager import CanvasManager
 
@@ -173,9 +173,11 @@ def create_fastapi_app(
     set_runner(runner)
     app.include_router(create_tasks_router(runner, task_store))
 
-    # In-memory cron schedules — now a *producer* that enqueues onto the runner.
-    # Registered process-globally so the agent's schedule_run tool can reach it.
-    scheduler = CronScheduler(runner)
+    # Cron schedules — a *producer* that enqueues onto the runner. Persisted in the
+    # same tasks.db as the board (cron_jobs table) and reloaded here, so schedules
+    # survive a restart like the board does (gh #151). Registered process-globally
+    # so the agent's schedule_run tool can reach it.
+    scheduler = CronScheduler(runner, store=SqliteCronStore(task_db))
     set_scheduler(scheduler)
     app.include_router(create_cron_router(scheduler))
 

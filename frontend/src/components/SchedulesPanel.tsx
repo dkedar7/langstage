@@ -123,7 +123,7 @@ export function SchedulesPanel({ jobs, onCreate, onDelete, onRun }: SchedulesPan
         />
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-[var(--color-text-muted)]">
-            e.g. <code>*/15 * * * *</code> · <code>0 9 * * 1-5</code> · times are UTC · in-memory while the app runs
+            e.g. <code>*/15 * * * *</code> · <code>0 9 * * 1-5</code> · times are UTC · saved across restarts
           </span>
           <button
             type="submit"

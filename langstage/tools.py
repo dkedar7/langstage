@@ -6,8 +6,10 @@ import traceback
 import subprocess
 import threading
 import platform
+from collections import OrderedDict
 from contextlib import redirect_stdout, redirect_stderr, contextmanager
 
+from langchain_core.runnables.config import var_child_runnable_config
 from langchain_core.tools import tool as langchain_tool
 
 from .config import WORKSPACE_ROOT, VIRTUAL_FS
@@ -59,6 +61,10 @@ def memory_limit(max_bytes: int = CELL_MEMORY_LIMIT_BYTES):
     finally:
         # Restore original limits
         resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+
+
+# Serializes cell runs on the shared IPython InteractiveShell singleton (gh #157).
+_ipython_lock = threading.Lock()
 
 
 # Thread-local storage for current session context
@@ -412,8 +418,12 @@ except (ImportError, AttributeError):
                 ipython = self._get_ipython()
 
                 if ipython is not None:
-                    # Use IPython's run_cell for magic commands support
-                    with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                    # Use IPython's run_cell for magic commands support. The shell is
+                    # a process-wide singleton shared by every session's notebook, so
+                    # bind it to THIS notebook's namespace for the run, serialized
+                    # (gh #157).
+                    with _ipython_lock, redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                        ipython.user_ns = self._namespace
                         exec_result = ipython.run_cell(cell["source"], store_history=True)
 
                     result["stdout"] = stdout_capture.getvalue()
@@ -517,25 +527,66 @@ except (ImportError, AttributeError):
         return {"status": "reset", "message": "Notebook state cleared"}
 
 
-# Global notebook state instance (for physical FS mode)
-# In virtual FS mode, each session should have its own NotebookState
+# One NotebookState per session (gh #157). Every agent run — the interactive chat,
+# each task-board run, each scheduled run — gets its own cells and variable
+# namespace, keyed by the run's ``thread_id`` (the session id the SessionAdapter and
+# the checkpointer already use; ``task-<id>`` for board/scheduled runs). Previously
+# all runs shared the one global notebook below, so a background run could read the
+# chat's variables or reset_notebook() them away.
+#
+# ``_notebook_state`` remains the default for callers with no session (direct
+# Python use of the tools outside an agent run).
 _notebook_state = NotebookState()
-_session_notebook_states: Dict[str, NotebookState] = {}
+_session_notebook_states: "OrderedDict[str, NotebookState]" = OrderedDict()
+_session_notebook_lock = threading.Lock()
+# Bound on retained per-session notebooks. Background runs each get their own, so
+# without a cap a long-running server with frequent schedules would keep every
+# run's namespace (dataframes and all) forever. Least-recently-used is evicted.
+_MAX_SESSION_NOTEBOOKS = 64
+
+
+def _current_session_id() -> Optional[str]:
+    """The session the current tool call belongs to.
+
+    Inside an agent run this is the LangGraph run's ``configurable.thread_id``
+    (tools execute within the run's config context, including in worker threads).
+    Otherwise it falls back to an explicit :func:`set_tool_session_context`.
+    """
+    config = var_child_runnable_config.get()
+    if config:
+        thread_id = (config.get("configurable") or {}).get("thread_id")
+        if thread_id:
+            return str(thread_id)
+    return get_tool_session_context()
 
 
 def get_notebook_state(session_id: Optional[str] = None) -> NotebookState:
-    """Get the notebook state for a session.
+    """Get the notebook state for a session (created on first use).
 
-    In virtual FS mode, returns a session-specific NotebookState.
-    In physical FS mode, returns the global shared NotebookState.
+    With no session id, returns the shared default NotebookState.
     """
-    if not VIRTUAL_FS or not session_id:
+    if not session_id:
         return _notebook_state
 
-    if session_id not in _session_notebook_states:
-        _session_notebook_states[session_id] = NotebookState(session_id=session_id)
+    with _session_notebook_lock:
+        state = _session_notebook_states.get(session_id)
+        if state is None:
+            state = _session_notebook_states[session_id] = NotebookState(session_id=session_id)
+            while len(_session_notebook_states) > _MAX_SESSION_NOTEBOOKS:
+                _session_notebook_states.popitem(last=False)
+        else:
+            _session_notebook_states.move_to_end(session_id)
+        return state
 
-    return _session_notebook_states[session_id]
+
+def release_notebook_state(session_id: str) -> None:
+    """Drop a session's notebook (e.g. when the session is deleted)."""
+    with _session_notebook_lock:
+        _session_notebook_states.pop(session_id, None)
+
+
+def _current_notebook() -> NotebookState:
+    return get_notebook_state(_current_session_id())
 
 
 def create_cell(code: str, cell_type: str = "code") -> Dict[str, Any]:
@@ -563,7 +614,7 @@ def create_cell(code: str, cell_type: str = "code") -> Dict[str, Any]:
         # Create a markdown cell
         create_cell("## Analysis Results", cell_type="markdown")
     """
-    return _notebook_state.add_cell(code, cell_type)
+    return _current_notebook().add_cell(code, cell_type)
 
 
 def insert_cell(index: int, code: str, cell_type: str = "code") -> Dict[str, Any]:
@@ -589,7 +640,7 @@ def insert_cell(index: int, code: str, cell_type: str = "code") -> Dict[str, Any
         # Insert a cell between cells 2 and 3
         insert_cell(3, "intermediate_result = process(data)")
     """
-    return _notebook_state.insert_cell(index, code, cell_type)
+    return _current_notebook().insert_cell(index, code, cell_type)
 
 
 def modify_cell(cell_index: int, new_code: str) -> Dict[str, Any]:
@@ -614,7 +665,7 @@ def modify_cell(cell_index: int, new_code: str) -> Dict[str, Any]:
         # Update a calculation
         modify_cell(0, "threshold = 0.95  # Updated from 0.9")
     """
-    return _notebook_state.modify_cell(cell_index, new_code)
+    return _current_notebook().modify_cell(cell_index, new_code)
 
 
 def delete_cell(cell_index: int) -> Dict[str, Any]:
@@ -635,7 +686,7 @@ def delete_cell(cell_index: int) -> Dict[str, Any]:
         # Remove cell 3
         delete_cell(3)
     """
-    return _notebook_state.delete_cell(cell_index)
+    return _current_notebook().delete_cell(cell_index)
 
 
 def execute_cell(cell_index: int) -> Dict[str, Any]:
@@ -669,7 +720,7 @@ def execute_cell(cell_index: int) -> Dict[str, Any]:
         if result["status"] == "error":
             print(result["error"])
     """
-    return _notebook_state.execute_cell(cell_index)
+    return _current_notebook().execute_cell(cell_index)
 
 
 def execute_all_cells() -> List[Dict[str, Any]]:
@@ -687,7 +738,7 @@ def execute_all_cells() -> List[Dict[str, Any]]:
         results = execute_all_cells()
         errors = [r for r in results if r.get("status") == "error"]
     """
-    return _notebook_state.execute_all()
+    return _current_notebook().execute_all()
 
 
 def get_script() -> Dict[str, Any]:
@@ -710,11 +761,12 @@ def get_script() -> Dict[str, Any]:
         print(f"Notebook has {state['cell_count']} cells")
         print(state['script'])
     """
+    nb = _current_notebook()
     return {
-        "cells": _notebook_state.cells,
-        "script": _notebook_state.get_script(),
-        "variables": _notebook_state.get_variables(),
-        "cell_count": len(_notebook_state.cells)
+        "cells": nb.cells,
+        "script": nb.get_script(),
+        "variables": nb.get_variables(),
+        "cell_count": len(nb.cells)
     }
 
 
@@ -734,7 +786,7 @@ def get_variables() -> Dict[str, str]:
         for name, info in vars.items():
             print(f"{name}: {info}")
     """
-    return _notebook_state.get_variables()
+    return _current_notebook().get_variables()
 
 
 def reset_notebook() -> Dict[str, Any]:
@@ -751,7 +803,7 @@ def reset_notebook() -> Dict[str, Any]:
         # Start fresh
         reset_notebook()
     """
-    return _notebook_state.reset()
+    return _current_notebook().reset()
 
 
 # =============================================================================
@@ -766,8 +818,7 @@ def _resolve_source_cell(
     if source_cell is not None:
         return source_cell, execution_count
 
-    session_id = get_tool_session_context()
-    state = get_notebook_state(session_id)
+    state = _current_notebook()
     last = state.last_executed_cell
     if last is None:
         return None, execution_count

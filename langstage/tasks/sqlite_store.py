@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Optional
 
@@ -27,6 +29,30 @@ _COLUMNS = [
 ]
 #: Columns stored as JSON text and decoded back to Python on read.
 _JSON_COLUMNS = {"artifacts", "interrupt"}
+
+#: Cron schedules (gh #151). Lives in the task board's database so schedules and the
+#: tasks they enqueue share one durability story. ``next_run`` is not stored: it is
+#: derived from ``cron`` when a job is loaded.
+_CRON_COLUMNS = [
+    "id", "name", "cron", "prompt", "created_at", "created_by", "enabled",
+    "last_run", "last_status", "run_count", "last_task_id",
+]
+
+_CRON_DDL = """
+CREATE TABLE IF NOT EXISTS cron_jobs (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    cron         TEXT NOT NULL,
+    prompt       TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    created_by   TEXT NOT NULL DEFAULT 'user',
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    last_run     TEXT,
+    last_status  TEXT,
+    run_count    INTEGER NOT NULL DEFAULT 0,
+    last_task_id TEXT
+);
+"""
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -54,7 +80,7 @@ CREATE TABLE IF NOT EXISTS task_events (
     event   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_task_events ON task_events(task_id, id);
-"""
+""" + _CRON_DDL
 
 
 def _encode(task: dict[str, Any]) -> dict[str, Any]:
@@ -212,3 +238,50 @@ class SqliteTaskStore:
             except (ValueError, TypeError):  # pragma: no cover - defensive
                 continue
         return out
+
+
+class SqliteCronStore:
+    """Durable storage for cron schedules, in the ``cron_jobs`` table of the task
+    board's database (gh #151).
+
+    Synchronous (stdlib ``sqlite3``), unlike :class:`SqliteTaskStore`, because the
+    scheduler API it backs is synchronous and is also called off the event loop (the
+    sync ``schedule_run`` agent tool runs in a worker thread). Each call opens a
+    short-lived connection, so it is safe from any thread; writes are rare (create,
+    delete, one per fire) and tiny. WAL mode lets these connections coexist with the
+    task store's aiosqlite connection on the same file.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = str(path)
+        with closing(self._connect()) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.executescript(_CRON_DDL)
+            db.commit()
+
+    def _connect(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self._path, timeout=10)
+        db.row_factory = sqlite3.Row
+        return db
+
+    def list(self) -> list[dict[str, Any]]:
+        with closing(self._connect()) as db:
+            rows = db.execute("SELECT * FROM cron_jobs ORDER BY created_at, id").fetchall()
+        return [{**dict(r), "enabled": bool(r["enabled"])} for r in rows]
+
+    def save(self, job: dict[str, Any]) -> None:
+        """Insert or replace a job (unknown keys such as ``next_run`` are ignored)."""
+        row = {c: job.get(c) for c in _CRON_COLUMNS}
+        row["enabled"] = 1 if row["enabled"] in (None, True) else 0
+        row["run_count"] = row["run_count"] or 0
+        row["created_by"] = row["created_by"] or "user"
+        cols = ", ".join(_CRON_COLUMNS)
+        placeholders = ", ".join(f":{c}" for c in _CRON_COLUMNS)
+        with closing(self._connect()) as db:
+            db.execute(f"INSERT OR REPLACE INTO cron_jobs ({cols}) VALUES ({placeholders})", row)
+            db.commit()
+
+    def delete(self, job_id: str) -> None:
+        with closing(self._connect()) as db:
+            db.execute("DELETE FROM cron_jobs WHERE id = ?", (job_id,))
+            db.commit()

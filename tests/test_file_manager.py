@@ -122,3 +122,75 @@ def test_sibling_prefix_dir_cannot_escape_workspace(tmp_path):
     for escape in ("../ws_secret/passwd.txt", "../ws_secret", "/../ws_secret/passwd.txt"):
         with pytest.raises(ValueError, match="escapes workspace"):
             fm._resolve_path(escape)
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except (OSError, NotImplementedError) as e:  # e.g. Windows without symlink privilege
+        pytest.skip(f"cannot create symlinks here: {e}")
+
+
+@pytest.fixture
+def escaping_symlinks(tmp_path):
+    """A workspace holding one dir symlink and one file symlink that point OUTSIDE it,
+    plus one symlink that stays inside (gh #148 repro)."""
+    ws = tmp_path / "ws"
+    (ws / "sub").mkdir(parents=True)
+    (ws / "sub" / "normal.txt").write_text("inside")
+    outside = tmp_path / "SECRET_OUTSIDE"
+    (outside / "private").mkdir(parents=True)
+    (outside / "private" / "secret.txt").write_text("TOP SECRET")
+    (outside / "passwords.txt").write_text("creds")
+    _symlink_or_skip(ws / "leak", outside)
+    _symlink_or_skip(ws / "leaked_file", outside / "passwords.txt")
+    _symlink_or_skip(ws / "inner_link", ws / "sub")
+    return ws
+
+
+def _all_names(entries):
+    for e in entries:
+        yield e["name"]
+        yield from _all_names(e.get("children") or [])
+
+
+def test_tree_does_not_follow_symlinks_out_of_the_workspace(escaping_symlinks):
+    """The recursive tree walk must honor the same containment rule as every
+    single-path route: a symlink resolving outside the workspace is neither listed
+    nor descended into, so no out-of-workspace name/structure/size leaks. (gh #148)"""
+    fm = FileManager(escaping_symlinks)
+    for depth in (1, 3):
+        entries = fm.get_tree("/", depth=depth)["entries"]
+        names = set(_all_names(entries))
+        assert "leak" not in names
+        assert "leaked_file" not in names
+        assert not names & {"private", "secret.txt", "passwords.txt"}
+        # In-workspace entries (incl. a symlink that stays inside) are still listed.
+        assert {"sub", "inner_link"} <= names
+    deep = fm.get_tree("/", depth=2)["entries"]
+    inner = next(e for e in deep if e["name"] == "inner_link")
+    assert [c["name"] for c in inner["children"]] == ["normal.txt"]
+
+
+def test_single_path_routes_reject_escaping_symlinks(escaping_symlinks):
+    """Every sibling files operation resolves symlinks before the containment check
+    (gh #148 audit): none can read, stat, write through, or delete an escaping link."""
+    fm = FileManager(escaping_symlinks)
+    ops = [
+        lambda: fm.get_tree("leak"),
+        lambda: fm.read_file("leak/passwords.txt"),
+        lambda: fm.read_file("leaked_file"),
+        lambda: fm.preview_file("leaked_file"),
+        lambda: fm.get_absolute_path("leak/passwords.txt"),
+        lambda: fm.create_directory("leak/newdir"),
+        lambda: fm.save_upload("leak/planted.txt", b"x"),
+        lambda: fm.save_upload("leaked_file", b"overwrite"),
+        lambda: fm.delete_path("leak/passwords.txt"),
+    ]
+    for op in ops:
+        with pytest.raises(ValueError, match="escapes workspace"):
+            op()
+    outside = escaping_symlinks.parent / "SECRET_OUTSIDE"
+    assert (outside / "passwords.txt").read_text() == "creds"
+    assert not (outside / "newdir").exists()
+    assert not (outside / "planted.txt").exists()

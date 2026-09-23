@@ -169,6 +169,18 @@ async def test_delete_session_endpoint(client):
     assert resp.json() == {"ok": True}
 
 
+@pytest.mark.asyncio
+async def test_delete_session_frees_its_notebook(client):
+    """Deleting a session drops its per-session notebook state (gh #157)."""
+    from langstage import tools
+
+    tools.get_notebook_state("doomed-session").add_cell("x = 1")
+    assert "doomed-session" in tools._session_notebook_states
+    resp = await client.delete("/api/session/doomed-session")
+    assert resp.status_code == 200
+    assert "doomed-session" not in tools._session_notebook_states
+
+
 # ── CORS is loopback-only by default, not reflect-any-origin (gh #113) ────────
 # The server used to attach CORSMiddleware with allow_origins=["*"] +
 # allow_credentials=True, which Starlette turns into "reflect ANY origin + allow
