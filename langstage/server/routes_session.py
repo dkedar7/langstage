@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from langstage_core.adapters import SessionAdapter
 
 from langstage.server.models import OkResponse, SessionAck, SessionInfo
+from langstage.tools import release_notebook_state
 from langstage.server.routes_chat import context_parts
 
 
@@ -25,6 +26,8 @@ def create_session_router(adapter: SessionAdapter) -> APIRouter:
     @router.delete("/session/{session_id}", response_model=OkResponse, response_model_exclude_unset=True)
     async def delete_session(session_id: str):
         adapter.delete_session(session_id)
+        # Free the session's notebook cells/variables along with it (gh #157).
+        release_notebook_state(session_id)
         return {"ok": True}
 
     @router.post("/session/{session_id}/inject", status_code=202, response_model=SessionAck, response_model_exclude_unset=True)

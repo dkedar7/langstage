@@ -35,8 +35,8 @@ for (const theme of ['light', 'dark'] as const) {
       await page.waitForTimeout(300);
       await shot('02-conversation');
 
-      // 3. Schedules tab with a job (unique name: the scheduler is in-memory
-      // and shared across the run, so avoid colliding with other captures).
+      // 3. Schedules tab with a job (unique name: schedules persist in the test
+      // workspace across runs (gh #151), so avoid colliding with other captures).
       const jobName = `Morning digest ${theme}-${Date.now()}`;
       await page.getByRole('button', { name: 'Schedules' }).click();
       await page.getByPlaceholder(/^Name/).fill(jobName);

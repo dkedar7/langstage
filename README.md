@@ -211,7 +211,7 @@ The **Board** tab turns LangStage into a lightweight agent control room: delegat
   agent = create_deep_agent(tools=[*your_tools, *TASK_TOOLS], ...)
   ```
 
-- **Scheduled runs** (the Schedules tab) enqueue onto the same board.
+- **Scheduled runs** (the Schedules tab) enqueue onto the same board, and are saved in the same SQLite file, so schedules survive a restart too. Fires missed while the server was down are not replayed; each schedule resumes at its next time.
 - **Cron is interpreted in UTC.** `0 9 * * *` fires at **09:00 UTC** — so scheduled runs are stable regardless of the host's timezone (and don't shift with DST) — and the Schedules tab shows `next` / `last` times in UTC to match, with the hour-specific presets labeled `9am UTC`. `next_run` in `GET /api/cron` is already an explicit UTC timestamp (`…+00:00`).
 - **A schedule never overlaps its own run.** If the previous fire's task is still queued, running, or **awaiting human review**, the next *automatic* fire is skipped (the schedule row shows `skipped: previous run still …`) instead of piling up duplicate tasks. This matters when the scheduled agent has a human-in-the-loop gate — e.g. the default agent gates `bash` — because such a run parks at **review** on the board for you to approve, and the schedule waits for you rather than stacking stuck reviews. Manual **Run now** bypasses this. `GET /api/cron` surfaces each schedule's `last_task_id` + `last_run_state` so a client can flag one awaiting review.
 

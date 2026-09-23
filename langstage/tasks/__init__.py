@@ -5,6 +5,6 @@ Task/TaskState machine) lives in the shared core,
 ``langstage_core.tasks``. This package provides only langstage-web's
 concrete store — durable across restarts so the task board survives a bounce.
 """
-from .sqlite_store import SqliteTaskStore
+from .sqlite_store import SqliteCronStore, SqliteTaskStore
 
-__all__ = ["SqliteTaskStore"]
+__all__ = ["SqliteCronStore", "SqliteTaskStore"]

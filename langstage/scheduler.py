@@ -1,9 +1,13 @@
-"""In-memory cron scheduler for langstage.
+"""Cron scheduler for langstage.
 
-Schedules recurring agent runs that live as long as the app process does (not
-persisted). Each job runs the configured agent — via the shared
-``SessionAdapter`` — on its own session (`cron-<id>`), on a standard 5-field
-cron schedule.
+Schedules recurring agent runs. Jobs are persisted in the task board's SQLite
+database (``cron_jobs`` in ``<workspace>/.langstage/tasks.db``) when the scheduler
+is given a store — as the server always does — so they survive a restart just
+like the board they enqueue onto (gh #151). Fires missed while the server was
+down are not replayed; a reloaded job resumes at its next scheduled time.
+
+Each job runs the configured agent — via the shared ``SessionAdapter`` — on its
+own session (`cron-<id>`), on a standard 5-field cron schedule.
 
 Two ways to create jobs:
 - **Agents** call the ``schedule_run`` tool (see below), wired into the default
@@ -17,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -99,12 +104,19 @@ class CronJob:
 
 
 class CronScheduler:
-    """Schedules ``CronJob``s on the app's asyncio loop. In-memory schedules;
-    on each fire it *enqueues* a task onto the durable TaskRunner (the runner
-    owns execution, persistence, and the board). The scheduler is a producer."""
+    """Schedules ``CronJob``s on the app's asyncio loop. On each fire it
+    *enqueues* a task onto the durable TaskRunner (the runner owns execution and
+    the board). The scheduler is a producer.
 
-    def __init__(self, runner: Any):
+    With a ``store`` (a :class:`~langstage.tasks.SqliteCronStore`), jobs are loaded
+    from it at construction and every create / delete / fire is written through, so
+    schedules survive a restart (gh #151). Without one, jobs are in-memory only."""
+
+    def __init__(self, runner: Any, store: Any = None):
         self._runner = runner
+        self._store = store
+        # Serializes store writes with the in-memory membership they mirror.
+        self._store_lock = threading.Lock()
         self._jobs: dict[str, CronJob] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._started = False
@@ -112,6 +124,7 @@ class CronScheduler:
         # _start_job spawn a run-loop from a non-loop thread (the sync
         # schedule_run tool runs in a worker thread) instead of failing. (gh #82)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._load()
 
     # ── queries ──────────────────────────────────────────────────────
     def list_jobs(self) -> list[dict[str, Any]]:
@@ -153,6 +166,14 @@ class CronScheduler:
         # this, a live server deferred next_run to the loop and returned null on
         # create (only a follow-up GET showed it). (gh #37)
         job.next_run = self._compute_next(job.cron)
+        try:
+            with self._store_lock:
+                self._save(job)
+        except Exception as exc:
+            # A schedule that isn't persisted would silently vanish on the next
+            # restart (gh #151) — fail the create loudly instead.
+            self._jobs.pop(job.id, None)
+            raise RuntimeError(f"Could not save schedule: {exc}") from exc
         if self._started:
             try:
                 self._start_job(job)
@@ -161,16 +182,23 @@ class CronScheduler:
                 # run-loop can't be started, roll back the insert and surface the
                 # error to the caller (the schedule_run tool / POST handler). (gh #82)
                 self._jobs.pop(job.id, None)
+                self._delete(job.id)
                 raise
         return job
 
     def remove_job(self, job_id: str) -> bool:
-        job = self._jobs.pop(job_id, None)
-        if job is None:
-            return False
+        """Remove a job. Safe to call from any thread, like :meth:`add_job`."""
+        with self._store_lock:  # so a concurrent fire can't re-save the deleted row
+            job = self._jobs.pop(job_id, None)
+            if job is None:
+                return False
+            self._delete(job_id)
         task = self._tasks.pop(job_id, None)
         if task is not None:
-            task.cancel()
+            if self._loop is not None and not self._on_loop():
+                self._loop.call_soon_threadsafe(task.cancel)
+            else:
+                task.cancel()
         return True
 
     async def run_now(self, job_id: str) -> bool:
@@ -199,6 +227,51 @@ class CronScheduler:
         self._tasks.clear()
         self._started = False
         self._loop = None
+
+    # ── persistence (gh #151) ────────────────────────────────────────
+    def _load(self) -> None:
+        """Rehydrate jobs from the store. ``next_run`` is recomputed from the cron
+        expression; a row that no longer validates is skipped with a warning
+        rather than failing startup."""
+        if self._store is None:
+            return
+        fields = set(CronJob.__dataclass_fields__)
+        for row in self._store.list():
+            try:
+                validate_cron(row["cron"])
+                job = CronJob(**{k: v for k, v in row.items() if k in fields})
+                job.next_run = self._compute_next(job.cron)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("skipping stored schedule %s: %s", row.get("id"), exc)
+                continue
+            self._jobs[job.id] = job
+
+    # The store is synchronous. Callers on the event loop must reach it through a
+    # worker thread (the POST/DELETE routes and _fire do): blocking the loop on a
+    # write to tasks.db could deadlock against the task store's aiosqlite
+    # connection, whose commit needs the loop to run.
+    def _save(self, job: CronJob) -> None:
+        if self._store is not None:
+            self._store.save(job.to_dict())
+
+    def _save_if_present(self, job: CronJob) -> None:
+        with self._store_lock:
+            if self._jobs.get(job.id) is job:
+                self._save(job)
+
+    def _on_loop(self) -> bool:
+        try:
+            return asyncio.get_running_loop() is self._loop
+        except RuntimeError:
+            return False
+
+    def _delete(self, job_id: str) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.delete(job_id)
+        except Exception:
+            logger.warning("cron job %s: could not delete from store", job_id, exc_info=True)
 
     # ── internals ────────────────────────────────────────────────────
     @staticmethod
@@ -286,6 +359,13 @@ class CronScheduler:
         finally:
             job.last_run = _now_iso()
             job.run_count += 1
+            # Persist run stats so overlap protection (last_task_id) and the
+            # Schedules tab's history survive a restart. Never fail the fire on it.
+            if self._store is not None:
+                try:
+                    await asyncio.to_thread(self._save_if_present, job)
+                except Exception:
+                    logger.warning("cron job %s: could not persist run stats", job.id, exc_info=True)
 
     async def _task_state(self, task_id: Optional[str]) -> Optional[str]:
         """Current board state of ``task_id`` via the runner's store. Returns
@@ -321,9 +401,8 @@ def get_scheduler() -> Optional[CronScheduler]:
 def schedule_run(name: str, cron: str, prompt: str) -> str:
     """Schedule a recurring agent run on a cron schedule.
 
-    The scheduled run executes the given prompt automatically on the schedule,
-    for as long as the app is running (schedules are not persisted across
-    restarts).
+    The scheduled run executes the given prompt automatically on the schedule.
+    Schedules are saved in the workspace and survive a server restart.
 
     Args:
         name: A short human-readable name for the schedule.

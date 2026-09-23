@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.13.36 — 2026-09-23
+
+Security and data-loss fixes. No dependency change.
+
+### Security
+- **`GET /api/files/tree` no longer follows symlinks out of the workspace (gh #148).**
+  The entry path was checked (`tree?path=leak` → 400), but the recursive walk built
+  child paths lexically and descended through symlinks. A workspace symlink pointing
+  outside it (for example one the agent's own bash tool planted) made `tree?depth=N`
+  list the target's names, structure and file sizes. A file symlink leaked its target's
+  size even at the default `depth=1`. The walk now applies the same resolved-path
+  containment rule as `_resolve_path` to every entry. An entry whose real location is
+  outside the workspace (symlink or Windows junction) is left out and never
+  descended into. Symlinks that stay inside the workspace are still listed. The sibling
+  routes (`read`, `preview`, `download`, `upload`, `mkdir`, `delete`) all go
+  through `_resolve_path`, which resolves symlinks first. They already refused
+  escaping links, and a new test pins that for each one.
+
+### Fixed
+- **Schedules survive a server restart (gh #151).** Cron jobs lived only in memory
+  and were lost on any restart, even though the task board they enqueue onto
+  persists in `<workspace>/.langstage/tasks.db`. Schedules are now stored in a
+  `cron_jobs` table in that same database. They are written through on create,
+  delete and each fire (run stats included, so overlap protection still knows the
+  previous run's task after a restart) and reloaded on startup. `next_run` is
+  recomputed from the cron expression. Fires missed while the server was down are
+  not replayed. A stored row whose cron no longer validates is skipped with a
+  warning. The `/api/cron` request/response shapes and the OpenAPI schema are
+  unchanged. The Schedules tab hint and the `schedule_run` tool description no
+  longer say "in-memory".
+- **Notebook tools are scoped per session (gh #157).** `create_cell`, `execute_cell`,
+  `get_variables`, `reset_notebook` and the rest all shared one process-global
+  notebook. A background task or scheduled run could therefore read the chat's
+  variables or reset them away. Each run now gets its own cells and namespace,
+  keyed by the run's `thread_id`: the chat session id, or `task-<id>` for board and
+  scheduled runs, the same id the checkpointer uses. Callers with no session keep
+  the shared default notebook. A session's notebook is freed when the session is
+  deleted, and idle ones are evicted least-recently-used beyond 64. When IPython is
+  installed, its singleton shell is bound to the calling notebook's namespace per
+  run, and those runs are serialized.
+
 ## 0.13.35 — 2026-08-08
 
 Docs-only. No code or dependency change.

@@ -1,4 +1,7 @@
-"""REST endpoints for the in-memory cron scheduler (Schedules tab)."""
+"""REST endpoints for the cron scheduler (Schedules tab). Schedules persist across
+restarts in the workspace's tasks.db (gh #151)."""
+
+import asyncio
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -25,8 +28,12 @@ def create_cron_router(scheduler: CronScheduler) -> APIRouter:
     @router.post("", status_code=201, response_model=CronJob, response_model_exclude_unset=True)
     async def create_job(body: CronCreate):
         try:
-            job = scheduler.add_job(
-                name=body.name, cron=body.cron, prompt=body.prompt, created_by="user"
+            # add_job/remove_job write through to the synchronous schedule store in
+            # tasks.db; run them off the event loop so the write can't block (or
+            # deadlock against) the task store's async connection (gh #151).
+            job = await asyncio.to_thread(
+                scheduler.add_job,
+                name=body.name, cron=body.cron, prompt=body.prompt, created_by="user",
             )
         except (ValueError, RuntimeError) as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -34,7 +41,7 @@ def create_cron_router(scheduler: CronScheduler) -> APIRouter:
 
     @router.delete("/{job_id}", response_model=OkResponse, response_model_exclude_unset=True)
     async def delete_job(job_id: str):
-        if not scheduler.remove_job(job_id):
+        if not await asyncio.to_thread(scheduler.remove_job, job_id):
             raise HTTPException(status_code=404, detail="Schedule not found")
         return {"ok": True}
 

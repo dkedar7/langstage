@@ -101,6 +101,14 @@ class FileManager:
                 continue
             if item.is_dir() and item.name in SKIP_DIRS:
                 continue
+            # Apply _resolve_path's containment rule to every child, not just the entry
+            # dir: an entry whose real location is OUTSIDE the workspace (a symlink, or a
+            # Windows junction) is omitted entirely, so the walk never lists, stats, or
+            # descends into its target. Without this, the lexical relative_to() below
+            # accepted workspace/leak/... and is_dir()/iterdir() followed the link,
+            # enumerating arbitrary host paths. (gh #148)
+            if not self._is_contained(item):
+                continue
 
             rel_path = "/" + str(item.relative_to(self.workspace))
             entry: dict = {
@@ -320,3 +328,10 @@ class FileManager:
         if not resolved.is_relative_to(self.workspace):
             raise ValueError(f"Path escapes workspace: {path}")
         return resolved
+
+    def _is_contained(self, path: Path) -> bool:
+        """True if ``path``'s real (symlink-resolved) location is inside the workspace."""
+        try:
+            return path.resolve().is_relative_to(self.workspace)
+        except (OSError, RuntimeError):  # unresolvable (e.g. a symlink loop)
+            return False
