@@ -19,6 +19,7 @@ import type {
   Decision,
   ConnectionStatus,
 } from "../types";
+import { extractionTargetId, findExtractionTarget } from "../extraction";
 
 const STORAGE_KEY = "langstage-session";
 
@@ -87,6 +88,8 @@ export function useAgentStream() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const contentBufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
+  // The most recent tool_end, for pairing the extraction frame that follows it.
+  const lastEndedToolRef = useRef<{ id: string; name: string } | null>(null);
 
   // Sync messageIdCounter to avoid collisions with restored messages
   if (initial?.messages?.length) {
@@ -208,6 +211,8 @@ export function useAgentStream() {
           break;
 
         case "tool_end":
+          // Remembered so the extraction frame that follows can find its call.
+          lastEndedToolRef.current = { id: event.id, name: event.name };
           setMessages((prev) => {
             const updated = [...prev];
             for (let i = updated.length - 1; i >= 0; i--) {
@@ -231,28 +236,29 @@ export function useAgentStream() {
           break;
 
         case "extraction": {
-          // Attach extraction to the most recent running tool call with matching name
+          // Attach to the tool call it was extracted from, by id. Core emits the
+          // frame AFTER that call's tool_end, so the call is usually no longer
+          // "running" here (see findExtractionTarget).
+          const targetId = extractionTargetId(
+            event.id,
+            event.tool_name,
+            lastEndedToolRef.current
+          );
           setMessages((prev) => {
+            const hit = findExtractionTarget(prev, event.tool_name, targetId);
+            if (!hit) return prev;
+            const [i, j] = hit;
             const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              const msg = updated[i];
-              const tcIdx = msg.toolCalls.findIndex(
-                (tc) => tc.name === event.tool_name && tc.status === "running"
-              );
-              if (tcIdx >= 0) {
-                const newTcs = [...msg.toolCalls];
-                newTcs[tcIdx] = {
-                  ...newTcs[tcIdx],
-                  extraction: {
-                    extracted_type: event.extracted_type,
-                    data: event.data,
-                  },
-                };
-                updated[i] = { ...msg, toolCalls: newTcs };
-                return updated;
-              }
-            }
-            return prev;
+            const newTcs = [...updated[i].toolCalls];
+            newTcs[j] = {
+              ...newTcs[j],
+              extraction: {
+                extracted_type: event.extracted_type,
+                data: event.data,
+              },
+            };
+            updated[i] = { ...updated[i], toolCalls: newTcs };
+            return updated;
           });
 
           // Also update persistent todos state

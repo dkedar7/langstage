@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { X, Loader2, Send, Check, Ban } from "lucide-react";
 import type { ChatMessage, Task, ToolCall, Decision } from "../types";
 import { MessageBubble } from "./MessageBubble";
+import { extractionTargetId, findExtractionTarget } from "../extraction";
 
 interface TaskDetailModalProps {
   taskId: string;
@@ -25,6 +26,7 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
     return m && m.role === "assistant" ? m : null;
   };
 
+  let lastEnded: { id: string; name: string } | null = null;
   for (const e of events) {
     const type = e.type as string;
     if (type === "content") {
@@ -41,6 +43,7 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
       };
       m.toolCalls.push(tc);
     } else if (type === "tool_end") {
+      lastEnded = { id: e.id as string, name: e.name as string };
       for (let i = msgs.length - 1; i >= 0; i--) {
         const tc = msgs[i].toolCalls.find((t) => t.id === e.id);
         if (tc) {
@@ -52,9 +55,15 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
         }
       }
     } else if (type === "extraction") {
-      const m = lastAssistant();
-      if (m && m.toolCalls.length) {
-        m.toolCalls[m.toolCalls.length - 1].extraction = {
+      // Same pairing as the live chat: by id, not "the last card" (extraction.ts).
+      const name = e.tool_name as string;
+      const hit = findExtractionTarget(
+        msgs,
+        name,
+        extractionTargetId(e.id as string | undefined, name, lastEnded)
+      );
+      if (hit) {
+        msgs[hit[0]].toolCalls[hit[1]].extraction = {
           extracted_type: e.extracted_type as string,
           data: e.data,
         };

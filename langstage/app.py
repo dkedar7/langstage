@@ -13,6 +13,7 @@ from pathlib import Path
 import uvicorn
 
 from langstage_core import load_agent_spec
+from langstage_core.console import safe_print
 from langstage.config import AppConfig
 from langstage.server.main import create_fastapi_app
 
@@ -170,6 +171,7 @@ class CoworkApp:
         show_canvas: bool | None = None,
         show_files: bool | None = None,
         stream_parser_config: dict | None = None,
+        _stdout_to_stderr: bool = False,
     ):
         # Resolve through the shared chain: defaults < deepagents.toml <
         # DEEPAGENT_* env < these Python/CLI overrides (None values ignored).
@@ -208,7 +210,19 @@ class CoworkApp:
 
         apply_workspace(self.config.workspace_root)
 
-        self.agent = self._resolve_agent(agent)
+        # _stdout_to_stderr (internal): the `chat --json` path loads the agent with its
+        # import-time prints sent to stderr, so stdout stays pure JSON (gh #140).
+        # Publish a resolved debug=True (the --debug flag / a Python debug=True, which
+        # only this process's overrides know about) as LANGSTAGE_DEBUG, the same way
+        # apply_workspace publishes the workspace. langstage-core decides whether an
+        # agent crash's error frame carries a `traceback` from its own resolved `debug`
+        # (env / TOML), read at error time, so without this `run --debug` streamed
+        # only `Type: message` over SSE while LANGSTAGE_DEBUG=1 streamed the traceback
+        # (gh #134). Never cleared: debug off leaves the environment untouched.
+        if self.config.debug:
+            os.environ["LANGSTAGE_DEBUG"] = "1"
+
+        self.agent = self._resolve_agent(agent, stdout_to_stderr=_stdout_to_stderr)
         self.stream_parser_config = stream_parser_config or {}
 
         # Resolve show_canvas: explicit value wins; otherwise auto-detect from
@@ -275,13 +289,19 @@ class CoworkApp:
                     "will not work. Compile your graph with a checkpointer."
                 )
 
-    def _resolve_agent(self, agent):
+    def _resolve_agent(self, agent, *, stdout_to_stderr: bool = False):
         """Resolve agent from argument, spec, env var, or create default."""
         if agent is not None:
             return agent
         spec = self.config.agent_spec
         if spec:
-            return load_agent_spec(spec)
+            # A dotted `pkg.mod:attr` spec from langstage.toml resolves from that file's
+            # directory, not the cwd (core rebases a file-form one itself; >= 1.0.36).
+            return load_agent_spec(
+                spec,
+                base_dir=self.config.toml_dir_for("agent_spec"),
+                stdout_to_stderr=stdout_to_stderr,
+            )
         from langstage.default_agent import create_default_agent
         return create_default_agent(self.config.workspace_root)
 
@@ -320,7 +340,7 @@ class CoworkApp:
         url = f"http://{self.config.host}:{self.config.port}"
         # Point power users at the built-in, always-in-sync REST API docs — the
         # FastAPI OpenAPI schema is served but was undocumented/undiscoverable (gh #71).
-        print(f"LangStage: {url}  |  REST API docs: {url}/docs")
+        safe_print(f"LangStage: {url}  |  REST API docs: {url}/docs")
 
         # Loudly flag the silent-open-server footgun: a non-loopback bind (0.0.0.0,
         # a LAN IP) with no auth password exposes the entire REST surface to the
@@ -328,13 +348,13 @@ class CoworkApp:
         # banner and survives stdout redirection. (gh #89)
         exposure = _exposure_warning(self.config.host, self.config.auth_password)
         if exposure:
-            print(exposure, file=sys.stderr)
+            safe_print(exposure, file=sys.stderr)
 
         # Same treatment for the silent-missing-UI footgun: stderr, so it stands out
         # from the banner and survives stdout redirection. (gh #96)
         missing_frontend = _frontend_warning()
         if missing_frontend:
-            print(missing_frontend, file=sys.stderr)
+            safe_print(missing_frontend, file=sys.stderr)
 
         if open_browser:
             # Open browser after a short delay (server needs to start first)

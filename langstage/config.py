@@ -243,6 +243,7 @@ class AppConfig(HostConfig):
         # the rejected env var / TOML key with the degraded value. (gh #104)
         if self.theme not in _VALID_THEMES:
             _warn_invalid_theme(self.theme)
+            self._theme_rejected = self.theme  # for config_issues() (gh #138)
             self.theme = _DEFAULT_THEME
             self._theme_degraded = True
         else:
@@ -260,8 +261,34 @@ class AppConfig(HostConfig):
         """
         obj = super().resolve(**kwargs)
         if getattr(obj, "_theme_degraded", False):
+            obj._theme_rejected_source = obj._sources.get("theme", "override")  # type: ignore[attr-defined]
             obj._sources["theme"] = "default"  # type: ignore[attr-defined]
         return obj  # type: ignore[return-value]
+
+    def config_issues(self) -> list[dict]:
+        """Core's ``config_issues()`` plus a degraded theme.
+
+        The theme enum is enforced here (``__post_init__``), not by a core validator,
+        so core's list can't see it. Add it in core's ``invalid_value`` shape so
+        ``config --strict`` and ``config --json``'s ``issues`` report an invalid theme
+        like any other degraded value (gh #138).
+        """
+        issues = super().config_issues()
+        if getattr(self, "_theme_degraded", False):
+            value = getattr(self, "_theme_rejected", None)
+            source = getattr(self, "_theme_rejected_source", "override")
+            accepted = ", ".join(_VALID_THEMES)
+            issues.append({
+                "kind": "invalid_value",
+                "field": "theme",
+                "source": source,
+                "value": value,
+                "error": f"ValueError: expected one of: {accepted}",
+                "used": _DEFAULT_THEME,
+                "message": f"invalid value theme={value!r} from {source} ignored "
+                           f"(ValueError: expected one of: {accepted}); using {_DEFAULT_THEME!r}",
+            })
+        return issues
 
     @classmethod
     def from_env(cls) -> "AppConfig":

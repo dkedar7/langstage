@@ -46,6 +46,8 @@ export interface ToolEndEvent {
 
 export interface ExtractionEvent {
   type: "extraction";
+  /** The tool call's id, if the server sends one (langstage-core 1.0.36 does not). */
+  id?: string;
   tool_name: string;
   extracted_type: string;
   data: unknown;

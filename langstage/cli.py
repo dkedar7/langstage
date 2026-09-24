@@ -1,8 +1,10 @@
 """CLI: langstage run [OPTIONS]."""
 
 import os
+import sys
 
 import click
+from langstage_core.console import console_safe, safe_print
 
 from langstage.app import CoworkApp
 from langstage.config import AppConfig
@@ -12,24 +14,18 @@ from langstage.config import AppConfig
 DEMO_AGENT_SPEC = "langstage_core.demo.stub:graph"
 
 
-def _echo_streamsafe(message: str, *, err: bool = False) -> None:
-    """``click.echo`` that degrades un-encodable characters instead of crashing.
+def _echo(message: str) -> None:
+    """``click.echo`` that can't crash on a non-UTF-8 console.
 
-    On a non-UTF-8 console (the default Windows cp1252 for a Western locale),
-    writing agent text that contains an emoji / CJK / arrow raises
-    ``UnicodeEncodeError`` — which both loses the reply and, for ``chat``, flips the
-    exit code from the agent's real (success) outcome to a false ``1``, breaking the
-    documented readiness-gate contract. Encode against the stream's own encoding with
-    ``errors="backslashreplace"`` so an un-encodable char degrades to an ASCII
-    ``\\uXXXX`` escape (the same fidelity the ``--json`` path already gets from
-    ``ensure_ascii``) and the turn completes. (gh #115)
+    On a cp1252 console (the Windows default for a Western locale) an emoji / CJK
+    character in a config value, an agent reply or a spec path raised
+    ``UnicodeEncodeError`` from ``click.echo`` (gh #115, #146). The text goes through
+    ``langstage_core.console.console_safe`` first, which backslash-escapes only what the
+    stream can't encode, the same rule ``safe_print`` uses. It still goes out through
+    ``click.echo`` so the ``check`` lines keep click's strip-colors-when-piped
+    behavior. Plain output uses ``safe_print`` directly.
     """
-    try:
-        click.echo(message, err=err)
-    except UnicodeEncodeError:
-        stream = click.get_text_stream("stderr" if err else "stdout")
-        enc = getattr(stream, "encoding", None) or "utf-8"
-        click.echo(message.encode(enc, errors="backslashreplace").decode(enc), err=err)
+    click.echo(console_safe(message, sys.stdout))
 
 
 @click.group(invoke_without_command=True)
@@ -43,7 +39,9 @@ def _echo_streamsafe(message: str, *, err: bool = False) -> None:
 def main(ctx, show_config):
     """LangStage - every stage for your LangGraph agent (web)."""
     if show_config:
-        click.echo(AppConfig.resolve().describe())
+        # safe_print: a config value (an emoji in the welcome message) must not crash
+        # the diagnostic on a cp1252 console (gh #146).
+        safe_print(AppConfig.resolve().describe())
         ctx.exit(0)
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
@@ -127,64 +125,59 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
 @main.command()
 @click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
 @click.option("--json", "as_json", is_flag=True, default=False,
-              help="Emit the resolved config as JSON (each field's value + source, plus the "
-                   "TOML files read) so a deploy step can assert what a container resolved.")
+              help="Emit the resolved config as JSON (each field's value, source and env / "
+                   "TOML key; the TOML files read or found malformed; and `issues`) so a "
+                   "deploy step can assert what a container resolved.")
 @click.option("--strict", is_flag=True, default=False,
-              help="Exit non-zero (1) when the config isn't clean — any unknown/typo'd "
-                   "langstage.toml key (surfaced as `unknown_toml_keys`) — so a CI/deploy "
-                   "step can gate on a config typo with an exit code alone, instead of "
-                   "hand-parsing the JSON. Default (no --strict) always exits 0. Composes "
-                   "with --json (same output, same exit-code contract).")
+              help="Exit non-zero (1) when the config isn't clean: a malformed langstage.toml, "
+                   "a value that was degraded to its default because it was malformed or "
+                   "invalid (bad port, invalid theme, non-bool show_files, ...), or an "
+                   "unknown/typo'd langstage.toml key. The JSON lists each one under "
+                   "`issues`. Lets a CI/deploy step gate on the exit code alone. Default (no "
+                   "--strict) always exits 0. Composes with --json (same output, same "
+                   "exit-code contract).")
 @click.pass_context
 def config(ctx, workspace, as_json, strict):
     """Show the resolved configuration: each value, its source, and the
     env var / langstage.toml key that sets it.
 
-    Add ``--strict`` to make it a CI gate: exit non-zero if langstage.toml has any
-    unknown/typo'd key, so ``langstage config --strict`` fails the build on a config
-    typo (which otherwise ships a running-but-wrong server silently). (gh #125)"""
-    from dataclasses import fields as _fields
-
+    Add ``--strict`` to make it a CI gate: exit non-zero if anything had to be ignored
+    or degraded (a malformed langstage.toml, a malformed or invalid value, an unknown
+    key), each of which otherwise ships a running-but-wrong server silently.
+    (gh #125, #138)"""
     overrides = {"workspace_root": workspace} if workspace else None
     cfg = AppConfig.resolve(overrides=overrides)
-    # The unknown/typo'd keys the layered config silently dropped — the gate --strict
-    # fails on. The output below already surfaces them (human via describe(), JSON via
-    # the payload); --strict only adds the exit-code half (gh #125).
-    unknown = cfg.unknown_toml_keys()
+    # Everything this resolve ignored or degraded, as data (langstage-core >= 1.0.36,
+    # plus langstage's own theme enum; see AppConfig.config_issues). --strict fails on
+    # it, and --json carries it as `issues` (gh #138).
+    issues = cfg.config_issues()
 
     if not as_json:
-        click.echo(cfg.describe())
+        # describe() names a present-but-malformed langstage.toml as MALFORMED rather
+        # than "not found" (core >= 1.0.36, gh #170). safe_print so a config value with
+        # an emoji can't crash this on a cp1252 console (gh #146).
+        safe_print(cfg.describe())
     else:
         import json as _json
 
-        def _jsonable(v):
-            # Config values are scalars or Paths; keep JSON-native types, stringify the rest.
-            return v if isinstance(v, (str, int, float, bool, type(None))) else str(v)
+        # core's config_dict() is the family-wide machine-readable shape (value, source,
+        # env / TOML key per field; toml.found / paths / malformed / malformed_files;
+        # issues), so the JSON can't drift from describe() (gh #170). The two
+        # pre-1.0.36 top-level keys stay for existing consumers (gh #120).
+        payload = cfg.config_dict()
+        payload["toml_read_from"] = payload["toml"]["paths"]
+        payload["unknown_toml_keys"] = payload["toml"]["unknown_keys"]
+        # Config values are scalars or Paths: default=str stringifies the Paths.
+        safe_print(_json.dumps(payload, indent=2, default=str))
 
-        src = cfg.sources
-        payload = {
-            "config": {
-                f.name: {"value": _jsonable(getattr(cfg, f.name)), "source": src.get(f.name, "default")}
-                for f in _fields(cfg)
-            },
-            "toml_read_from": [str(p) for p in getattr(cfg, "_toml_paths", [])],
-            # Keys present in langstage.toml that map to no known field (typo'd / misplaced /
-            # unknown). The human `config` / `--show-config` surface these via describe(); a
-            # deploy step asserting on JSON gets them here too, so a silent-dropped edit can be
-            # caught machine-side, not just by eye (gh #120).
-            "unknown_toml_keys": unknown,
-        }
-        click.echo(_json.dumps(payload, indent=2))
-
-    if strict and unknown:
-        n = len(unknown)
-        # A one-line stderr summary (so it survives a `... --json | jq` pipe on stdout),
-        # then a non-zero exit so CI fails the build. ASCII-only (cp1252-safe).
-        click.echo(
-            f"error: config is not clean: {n} unknown TOML key"
-            f"{'s' if n != 1 else ''} ({', '.join(unknown)}). (--strict)",
-            err=True,
-        )
+    if strict and issues:
+        n = len(issues)
+        # One stderr line per issue, so it survives a `... --json | jq` pipe on stdout,
+        # then a non-zero exit so CI fails the build.
+        safe_print(f"error: config is not clean: {n} issue{'s' if n != 1 else ''} (--strict)",
+                   file=sys.stderr)
+        for issue in issues:
+            safe_print(f"  - {issue['message']}", file=sys.stderr)
         ctx.exit(1)
 
 
@@ -212,7 +205,7 @@ def init(target, force):
         raise click.ClickException(f"{dest} already exists. Use --force to overwrite.")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(render_langstage_toml(), encoding="utf-8")
-    click.echo(f"Wrote {dest}  -  edit it, then `langstage config` to verify.")
+    safe_print(f"Wrote {dest}  -  edit it, then `langstage config` to verify.")
 
 
 def _load_error_detail(e: BaseException) -> str:
@@ -292,19 +285,23 @@ def check(agent_spec, demo, live, as_json):
 
     def say(msg):
         if not as_json:
-            click.echo(msg)
+            # cp1252-safe: the spec path, agent name and error detail are user text.
+            _echo(msg)
 
     def finish(code):
         # Single exit point: stamp overall ok, emit JSON in --json mode, preserve the
         # exit-code contract (1 = load failure / not runnable / --live error; else 0).
         report["ok"] = code == 0
         if as_json:
-            click.echo(_json.dumps(report, indent=2))
+            safe_print(_json.dumps(report, indent=2))
         raise SystemExit(code)
 
     say(f"Checking agent: {spec}\n")
     try:
-        agent = load_agent_spec(spec)
+        # Under --json, the agent's import-time prints (a library's load banner, a debug
+        # print) go to stderr, so stdout stays the one JSON object the CI gate parses
+        # (gh #140).
+        agent = load_agent_spec(spec, stdout_to_stderr=as_json)
     except Exception as e:  # noqa: BLE001 - report load failure cleanly
         detail = _load_error_detail(e)  # falls back to the class name for a message-less exc (gh #92)
         report["error"] = detail
@@ -466,7 +463,9 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
         # exact wiring `run` uses), so `chat` resolves --workspace/toml/env the same
         # way — without starting a server. A load failure surfaces as a clean
         # one-line CLI error, mirroring `run` / `check`. (gh #90, #101)
-        app = CoworkApp(agent_spec=agent_spec, workspace=workspace)
+        # Under --json the agent's import-time prints go to stderr so stdout stays pure
+        # JSON (gh #140).
+        app = CoworkApp(agent_spec=agent_spec, workspace=workspace, _stdout_to_stderr=as_json)
     except (RuntimeError, ValueError, FileNotFoundError, AttributeError, ImportError) as e:
         raise click.ClickException(str(e) or type(e).__name__) from e
 
@@ -503,15 +502,15 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
         payload = {"content": result.content, "tool_calls": result.tool_calls}
         if not result.ok:
             payload["error"] = result.error or f"turn did not complete: {result.outcome}"
-        click.echo(_json.dumps(payload, indent=2))
+        safe_print(_json.dumps(payload, indent=2))
     else:
         if result.content:
             # Encoding-tolerant so an emoji/CJK/arrow in the reply can't crash the
             # turn (and falsely exit 1) on a cp1252 console. (gh #115)
-            _echo_streamsafe(result.content)
+            safe_print(result.content)
         if not result.ok:
             reason = result.error or f"turn did not complete: {result.outcome}"
-            _echo_streamsafe(f"Error: {reason}", err=True)
+            safe_print(f"Error: {reason}", file=sys.stderr)
 
     if not result.ok:
         raise SystemExit(1)
