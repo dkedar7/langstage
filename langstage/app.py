@@ -333,9 +333,19 @@ class CoworkApp:
         can't start inside a running loop at all — it raised ``RuntimeError:
         Cannot run the event loop while another loop is running`` (gh #87).
         Call ``.stop()`` on the returned handle to shut it down.
+
+        **Working directory**: the script / CLI path makes the workspace the process
+        cwd (ADR 0006). The notebook path leaves the kernel's cwd unchanged (gh #156).
         """
         app = self.create_server()
-        self._enter_workspace()
+        in_notebook = _in_running_event_loop()
+        # ADR 0006's chdir is for a process the server owns (script / CLI). A notebook
+        # kernel owns its process, so there the cwd is left alone: moving it would
+        # redirect the user's own relative file ops in later cells into the
+        # workspace. This is the same carve-out ADR 0006 makes for the jupyter host;
+        # the agent's host tools use the absolute workspace either way. (gh #156)
+        if not in_notebook:
+            self._enter_workspace()
 
         url = f"http://{self.config.host}:{self.config.port}"
         # Point power users at the built-in, always-in-sync REST API docs — the
@@ -361,7 +371,7 @@ class CoworkApp:
             threading.Timer(1.5, webbrowser.open, args=[url]).start()
 
         log_level = "debug" if self.config.debug else "info"
-        if not _in_running_event_loop():
+        if not in_notebook:
             uvicorn.run(app, host=self.config.host, port=self.config.port, log_level=log_level)
             return None
 

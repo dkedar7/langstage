@@ -10,7 +10,7 @@ from langstage.server.models import (
     FilePreview,
     FileTree,
 )
-from langstage.workspace.file_manager import FileManager
+from langstage.workspace.file_manager import BinaryFileError, FileManager
 
 
 class PathRequest(BaseModel):
@@ -41,10 +41,20 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             # return a clean 400 instead of letting it fall through to a 500.
             raise HTTPException(status_code=400, detail=str(e))
 
-    @r.get("/read", response_model=FileContent, response_model_exclude_unset=True)
+    @r.get(
+        "/read",
+        response_model=FileContent,
+        response_model_exclude_unset=True,
+        responses={415: {"description": "Not a UTF-8 text file; use /preview or /download"}},
+    )
     async def read_file(
         path: str = Query(..., description="File path relative to workspace"),
     ):
+        """Return a UTF-8 text file verbatim (line endings intact); ``size`` is in bytes.
+
+        A binary (non-UTF-8, or containing NUL) file gets 415 instead of lossily
+        decoded text; read it through ``/preview`` or ``/download``. (gh #144)
+        """
         try:
             content = file_manager.read_file(path)
             return content
@@ -52,6 +62,8 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"File not found: {path}")
         except IsADirectoryError:
             raise HTTPException(status_code=400, detail=f"Path is a directory: {path}")
+        except BinaryFileError as e:
+            raise HTTPException(status_code=415, detail=str(e))
         except ValueError as e:
             # Path escapes the workspace — boundary holds; return 400, not 500.
             raise HTTPException(status_code=400, detail=str(e))

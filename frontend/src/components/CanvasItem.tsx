@@ -145,7 +145,7 @@ window.addEventListener('load',function(){_sendHeight();setTimeout(_sendHeight,2
 new MutationObserver(_sendHeight).observe(document.body,{childList:true,subtree:true});
 </script>`;
 
-function AutoResizeIframe({ html, title }: { html: string; title: string }) {
+function AutoResizeIframe({ html, title }: { html: string; title?: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(200);
 
@@ -182,7 +182,7 @@ function AutoResizeIframe({ html, title }: { html: string; title: string }) {
   );
 }
 
-function PlotlyIframe({ data, title }: { data: unknown; title: string }) {
+function PlotlyIframe({ data, title }: { data: unknown; title?: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(400);
 

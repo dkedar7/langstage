@@ -521,3 +521,130 @@ def test_run_no_warning_on_localhost(workspace, mock_agent, monkeypatch, capsys)
     # separate condition with its own coverage in tests/test_frontend_visibility.py,
     # and legitimately fires here because a source checkout has no built SPA.
     assert "no authentication" not in err
+
+
+# ── /api/files/read: faithful text, clean binary refusal (gh #144) ───────────
+
+
+@pytest.mark.asyncio
+async def test_files_read_preserves_crlf_and_byte_size(client, workspace):
+    (workspace / "c.txt").write_bytes(b"line1\r\nline2\r\n")
+    resp = await client.get("/api/files/read?path=c.txt")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["content"] == "line1\r\nline2\r\n"
+    assert body["size"] == 14
+
+
+@pytest.mark.asyncio
+async def test_files_read_refuses_binary_with_415(client, workspace):
+    (workspace / "t.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+    resp = await client.get("/api/files/read?path=t.png")
+    assert resp.status_code == 415
+    detail = resp.json()["detail"]
+    assert "preview" in detail and "download" in detail
+
+
+# ── /api/canvas/items serves real canvas items (gh #158) ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_canvas_items_lists_items_written_by_the_real_tools(client, workspace, monkeypatch):
+    from langstage import config as cfg, tools as tools_mod
+
+    monkeypatch.setattr(cfg, "WORKSPACE_ROOT", workspace)
+    monkeypatch.setattr(cfg, "VIRTUAL_FS", False)
+    monkeypatch.setattr(tools_mod, "WORKSPACE_ROOT", workspace)
+    monkeypatch.setattr(tools_mod, "VIRTUAL_FS", False)
+    # CanvasMiddleware's prompt: open with a section + an overview markdown item.
+    tools_mod.add_canvas_section("Overview")
+    tools_mod.add_to_canvas("This report analyzes Q3 sales.")
+    tools_mod.add_to_canvas("<b>bold html</b>")
+
+    resp = await client.get("/api/canvas/items")
+    assert resp.status_code == 200, resp.text
+    items = resp.json()
+    assert [i["type"] for i in items][:1] == ["section"]
+    assert items[0]["data"] == "Overview" and items[0]["level"] == 1
+    assert any(i["data"] == "This report analyzes Q3 sales." for i in items)
+    # No title was given, so none is invented (and it isn't serialized as null).
+    assert all("title" not in i for i in items)
+
+
+def test_canvas_item_schema_matches_real_items():
+    from langstage.server.models import CanvasItemResponse
+
+    schema = CanvasItemResponse.model_json_schema()
+    assert set(schema["required"]) == {"id", "type"}
+    assert "type" not in schema["properties"]["data"]  # any JSON value
+    assert "level" in schema["properties"]
+
+
+# ── CORS preflight works with Basic auth on (gh #155) ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cors_preflight_is_answered_under_auth(auth_client):
+    origin = "http://localhost:5173"
+    resp = await auth_client.options(
+        "/api/config",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.headers.get("access-control-allow-origin") == origin
+
+
+@pytest.mark.asyncio
+async def test_cors_preflight_under_auth_still_refuses_a_foreign_origin(auth_client):
+    resp = await auth_client.options(
+        "/api/config",
+        headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"},
+    )
+    assert resp.status_code != 200
+    assert resp.headers.get("access-control-allow-origin") is None
+
+
+@pytest.mark.asyncio
+async def test_non_preflight_options_still_requires_auth(auth_client):
+    # Only a real CORS preflight skips auth; a bare OPTIONS is authenticated.
+    resp = await auth_client.options("/api/config")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_real_cross_origin_request_under_auth_still_needs_credentials(auth_client):
+    origin = "http://localhost:5173"
+    resp = await auth_client.get("/api/config", headers={"Origin": origin})
+    assert resp.status_code == 401
+    ok = await auth_client.get("/api/config", headers={"Origin": origin}, auth=("myuser", "mypass"))
+    assert ok.status_code == 200
+    assert ok.headers.get("access-control-allow-origin") == origin
+
+
+def test_auth_covers_websocket_upgrades(auth_app):
+    """The middleware's docstring promised WebSocket upgrades are authenticated, but
+    every non-http scope was passed straight through. No WS route ships today; pin it
+    with a throwaway one so a future route can't be reached without credentials."""
+    import base64
+
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocket, WebSocketDisconnect
+
+    async def echo(ws: WebSocket):
+        await ws.accept()
+        await ws.send_text("hi")
+        await ws.close()
+
+    auth_app.add_api_websocket_route("/ws-probe", echo)
+    client = TestClient(auth_app)
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with client.websocket_connect("/ws-probe") as ws:
+            ws.receive_text()
+    assert refused.value.code == 1008
+    token = base64.b64encode(b"myuser:mypass").decode()
+    with client.websocket_connect("/ws-probe", headers={"Authorization": f"Basic {token}"}) as ws:
+        assert ws.receive_text() == "hi"

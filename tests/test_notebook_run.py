@@ -97,3 +97,35 @@ async def test_run_in_a_notebook_raises_a_clean_error_when_the_port_is_taken(tmp
                 app.run(open_browser=False)
         finally:
             os.chdir(cwd)
+
+
+# ── the notebook path leaves the kernel's cwd alone (gh #156) ────────────────
+
+
+async def test_run_in_a_notebook_does_not_move_the_kernels_cwd(tmp_path):
+    # The kernel owns the process: a chdir there would silently redirect the user's
+    # own relative file ops in later cells into the workspace. ADR 0006 already
+    # carves the jupyter host out for the same reason.
+    ws = tmp_path / "ws"
+    before = os.getcwd()
+    handle = None
+    try:
+        app = CoworkApp(agent_spec=DEMO_SPEC, workspace=ws, port=_free_port())
+        handle = app.run(open_browser=False)
+        assert os.getcwd() == before
+    finally:
+        if handle is not None and handle.running:
+            handle.stop()
+        os.chdir(before)
+
+
+def test_run_in_a_script_still_enters_the_workspace(monkeypatch, tmp_path):
+    # The dedicated-process (CLI / script) path keeps ADR 0006's chdir.
+    monkeypatch.setattr("langstage.app.uvicorn.run", lambda app, **kw: None)
+    ws = tmp_path / "ws"
+    before = os.getcwd()
+    try:
+        CoworkApp(agent_spec=DEMO_SPEC, workspace=ws, port=_free_port()).run(open_browser=False)
+        assert os.path.realpath(os.getcwd()) == os.path.realpath(ws)
+    finally:
+        os.chdir(before)

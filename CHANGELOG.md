@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.13.38 — 2026-09-24
+
+Local correctness fixes for the files API, CORS under auth, the canvas list and the
+notebook path. No dependency change.
+
+### Fixed
+- **`GET /api/files/read` returns the file as it is on disk (gh #144).** It used
+  `read_text(errors="replace")`, so a CRLF file lost every ``, a binary came back as
+  lossily decoded `language: "text"`, and `size` was the decoded character count. The
+  bytes are now decoded without newline translation, and `size` is the byte size that
+  `tree`, `upload` and `download` report. A file that isn't UTF-8 text (or contains a
+  NUL byte) gets **415** pointing at `/preview` or `/download`, instead of mangled text.
+- **The CSV/TSV preview keeps rows with quoted delimiters (gh #154).** Rows were split
+  with `str.split`, so an RFC-4180 cell like `"Smith, John"` produced too many columns
+  and the row was silently dropped. The preview now uses the `csv` module: quotes are
+  stripped, a quoted newline stays in its cell, and a ragged row is padded or trimmed
+  to the header instead of dropped.
+- **The preview's `download_url` is URL-encoded (gh #163).** A PDF or binary named
+  `Q3 report.pdf` got a link with a raw space, and `&`, `+`, `#` or `%` in a name sent
+  the download to a different path.
+- **Deleting a symlink removes the link, not its target (gh #175).** `DELETE` resolved
+  the path first, so removing `link -> data/` deleted `data/`. A symlink or Windows
+  junction is now unlinked itself. #148's containment rule applies to where the link
+  lives, so a path reached through a link that points outside the workspace is still
+  rejected. A link that points outside, or a dangling link, can now be removed.
+- **CORS preflights work with `--auth-password` set (gh #155).** Basic auth was the
+  outermost middleware, so it answered every preflight `OPTIONS` (which browsers send
+  without credentials) with 401, and the Vite dev server or an origin opted in via
+  `LANGSTAGE_CORS_ORIGINS` could not reach an authenticated server. CORS is now outside
+  auth and answers preflights itself. The request that follows is still authenticated,
+  a bare `OPTIONS` still needs credentials, and the loopback-only default is unchanged.
+- **`GET /api/canvas/items` no longer 500s on a real canvas (gh #158).**
+  `CanvasItemResponse` required `title` and typed `data` as an object, but sections
+  and markdown or HTML items have no title and a string `data`. The model now matches
+  what the canvas tools write: `title`, `created_at`, `level`, `file`, `source_cell`
+  and `execution_count` are optional, and `data` is any JSON value. The OpenAPI schema
+  follows.
+- **`app.run()` in a notebook no longer changes the kernel's working directory
+  (gh #156).** The chdir into the workspace (ADR 0006) is for a process the server owns.
+  In a notebook it moved the kernel's cwd, so later cells' relative paths resolved in
+  the workspace. The script and CLI path still enter the workspace.
+
+### Security
+- **Basic auth now covers WebSocket upgrades.** The middleware passed every non-HTTP
+  scope through, although its docstring said WebSockets were authenticated. No WebSocket
+  route ships today, so nothing was exposed. An unauthenticated upgrade is now closed
+  with 1008 (HTTP 403) before it reaches a route.
+
 ## 0.13.37 — 2026-09-24
 
 Adopts langstage-core 1.0.36, which fixes several of these at the root, and moves the

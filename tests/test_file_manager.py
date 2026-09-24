@@ -194,3 +194,156 @@ def test_single_path_routes_reject_escaping_symlinks(escaping_symlinks):
     assert (outside / "passwords.txt").read_text() == "creds"
     assert not (outside / "newdir").exists()
     assert not (outside / "planted.txt").exists()
+
+
+# ── /api/files/read returns the file faithfully (gh #144) ────────────────────
+# read_file used read_text(errors="replace"): text-mode newline translation dropped
+# every \r of a CRLF file, a binary came back as lossy "text", and size was the
+# decoded character count rather than the byte size every other route reports.
+
+
+def test_read_preserves_crlf_and_reports_byte_size(tmp_path):
+    (tmp_path / "c.txt").write_bytes(b"line1\r\nline2\r\n")  # 14 bytes
+    out = FileManager(tmp_path).read_file("c.txt")
+    assert out["content"] == "line1\r\nline2\r\n"
+    assert out["size"] == 14
+
+
+def test_read_size_is_bytes_not_characters(tmp_path):
+    (tmp_path / "u.md").write_bytes("héllo ✓\n".encode("utf-8"))
+    out = FileManager(tmp_path).read_file("u.md")
+    assert out["content"] == "héllo ✓\n"
+    assert out["size"] == len("héllo ✓\n".encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    "name,raw",
+    [
+        ("t.png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"),
+        ("blob.txt", b"abc\x00def"),  # NUL: binary even with a text extension
+        ("latin1.txt", "café".encode("latin-1")),  # not UTF-8
+    ],
+)
+def test_read_refuses_binary_instead_of_mangling_it(tmp_path, name, raw):
+    from langstage.workspace.file_manager import BinaryFileError
+
+    (tmp_path / name).write_bytes(raw)
+    with pytest.raises(BinaryFileError):
+        FileManager(tmp_path).read_file(name)
+
+
+# ── CSV preview parses RFC-4180 quoting (gh #154) ─────────────────────────────
+
+
+def test_csv_preview_keeps_rows_with_quoted_delimiters(tmp_path):
+    (tmp_path / "data.csv").write_text(
+        'name,city,note\n'
+        '"Smith, John",NYC,vip\n'
+        'Doe,LA,regular\n'
+        '"O\'Neil, Pat",SF,"loyal, gold"\n',
+        newline="",
+    )
+    prev = FileManager(tmp_path).preview_file("data.csv")
+    assert prev["headers"] == ["name", "city", "note"]
+    assert prev["rows"] == [
+        {"name": "Smith, John", "city": "NYC", "note": "vip"},
+        {"name": "Doe", "city": "LA", "note": "regular"},
+        {"name": "O'Neil, Pat", "city": "SF", "note": "loyal, gold"},
+    ]
+
+
+def test_csv_preview_handles_crlf_quoted_header_and_embedded_newline(tmp_path):
+    (tmp_path / "d.csv").write_bytes(
+        b'"a,1",b\r\n"multi\r\nline",2\r\nx,3\r\n'
+    )
+    prev = FileManager(tmp_path).preview_file("d.csv")
+    assert prev["headers"] == ["a,1", "b"]
+    assert prev["rows"] == [{"a,1": "multi\r\nline", "b": "2"}, {"a,1": "x", "b": "3"}]
+
+
+def test_tsv_preview_still_splits_on_tabs(tmp_path):
+    (tmp_path / "d.tsv").write_text("a\tb\n1\t2\n", newline="")
+    prev = FileManager(tmp_path).preview_file("d.tsv")
+    assert prev["headers"] == ["a", "b"]
+    assert prev["rows"] == [{"a": "1", "b": "2"}]
+
+
+def test_csv_preview_caps_at_50_rows(tmp_path):
+    body = "n\n" + "".join(f"{i}\n" for i in range(80))
+    (tmp_path / "big.csv").write_text(body, newline="")
+    prev = FileManager(tmp_path).preview_file("big.csv")
+    assert len(prev["rows"]) == 50
+    assert prev["data"] == body
+
+
+# ── preview download_url is URL-encoded (gh #163) ────────────────────────────
+
+
+@pytest.mark.parametrize("name", ["Q3 report.pdf", "a+b.pdf", "x&y#z%.bin", "sub dir/w.bin"])
+def test_preview_download_url_is_url_encoded(tmp_path, name):
+    from urllib.parse import parse_qs, urlsplit
+
+    target = tmp_path / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"%PDF-1.4\n" if name.endswith(".pdf") else b"\x00\xff")
+    url = FileManager(tmp_path).preview_file(name)["download_url"]
+    parts = urlsplit(url)
+    assert parts.path == "/api/files/download"
+    assert " " not in url and "#" not in url and parts.fragment == ""
+    # A client decoding the query gets back exactly the file's path.
+    assert parse_qs(parts.query) == {"path": [name]}
+
+
+# ── deleting a symlink removes the link, not its target (gh #175) ────────────
+
+
+def test_delete_symlink_to_dir_removes_only_the_link(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / "data").mkdir(parents=True)
+    (ws / "data" / "keep.txt").write_text("precious")
+    _symlink_or_skip(ws / "link", ws / "data")
+
+    FileManager(ws).delete_path("link")
+
+    assert not (ws / "link").exists() and not (ws / "link").is_symlink()
+    assert (ws / "data" / "keep.txt").read_text() == "precious"
+
+
+def test_delete_symlink_to_file_removes_only_the_link(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "real.txt").write_text("precious")
+    _symlink_or_skip(ws / "alias.txt", ws / "real.txt")
+
+    FileManager(ws).delete_path("alias.txt")
+
+    assert not (ws / "alias.txt").is_symlink()
+    assert (ws / "real.txt").read_text() == "precious"
+
+
+def test_delete_escaping_symlink_removes_the_link_and_leaves_the_outside_alone(escaping_symlinks):
+    # The link itself lives inside the workspace, so removing IT is allowed; its
+    # out-of-workspace target is never touched.
+    fm = FileManager(escaping_symlinks)
+    fm.delete_path("leak")
+    fm.delete_path("leaked_file")
+    outside = escaping_symlinks.parent / "SECRET_OUTSIDE"
+    assert not (escaping_symlinks / "leak").is_symlink()
+    assert not (escaping_symlinks / "leaked_file").is_symlink()
+    assert (outside / "passwords.txt").read_text() == "creds"
+    assert (outside / "private" / "secret.txt").read_text() == "TOP SECRET"
+
+
+def test_delete_dangling_symlink_removes_it(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    _symlink_or_skip(ws / "dangling", ws / "gone.txt")
+    FileManager(ws).delete_path("dangling")
+    assert not (ws / "dangling").is_symlink()
+
+
+def test_delete_through_an_escaping_dir_link_is_still_rejected(escaping_symlinks):
+    # #148's containment rule still holds for anything BEHIND the link.
+    with pytest.raises(ValueError, match="escapes workspace"):
+        FileManager(escaping_symlinks).delete_path("leak/private")
+    assert (escaping_symlinks.parent / "SECRET_OUTSIDE" / "private").is_dir()
