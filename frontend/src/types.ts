@@ -170,10 +170,11 @@ export interface TodoItem {
 export interface CanvasItem {
   id: string;
   type: "dataframe" | "plotly" | "matplotlib" | "mermaid" | "image" | "html" | "markdown" | "section";
-  title: string;
+  // Present only when the tool was given one (gh #158).
+  title?: string;
   data: unknown;
   file?: string;
-  created_at: string;
+  created_at?: string;
   level?: number;
   source_cell?: number;
   execution_count?: number;

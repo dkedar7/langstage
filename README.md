@@ -123,6 +123,8 @@ server.stop()           # shut it down when you're done
 
 In a plain script or via the CLI, `run()` blocks exactly as it always has.
 
+Working directory: in a script or via the CLI, `run()` makes the workspace the process working directory, so a bring-your-own agent's relative file writes land where the file browser shows them. In a notebook the kernel's working directory is left alone, so your own cells' relative paths keep resolving against the notebook's folder. The bundled agent's file tools use the absolute workspace path either way.
+
 ### Enabling the Canvas
 
 The canvas is opt-in. Attach `CanvasMiddleware` to your agent and the Canvas tab appears in the UI automatically:

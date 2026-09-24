@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.websockets import WebSocketClose
 
 
 # Credentialed cross-origin access is granted ONLY to loopback origins by default:
@@ -29,7 +30,11 @@ class BasicAuthMiddleware:
 
     Protects all HTTP and WebSocket endpoints. The browser shows its
     native login dialog on 401. WebSocket connections are authenticated
-    on the upgrade request.
+    on the upgrade request (closed with 1008 before accept, which the server
+    turns into an HTTP 403). Other scopes (``lifespan``) pass through.
+
+    CORS preflights never reach this layer: ``CORSMiddleware`` sits outside it and
+    answers them itself (gh #155).
     """
 
     # Paths served without auth so an orchestrator / load-balancer liveness probe
@@ -42,7 +47,9 @@ class BasicAuthMiddleware:
         self._password = password
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        # Only lifespan is exempt. This used to be `!= "http"`, which passed every
+        # WebSocket upgrade through unauthenticated, despite the docstring.
+        if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
 
@@ -51,10 +58,14 @@ class BasicAuthMiddleware:
             return
 
         headers = dict(scope.get("headers", []))
-        auth_header = headers.get(b"authorization", b"").decode()
+        auth_header = headers.get(b"authorization", b"").decode("latin-1")
 
         if self._check_credentials(auth_header):
             await self.app(scope, receive, send)
+            return
+
+        if scope["type"] == "websocket":
+            await WebSocketClose(code=1008)(scope, receive, send)
             return
 
         # HTTP: send 401 to trigger browser login prompt
@@ -113,13 +124,21 @@ def add_middleware(
     auth_username: str = "admin",
     auth_password: str = "",
 ) -> None:
-    """Add middleware stack. CORS is always added; basic auth is conditional."""
-    # CORS (added first so preflight OPTIONS work even with auth). Loopback-only by
-    # default; LANGSTAGE_CORS_ORIGINS opts specific sites in. (gh #113)
-    app.add_middleware(CORSMiddleware, **_resolve_cors(os.getenv(_CORS_ORIGINS_ENV)))
+    """Add middleware stack. CORS is always added; basic auth is conditional.
 
+    ``add_middleware`` prepends, so the LAST one added is the OUTERMOST. Auth is
+    added first and CORS last, which puts CORS outside auth.
+    """
     # Basic auth (only when a password is configured). The "admin" default now
     # lives in the config layer, so use the resolved value directly — what
     # --show-config displays is exactly what the server enforces. (gh #35)
     if auth_password:
         app.add_middleware(BasicAuthMiddleware, username=auth_username or "admin", password=auth_password)
+
+    # CORS, outermost, so it answers a preflight OPTIONS itself before auth sees it.
+    # Browsers send preflights without credentials, so auth used to 401 them and
+    # break every cross-origin client once a password was set. A preflight only
+    # returns the CORS policy; the real request that follows is still
+    # authenticated. Loopback-only by default; LANGSTAGE_CORS_ORIGINS opts specific
+    # sites in. (gh #113, gh #155)
+    app.add_middleware(CORSMiddleware, **_resolve_cors(os.getenv(_CORS_ORIGINS_ENV)))

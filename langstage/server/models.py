@@ -223,8 +223,20 @@ class CronJob(_Schema):
 
 
 class CanvasItemResponse(_Schema):
+    """One item as ``load_canvas_from_markdown`` returns it (gh #158).
+
+    ``data`` is a string for markdown / html / mermaid / section items and structured
+    JSON for charts and tables. ``title`` exists only when the tool was given one,
+    and ``level`` only on sections. The old model required ``title`` and typed
+    ``data`` as a dict, so a real canvas 500'd the list route.
+    """
+
     id: str
     type: str
-    title: str
-    data: dict
-    created_at: str
+    title: str | None = None
+    data: Any = None
+    created_at: str | None = None
+    level: int | None = None
+    file: str | None = None
+    source_cell: int | None = None
+    execution_count: int | None = None

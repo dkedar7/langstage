@@ -1,10 +1,14 @@
 """File tree building, file reading, and filesystem watching."""
 
 import base64
+import csv
+import io
 import mimetypes
+import os
 import shutil
 from pathlib import Path
 from typing import AsyncGenerator
+from urllib.parse import quote
 
 from watchfiles import awatch, Change
 
@@ -58,6 +62,23 @@ SKIP_DIRS = {
     "build",
     ".egg-info",
 }
+
+
+class BinaryFileError(ValueError):
+    """``read_file`` was asked for a file that isn't UTF-8 text (gh #144).
+
+    ``/api/files/read`` returns text, so a binary is refused rather than lossily
+    decoded. ``/api/files/preview`` and ``/api/files/download`` serve binaries.
+    """
+
+
+def _download_url(path: str) -> str:
+    """The ``/api/files/download`` link for ``path``, with the query encoded (gh #163).
+
+    Raw interpolation broke on a space and sent ``&``/``+``/``#``/``%`` names to
+    the wrong path. ``safe="/"`` keeps separators readable and escapes the rest.
+    """
+    return f"/api/files/download?path={quote(path, safe='/')}"
 
 
 class FileChangeEvent:
@@ -142,19 +163,34 @@ class FileManager:
     _TEXT_EXTS = set(LANGUAGE_MAP.keys()) | TEXT_EXTENSIONS
 
     def read_file(self, path: str) -> dict:
-        """Read file content with language detection."""
+        """Read a UTF-8 text file exactly as it is on disk, with language detection.
+
+        The bytes are decoded as-is, with no newline translation, so CRLF stays CRLF,
+        and ``size`` is the byte size that tree/upload/download report. A file that
+        isn't UTF-8 text (or contains a NUL byte) raises :class:`BinaryFileError`
+        instead of coming back as lossily decoded "text". (gh #144)
+        """
         target = self._resolve_path(path)
         if not target.exists():
             raise FileNotFoundError(f"File not found: {path}")
         if target.is_dir():
             raise IsADirectoryError(f"Path is a directory: {path}")
 
-        content = target.read_text(errors="replace")
+        raw = target.read_bytes()
+        try:
+            if b"\x00" in raw:
+                raise UnicodeError
+            content = raw.decode("utf-8")
+        except UnicodeError:
+            raise BinaryFileError(
+                f"Not a UTF-8 text file: {path}. Use /api/files/preview or "
+                "/api/files/download for binary files."
+            ) from None
         lang = LANGUAGE_MAP.get(target.suffix.lower(), "text")
         return {
             "content": content,
             "language": lang,
-            "size": len(content),
+            "size": len(raw),
             "path": path,
         }
 
@@ -202,21 +238,32 @@ class FileManager:
 
         # CSV/TSV → first 50 rows as records + full text
         if ext in self._CSV_EXTS:
-            text = target.read_text(errors="replace")
+            # Decode the bytes as-is (no newline translation) and parse with the csv
+            # module, so RFC-4180 quoting works: a quoted cell holding the delimiter
+            # or a newline no longer splits into extra columns and drops the row,
+            # and the quote characters are stripped. (gh #154)
+            text = target.read_bytes().decode("utf-8", errors="replace")
             sep = "\t" if ext == ".tsv" else ","
+            reader = csv.reader(io.StringIO(text, newline=""), delimiter=sep)
+            headers: list[str] = []
             rows = []
-            lines = text.split("\n")
-            if lines:
-                headers = lines[0].split(sep)
-                for line in lines[1:51]:  # max 50 rows for preview
-                    vals = line.split(sep)
-                    if len(vals) == len(headers):
-                        rows.append(dict(zip(headers, vals)))
+            try:
+                headers = next(reader, [])
+                for vals in reader:
+                    if len(rows) >= 50:  # max 50 rows for preview
+                        break
+                    if not vals:  # blank line
+                        continue
+                    # A ragged row is padded / trimmed to the header, not dropped.
+                    vals = (vals + [""] * len(headers))[: len(headers)]
+                    rows.append(dict(zip(headers, vals)))
+            except csv.Error:
+                pass  # malformed tail: keep the rows parsed so far
             return {
                 **base,
                 "preview_type": "csv",
                 "language": "csv",
-                "headers": headers if lines else [],
+                "headers": headers,
                 "rows": rows,
                 "data": text,
             }
@@ -228,7 +275,7 @@ class FileManager:
                 **base,
                 "preview_type": "pdf",
                 "data": base64.b64encode(pdf_bytes).decode("utf-8"),
-                "download_url": f"/api/files/download?path={path}",
+                "download_url": _download_url(path),
             }
 
         # Text files → read as text with language
@@ -249,7 +296,7 @@ class FileManager:
         return {
             **base,
             "preview_type": "binary",
-            "download_url": f"/api/files/download?path={path}",
+            "download_url": _download_url(path),
         }
 
     def get_absolute_path(self, path: str) -> Path:
@@ -272,7 +319,17 @@ class FileManager:
         return {"path": path, "name": target.name, "size": len(content)}
 
     def delete_path(self, path: str) -> dict:
-        """Delete a file or directory (recursively)."""
+        """Delete a file or directory (recursively).
+
+        A symlink (or Windows junction) is removed itself, never its target: the old
+        code resolved the link first, so deleting ``link -> data/`` deleted ``data/``.
+        (gh #175)
+        """
+        link = self._unresolved_link(path)
+        if link is not None:
+            _remove_link(link)
+            return {"path": path, "name": link.name}
+
         target = self._resolve_path(path)
         if not target.exists():
             raise FileNotFoundError(f"Path not found: {path}")
@@ -329,9 +386,52 @@ class FileManager:
             raise ValueError(f"Path escapes workspace: {path}")
         return resolved
 
+    def _unresolved_link(self, path: str) -> Path | None:
+        """The link at ``path`` itself (not followed) if it is a symlink/junction.
+
+        Only the parent is resolved. #148's containment rule applies to where the
+        LINK lives: its parent must resolve inside the workspace, so a link reached
+        through an escaping directory link returns None (and ``_resolve_path`` then
+        rejects the path).
+        """
+        lexical = self.workspace / path.lstrip("/")
+        if lexical == self.workspace or lexical.name in ("", ".", ".."):
+            return None
+        try:
+            parent = lexical.parent.resolve()
+        except (OSError, RuntimeError):
+            return None
+        if not parent.is_relative_to(self.workspace):
+            return None
+        candidate = parent / lexical.name
+        if candidate.is_symlink() or _is_junction(candidate):
+            return candidate
+        return None
+
     def _is_contained(self, path: Path) -> bool:
         """True if ``path``'s real (symlink-resolved) location is inside the workspace."""
         try:
             return path.resolve().is_relative_to(self.workspace)
         except (OSError, RuntimeError):  # unresolvable (e.g. a symlink loop)
             return False
+
+
+def _is_junction(path: Path) -> bool:
+    """True for a Windows directory junction (``Path.is_junction`` is 3.12+)."""
+    check = getattr(path, "is_junction", None)
+    try:
+        return bool(check()) if check else False
+    except OSError:
+        return False
+
+
+def _remove_link(link: Path) -> None:
+    """Remove a symlink or junction without touching its target.
+
+    On Windows a directory symlink or junction is removed with ``rmdir``, which
+    drops the link itself and never recurses. Everything else is ``unlink``.
+    """
+    if os.name == "nt" and (_is_junction(link) or link.is_dir()):
+        os.rmdir(link)
+    else:
+        link.unlink()
