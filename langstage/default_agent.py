@@ -1,10 +1,7 @@
 """Default deepagent when no --agent is provided."""
 
-# ruff: noqa: E402 - load .env before importing modules that read configuration.
-
-import re
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,6 +11,7 @@ from langstage_core.demo import create_default_agent as _build_default_agent
 from langstage_core.demo.agent import DEFAULT_MODEL
 from langstage_core.tasks import TASK_TOOLS
 
+from langstage.agent_tools import agent_tool_names
 from langstage.config import WORKSPACE_ROOT as _WORKSPACE_ROOT
 from langstage.middleware import CanvasMiddleware
 from langstage.scheduler import CRON_TOOLS
@@ -21,6 +19,7 @@ from langstage.tools import (
     bash,
     create_cell,
     delete_cell,
+    display_inline,
     execute_all_cells,
     execute_cell,
     get_script,
@@ -28,8 +27,7 @@ from langstage.tools import (
     insert_cell,
     modify_cell,
     reset_notebook,
-    display_inline,
-    think_tool
+    think_tool,
 )
 
 SYSTEM_PROMPT = """You are a helpful AI assistant with access to a filesystem workspace and a Python code execution environment.
@@ -139,28 +137,11 @@ AGENT_TOOLS = [
     *TASK_TOOLS,  # start/check/list/update/cancel_async_task — agent self-delegation
 ]
 
-def _deepagents_has_builtin_todo_middleware(version_text: str | None = None) -> bool:
-    """DeepAgents < 0.7 injected write_todos by default; newer releases do not."""
-    try:
-        raw = version_text if version_text is not None else version("deepagents")
-    except PackageNotFoundError:
-        return False
-    match = re.match(r"^(\d+)\.(\d+)", raw)
-    if not match:
-        return False
-    return (int(match.group(1)), int(match.group(2))) < (0, 7)
-
-
-# Middleware list used by the bundled default agent.
+# Base middleware list used by the bundled default agent.
 AGENT_MIDDLEWARE = [CanvasMiddleware()]
-if not _deepagents_has_builtin_todo_middleware():
-    AGENT_MIDDLEWARE.append(TodoListMiddleware())
 
-# Global agent for physical filesystem mode (writes to disk via the shared
-# demo factory's FilesystemBackend + InMemorySaver boilerplate). Cowork supplies
-# the prompt, notebook/display tools, canvas middleware, and bash interrupt.
-def _make_default_agent(ws_root: str):
-    """Build the LangStage default deepagent rooted at ``ws_root``."""
+
+def _build_agent_with_middleware(ws_root: str, middleware: list[object]):
     a = _build_default_agent(
         workspace=ws_root,
         # An explicit model: deepagents deprecates model=None (removed in 1.0), and
@@ -169,14 +150,27 @@ def _make_default_agent(ws_root: str):
         name="LangStage",
         system_prompt=SYSTEM_PROMPT,
         tools=AGENT_TOOLS,
-        middleware=AGENT_MIDDLEWARE,
-        interrupt_on=dict(bash=True),
+        middleware=middleware,
+        interrupt_on={"bash": True},
         virtual_mode=True,
     )
     # Preserve the middleware list for runtime introspection. deepagents fuses
     # middleware into the compiled graph, so we stash the originals so that
-    # agent_uses_canvas_middleware() can still detect them.
-    a.middleware = AGENT_MIDDLEWARE
+    # agent_uses_canvas_middleware() and agent_tool_names() can still detect them.
+    a.middleware = middleware
+    return a
+
+
+# Global agent for physical filesystem mode (writes to disk via the shared
+# demo factory's FilesystemBackend + InMemorySaver boilerplate). Cowork supplies
+# the prompt, notebook/display tools, canvas middleware, and bash interrupt.
+def _make_default_agent(ws_root: str):
+    """Build the LangStage default deepagent rooted at ``ws_root``."""
+    middleware = list(AGENT_MIDDLEWARE)
+    a = _build_agent_with_middleware(ws_root, middleware)
+    if "write_todos" not in (agent_tool_names(a) or set()):
+        middleware = [*middleware, TodoListMiddleware()]
+        a = _build_agent_with_middleware(ws_root, middleware)
     # The demo factory gives us an in-memory checkpointer; mark it so the server
     # upgrades it to a durable SQLite one at startup (survives restarts).
     a._langstage_auto_checkpointer = True

@@ -42,17 +42,69 @@ def test_default_agent_imports_and_exposes_middleware():
     )
 
 
-def test_default_agent_adds_todo_middleware_when_deepagents_stops_defaulting_it():
-    from langstage.default_agent import _deepagents_has_builtin_todo_middleware
+def test_default_agent_adds_todo_middleware_only_when_missing(monkeypatch):
+    from langstage import default_agent
 
-    assert _deepagents_has_builtin_todo_middleware("0.3.3") is True
-    assert _deepagents_has_builtin_todo_middleware("0.7.11") is False
+    class FakeTodoMiddleware:
+        def __init__(self):
+            self.tools = [type("Tool", (), {"name": "write_todos"})()]
+
+    class FakeToolNode:
+        def __init__(self):
+            self.tools_by_name = {"write_todos": object()}
+
+    class FakeAgent:
+        def __init__(self, has_todos=False):
+            self.nodes = {"tools": FakeToolNode()} if has_todos else {}
+
+    built_middleware = []
+
+    def fake_build_default_agent(**kwargs):
+        built_middleware.append(kwargs["middleware"])
+        return FakeAgent(has_todos=len(built_middleware) > 1)
+
+    monkeypatch.setattr(default_agent, "_build_default_agent", fake_build_default_agent)
+    monkeypatch.setattr(default_agent, "TodoListMiddleware", FakeTodoMiddleware)
+
+    a = default_agent._make_default_agent("/tmp/langstage")
+
+    assert len(built_middleware) == 2
+    assert len(built_middleware[0]) + 1 == len(built_middleware[1])
+    assert isinstance(a.middleware[-1], FakeTodoMiddleware)
+    assert a._langstage_auto_checkpointer is True
 
 
-def test_default_agent_exposes_write_todos_for_plan():
+def test_default_agent_does_not_duplicate_builtin_write_todos(monkeypatch):
+    from langstage import default_agent
+
+    class FakeToolNode:
+        def __init__(self):
+            self.tools_by_name = {"write_todos": object()}
+
+    class FakeAgent:
+        def __init__(self):
+            self.nodes = {"tools": FakeToolNode()}
+
+    built_middleware = []
+
+    def fake_build_default_agent(**kwargs):
+        built_middleware.append(kwargs["middleware"])
+        return FakeAgent()
+
+    monkeypatch.setattr(default_agent, "_build_default_agent", fake_build_default_agent)
+
+    a = default_agent._make_default_agent("/tmp/langstage")
+
+    assert built_middleware == [a.middleware]
+    assert len(built_middleware) == 1
+
+
+def test_default_agent_exposes_write_todos_for_plan(tmp_path):
     """The bundled default agent must keep the Plan tab's `write_todos` tool bound."""
     from langstage.cli import _agent_tool_names
-    from langstage.default_agent import agent
+    from langstage.default_agent import create_default_agent
+
+    agent = create_default_agent(tmp_path)
 
     assert "write_todos" in (_agent_tool_names(agent) or set())
 
@@ -90,8 +142,9 @@ def test_default_agent_build_passes_an_explicit_model(monkeypatch, tmp_path):
     """gh #169: `model=None` is deprecated in deepagents and removed in 1.0. The
     build must name a model (core's DEFAULT_MODEL, which is what deepagents picked
     for None anyway) and so emit no model=None deprecation warning."""
-    import langstage.default_agent as da
     from langstage_core.demo.agent import DEFAULT_MODEL
+
+    from langstage import default_agent as da
 
     seen = {}
     real = da._build_default_agent
