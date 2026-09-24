@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.13.37 — 2026-09-24
+
+Adopts langstage-core 1.0.36, which fixes several of these at the root, and moves the
+CLI onto core's config reporting and console helpers. **Requires `langstage-core>=1.0.36`.**
+
+### Fixed
+- **`config` / `--show-config` no longer say "no langstage.toml found" when the file is
+  there but malformed (gh #170).** The footer now names the file as MALFORMED, with the
+  parse error. `config --json` is now core's `config_dict()`: each field also carries its
+  env var / TOML key, `toml` gains `found`, `paths`, `malformed` and `malformed_files`, and
+  a top-level `issues` list is added. The old `toml_read_from` and `unknown_toml_keys`
+  keys are kept.
+- **`config --strict` fails on every degraded value, not only unknown keys (gh #138).** It
+  exits 1 on a malformed `langstage.toml`, a malformed value (`LANGSTAGE_PORT=notanum`,
+  `LANGSTAGE_SHOW_FILES=flase`), an invalid value (port 70000, an unknown theme from env
+  or TOML) or an unknown key. It prints one stderr line per issue, and `--json` lists them
+  under `issues`.
+- **`check --json` / `chat --json` stay pure JSON when the agent prints at import time
+  (gh #140).** The agent is loaded with core's `stdout_to_stderr=True`, so a library's
+  load banner goes to stderr and the README's `| jq -e ...` gate parses.
+- **`config` / `--show-config` no longer crash on a cp1252 console (gh #146)** when a
+  value such as the welcome message contains an emoji. All CLI output now goes through
+  `langstage_core.console` (`safe_print`, or `console_safe` for the colored `check`
+  lines), which replaces the local `_echo_streamsafe`.
+- **`langstage run --debug` puts the agent's crash traceback on the SSE error frame
+  (gh #134)**, as `LANGSTAGE_DEBUG=1` already did. A resolved `debug=True` from the flag or
+  the Python API is published as `LANGSTAGE_DEBUG`, which core reads when it reports an
+  error.
+- **The chat UI attaches each tool's extraction to its own call.** Core emits
+  `extraction` after the call's `tool_end`, but the UI only attached it to a call still
+  marked running. The extraction was dropped, or landed on a parallel call to the same
+  tool. It is now matched by id: the frame's own, or the `tool_end` right before it. The
+  task-detail view had the same bug and gets the same fix.
+- **A stopped server no longer leaves its graph holding a closed SQLite checkpointer.**
+  The in-memory saver is restored on shutdown, so a graph reused after
+  `BackgroundServer.stop()` (or served again in the same process) keeps working.
+
+### Fixed in langstage-core 1.0.36 (regression-tested here)
+- A `file.py:attr` agent can import its sibling modules (gh #167).
+- A stdlib `typing.TypedDict` state works on every turn on Python 3.11 (gh #166).
+- `tool_end` carries a real `duration_ms`, so the tool-call card shows the duration the
+  README advertises (gh #160).
+- `DEEPAGENTS_CONFIG_HOME` prints the one-time legacy notice (gh #136).
+
+### Changed
+- `load_agent_spec` now rejects a spec whose attribute is a `str`, with a clear error.
+  `check` reports it as a load failure rather than "not runnable".
+- A dotted `pkg.mod:attr` spec from `langstage.toml` resolves from that file's directory.
+
 ## 0.13.36 — 2026-09-23
 
 Security and data-loss fixes. No dependency change.

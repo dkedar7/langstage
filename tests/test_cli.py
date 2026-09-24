@@ -177,7 +177,11 @@ def test_check_fails_on_non_graph_object(tmp_path):
         agent = _write(tmp_path, "obj.py", body)
         result = CliRunner().invoke(cli_mod.main, ["check", "--agent", f"{agent}:graph"])
         assert result.exit_code == 1, result.output
-        assert "not runnable" in result.output
+        # Since langstage-core 1.0.36 the loader itself rejects a str attribute (it used
+        # to be re-read as another spec), so that one fails at load, not at the
+        # runnability check.
+        expected = "not an agent" if "my_agent" in body else "not runnable"
+        assert expected in result.output
         assert "[ ok ] loads" not in result.output
 
 
@@ -293,7 +297,8 @@ def test_config_json_emits_value_and_source_per_field():
     payload = json.loads(result.output)
     assert "config" in payload and "toml_read_from" in payload
     # a representative field carries both its value and its source
-    assert set(payload["config"]["port"]) == {"value", "source"}
+    # (plus, since core 1.0.36's config_dict(), the env var / TOML key that sets it)
+    assert set(payload["config"]["port"]) >= {"value", "source", "env", "toml"}
     assert payload["config"]["port"]["value"] == 8050
 
 

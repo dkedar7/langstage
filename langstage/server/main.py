@@ -89,6 +89,7 @@ def create_fastapi_app(
                 ckpt_cm = AsyncSqliteSaver.from_conn_string(str(ckpt_db))
                 saver = await ckpt_cm.__aenter__()
                 await saver.setup()
+                app.state._ckpt_prior = agent.checkpointer
                 agent.checkpointer = saver
                 app.state._ckpt_cm = ckpt_cm
             except Exception:  # noqa: BLE001 - keep the in-memory saver on failure
@@ -110,6 +111,12 @@ def create_fastapi_app(
             await task_store.close()
             ckpt_cm = getattr(app.state, "_ckpt_cm", None)
             if ckpt_cm is not None:
+                # Put the in-memory saver back before closing the SQLite one, so the
+                # graph object isn't left holding a closed connection ("no active
+                # connection") when it outlives this server: a notebook that stops a
+                # BackgroundServer and reuses the graph, or a module-cached graph
+                # served again in the same process.
+                agent.checkpointer = app.state._ckpt_prior
                 try:
                     await ckpt_cm.__aexit__(None, None, None)
                 except Exception:  # noqa: BLE001

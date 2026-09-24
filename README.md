@@ -195,8 +195,11 @@ langstage check --agent my_agent.py:graph --json \
 ```
 
 `langstage config --json` likewise emits the resolved config (each field's value + source,
-plus the TOML files read), so a deploy step can assert a container resolved its
-env / `langstage.toml` the way it was meant to.
+plus the TOML files read, including one that was found but is malformed), so a deploy step
+can assert a container resolved its env / `langstage.toml` the way it was meant to. Its
+`issues` list names everything that was ignored or degraded: a malformed `langstage.toml`,
+a malformed or invalid value (a bad port, an unknown theme), an unknown key.
+`langstage config --strict` exits 1 when that list isn't empty, so CI can gate on it.
 
 ## Task board
 

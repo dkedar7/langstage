@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.13.36"
+version = "0.13.37"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -25,7 +25,14 @@ dependencies = [
     # >=1.0.33 for the resolver's port-range validator: an out-of-range port (70000) from
     # env / TOML / a Python override now degrades to the default + a note instead of being
     # silently masked to 16 bits by uvicorn at bind time (gh #123).
-    "langstage-core[agui]>=1.0.33",
+    # >=1.0.36 for: a file.py:attr agent importing its sibling modules (gh #167);
+    # load_agent_spec(stdout_to_stderr=) so `check --json` / `chat --json` stay pure JSON
+    # (gh #140); config_dict()/config_issues() reporting a malformed langstage.toml and
+    # every degraded value (gh #170, #138); langstage_core.console.safe_print (gh #146);
+    # the DEEPAGENTS_CONFIG_HOME legacy notice (gh #136); a resolved-debug traceback on the
+    # error frame (gh #134); stdlib typing.TypedDict state on 3.11 (gh #166); and a real
+    # tool duration_ms on tool_end (gh #160).
+    "langstage-core[agui]>=1.0.36",
     # Any real use of langstage already has langgraph in the env (it is the
     # thing being hosted); declaring it makes `run --demo` work on a bare install.
     "langgraph>=1.0",
@@ -53,7 +60,7 @@ deepagents = [
 # Redundant since AG-UI moved into base deps (core 1.0); kept as a no-op alias so
 # existing `pip install langstage[agui]` scripts/READMEs still resolve.
 agui = [
-    "langstage-core[agui]>=1.0.33",
+    "langstage-core[agui]>=1.0.36",
 ]
 dev = [
     "pytest>=8",
