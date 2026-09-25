@@ -136,3 +136,20 @@ async def test_resume_400_when_not_review(ctx):
         f"/api/tasks/{tid}/resume", json={"decisions": [{"type": "approve"}]}
     )
     assert res.status_code == 400  # not awaiting review
+
+
+# ── gh #165: a per-task agent_spec is rejected, not silently ignored ─────────
+
+
+async def test_create_with_agent_spec_is_rejected(ctx):
+    client, store = ctx
+    r = await client.post("/api/tasks", json={"prompt": "hi", "agent_spec": "other.py:graph"})
+    assert r.status_code == 422, r.text
+    assert "agent_spec" in r.text
+    assert await store.list() == []  # nothing was enqueued
+
+
+async def test_create_with_null_agent_spec_still_works(ctx):
+    client, store = ctx
+    r = await client.post("/api/tasks", json={"prompt": "hi", "agent_spec": None})
+    assert r.status_code == 201, r.text

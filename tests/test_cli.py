@@ -338,7 +338,7 @@ def test_chat_requires_a_prompt():
 def test_chat_requires_an_agent_or_demo():
     result = CliRunner().invoke(cli_mod.main, ["chat", "hi"])
     assert result.exit_code != 0
-    assert "Provide --agent" in result.output
+    assert "--agent" in result.output and "LANGSTAGE_AGENT_SPEC" in result.output
 
 
 def test_chat_nonzero_exit_when_the_agent_errors(tmp_path):
@@ -362,3 +362,61 @@ def test_chat_bad_agent_spec_is_a_clean_error():
     """A load failure surfaces as click's one-line `Error: …`, mirroring run/check."""
     result = CliRunner().invoke(cli_mod.main, ["chat", "--agent", "mymodule", "hi"])
     _assert_clean_run_error(result)
+
+
+# ── check / chat honor the resolved agent_spec (gh #143) ─────────────────────
+# `run` serves LANGSTAGE_AGENT_SPEC / `[agent] spec` with no --agent; check and chat
+# used to guard on the raw flag and demand --agent anyway.
+
+_STUB = "langstage_core.demo.stub:graph"
+
+
+def test_check_honors_agent_spec_from_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LANGSTAGE_AGENT_SPEC", _STUB)
+    result = CliRunner().invoke(cli_mod.main, ["check"])
+    assert result.exit_code == 0, result.output
+    assert _STUB in result.output
+
+
+def test_check_honors_agent_spec_from_toml(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LANGSTAGE_AGENT_SPEC", raising=False)
+    monkeypatch.delenv("DEEPAGENT_AGENT_SPEC", raising=False)
+    (tmp_path / "langstage.toml").write_text(f'[agent]\nspec = "{_STUB}"\n')
+    result = CliRunner().invoke(cli_mod.main, ["check", "--json"])
+    assert result.exit_code == 0, result.output
+    import json
+
+    assert json.loads(result.output)["spec"] == _STUB
+
+
+def test_check_toml_file_spec_resolves_relative_to_the_toml(tmp_path, monkeypatch):
+    """A relative `file.py:attr` in a parent langstage.toml loads from the toml's
+    directory, exactly as `run` does, not from the cwd."""
+    monkeypatch.delenv("LANGSTAGE_AGENT_SPEC", raising=False)
+    monkeypatch.delenv("DEEPAGENT_AGENT_SPEC", raising=False)
+    (tmp_path / "agent.py").write_text("from langstage_core.demo.stub import graph\n")
+    (tmp_path / "langstage.toml").write_text('[agent]\nspec = "agent.py:graph"\n')
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    monkeypatch.chdir(sub)
+    result = CliRunner().invoke(cli_mod.main, ["check"])
+    assert result.exit_code == 0, result.output
+
+
+def test_chat_honors_agent_spec_from_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LANGSTAGE_AGENT_SPEC", _STUB)
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--workspace", str(tmp_path), "hello resolved"])
+    assert result.exit_code == 0, result.output
+    assert "hello resolved" in result.output
+
+
+def test_check_without_any_spec_names_every_source(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LANGSTAGE_AGENT_SPEC", raising=False)
+    monkeypatch.delenv("DEEPAGENT_AGENT_SPEC", raising=False)
+    result = CliRunner().invoke(cli_mod.main, ["check"])
+    assert result.exit_code == 2
+    assert "LANGSTAGE_AGENT_SPEC" in result.output

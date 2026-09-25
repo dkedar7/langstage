@@ -55,19 +55,33 @@ def context_parts(cwd: str | None = None) -> list[str]:
     Forwarded to ``SessionAdapter.submit_message(context_parts=...)``, which
     feeds them through ``prepare_agent_input``.
 
+    ``[Working directory: ...]`` is the resolved workspace (``core.workspace_root()``),
+    the directory ``run()`` makes the process cwd (ADR 0006), so relative paths the
+    agent uses resolve there. Reporting the raw virtual ``/`` told a bring-your-own
+    agent its cwd was the filesystem root (dogfood F4).
+
     ``cwd`` is the file browser's current folder as a *virtual* path (``/`` = the
-    workspace root). We report the **real filesystem** working directory the agent
-    operates in — the resolved workspace (``core.workspace_root()``) with that
-    virtual subfolder applied — not the raw virtual path. Reporting the raw ``/``
-    told the agent its working directory was the filesystem root (misleading, and
-    actively wrong for a bring-your-own agent that resolves paths against it).
+    workspace root). It used to be folded into the working-directory line, so with a
+    subfolder open the agent was told it was in ``<workspace>/reports`` while relative
+    writes landed in ``<workspace>`` (gh #172). The process is not chdir'd per turn:
+    the cwd is process-global and shared with concurrent tasks and schedules, so ADR
+    0006 enters the workspace once. Instead the folder is reported on its own line,
+    as what the user is looking at, with a note that relative paths don't follow it.
     """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     parts = [f"[Current time: {now}]"]
     root = workspace_root()
+    parts.append(f"[Working directory: {root}]")
     sub = (cwd or "").strip("/\\")
-    working_dir = (root / sub) if sub else root
-    parts.append(f"[Working directory: {working_dir}]")
+    if sub:
+        browsed = (root / sub).resolve()
+        # Only a folder inside the workspace; a `..` path is not something the file
+        # browser can show, so don't pass it on.
+        if browsed != root.resolve() and browsed.is_relative_to(root.resolve()):
+            parts.append(
+                f"[File browser folder: {browsed} - the folder the user has open; "
+                f"relative paths still resolve against the working directory]"
+            )
     return parts
 
 

@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.13.39 — 2026-09-25
+
+Makes several advertised behaviors true, or stops advertising them, and brings the
+OpenAPI schema in line with the responses. Caps `deepagents` below 1.0.
+
+### Fixed
+- **`check` and `chat` use the configured agent (gh #143).** With no `--agent`, they
+  now load the spec resolved from `LANGSTAGE_AGENT_SPEC` or `[agent] spec` in
+  `langstage.toml`, the one `run` serves, instead of exiting with `Provide --agent`.
+  A relative `file.py:attr` from a TOML file loads relative to that file, as in `run`.
+  With nothing configured, the error now names the env var and the TOML key.
+- **The chat no longer tells the agent it is in the file browser's subfolder
+  (gh #172).** With a subfolder open, `[Working directory: ...]` named
+  `<workspace>/<sub>`, but the process cwd is the workspace root, so a relative write
+  landed in the root. Changing the cwd per turn isn't safe (it is process-global and
+  shared with running tasks and schedules; ADR 0006 enters the workspace once), so
+  the working-directory line now reports the workspace root, and the open folder
+  comes on its own `[File browser folder: ...]` line that says relative paths don't
+  follow it.
+- **`POST /api/tasks` rejects a per-task `agent_spec` with 422 (gh #165).** The field
+  was stored and echoed but never used, so a task "delegated" to another agent ran
+  the host agent, and a spec that doesn't exist reported `done`. Loading a module path
+  sent over REST would let any caller import code into the server, so the field is
+  rejected instead of honored. Omitting it or sending `null` works as before.
+- **`LANGSTAGE_CORS_ORIGINS` is a config field (gh #141).** The middleware read it
+  with `os.getenv`, so `config` / `--show-config` / `config --json` never showed the
+  setting that widens cross-origin access, and it had no TOML key. It is now
+  `cors_origins` (env `LANGSTAGE_CORS_ORIGINS`, TOML `[server] cors_origins`, which
+  also takes an array), `init` scaffolds it, and the server enforces the resolved value.
+  An `AppConfig` built in Python without `cors_origins` no longer picks up the env var
+  behind its back.
+- **`init --path cfg/` says when the file won't be read (gh #142).** Project config
+  is found by walking up from the cwd, so a file written into a subdirectory, or
+  under another name, is never read from where you ran `init`. `init` now prints a
+  note saying so and what to do, instead of "then `langstage config` to verify".
+- **`init` marks example values (gh #152).** `show_canvas = true` looked like a
+  default, but the default is auto, and uncommenting it forced an empty Canvas tab
+  on. Keys whose default is unset or auto (`spec`, `show_canvas`, `show_files`) now
+  carry `example; default: ...` on the line, and the header says so.
+- **`POST /api/files/mkdir` accepts `?path=` (gh #159)**, as the upload docs and the
+  README advertise, as well as the JSON body the UI sends. A missing path is 422.
+- **OpenAPI `CronJob` includes `last_run_state` (gh #135)**, and **`FilePreview`
+  includes `headers`, `rows`, `download_url` and `mime` (gh #162)**, the fields the
+  responses already carried. Response bodies are unchanged.
+- **The default agent is built once, with an explicit model (gh #169).** An
+  unused agent was built at import time, so every start built two and printed the
+  `create_deep_agent(model=None)` deprecation warning twice. That build is gone, and
+  the model is core's `DEFAULT_MODEL` (the one deepagents picked for `None`), so the
+  warning is gone too. The module no longer exports `agent`.
+
+### Dependencies
+- **`langstage[deepagents]` now requires `deepagents>=0.3,<1.0` (gh #169)**, since
+  deepagents 1.0 removes `model=None` and would break the default agent on a fresh
+  install.
+- `uv.lock` is refreshed. It pinned a `langchain` too old for `deepagents` 0.7, so
+  `uv run pytest` failed locally.
+
 ## 0.13.38 — 2026-09-24
 
 Local correctness fixes for the files API, CORS under auth, the canvas list and the
@@ -7,7 +64,8 @@ notebook path. No dependency change.
 
 ### Fixed
 - **`GET /api/files/read` returns the file as it is on disk (gh #144).** It used
-  `read_text(errors="replace")`, so a CRLF file lost every ``, a binary came back as
+  `read_text(errors="replace")`, so a CRLF file lost every `
+`, a binary came back as
   lossily decoded `language: "text"`, and `size` was the decoded character count. The
   bytes are now decoded without newline translation, and `size` is the byte size that
   `tree`, `upload` and `download` report. A file that isn't UTF-8 text (or contains a

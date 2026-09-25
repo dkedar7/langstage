@@ -143,6 +143,7 @@ def create_fastapi_app(
         debug=config.debug,
         auth_username=config.auth_username,
         auth_password=config.auth_password,
+        cors_origins=config.cors_origins,
     )
 
     # Shared services

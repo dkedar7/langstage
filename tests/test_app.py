@@ -648,3 +648,107 @@ def test_auth_covers_websocket_upgrades(auth_app):
     token = base64.b64encode(b"myuser:mypass").decode()
     with client.websocket_connect("/ws-probe", headers={"Authorization": f"Basic {token}"}) as ws:
         assert ws.receive_text() == "hi"
+
+
+# ── gh #141: LANGSTAGE_CORS_ORIGINS goes through the config layer ────────────
+
+
+def test_cors_origins_is_a_resolved_config_field(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LANGSTAGE_CORS_ORIGINS", "https://a.example")
+    cfg = AppConfig.resolve()
+    assert cfg.cors_origins == "https://a.example"
+    assert "cors_origins" in cfg.describe()
+
+
+def test_cors_origins_from_toml(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LANGSTAGE_CORS_ORIGINS", raising=False)
+    (tmp_path / "langstage.toml").write_text('[server]\ncors_origins = "https://t.example"\n')
+    assert AppConfig.resolve().cors_origins == "https://t.example"
+
+
+@pytest.mark.asyncio
+async def test_server_enforces_the_resolved_cors_origins(workspace, mock_agent, monkeypatch):
+    # What the server grants is what the config says, not a side-channel env read.
+    monkeypatch.delenv("LANGSTAGE_CORS_ORIGINS", raising=False)
+    config = AppConfig(workspace_root=workspace, cors_origins="https://ok.example")
+    app = create_fastapi_app(agent=mock_agent, workspace=workspace, config=config)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get("/api/config", headers={"Origin": "https://ok.example"})
+        assert resp.headers.get("access-control-allow-origin") == "https://ok.example"
+
+
+@pytest.mark.asyncio
+async def test_raw_env_no_longer_bypasses_the_config(workspace, mock_agent, monkeypatch):
+    # A config built without the origin (e.g. an explicit Python override) wins:
+    # the middleware no longer re-reads os.environ behind the config's back.
+    monkeypatch.setenv("LANGSTAGE_CORS_ORIGINS", "https://evil.example")
+    config = AppConfig(workspace_root=workspace)
+    app = create_fastapi_app(agent=mock_agent, workspace=workspace, config=config)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get("/api/config", headers={"Origin": "https://evil.example"})
+        assert resp.headers.get("access-control-allow-origin") is None
+
+
+def test_resolve_cors_accepts_a_toml_list():
+    cfg = _resolve_cors(["https://a.example", "https://b.example"])
+    assert cfg["allow_origins"] == ["https://a.example", "https://b.example"]
+
+
+# ── gh #159: mkdir accepts ?path= as well as a JSON body ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_mkdir_accepts_query_path(client, workspace):
+    resp = await client.post("/api/files/mkdir?path=reports")
+    assert resp.status_code == 200, resp.text
+    assert (workspace / "reports").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_mkdir_still_accepts_json_body(client, workspace):
+    resp = await client.post("/api/files/mkdir", json={"path": "bodydir"})
+    assert resp.status_code == 200, resp.text
+    assert (workspace / "bodydir").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_mkdir_without_path_is_422(client):
+    resp = await client.post("/api/files/mkdir")
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_openapi_mkdir_documents_query_path(client):
+    spec = (await client.get("/openapi.json")).json()
+    op = spec["paths"]["/api/files/mkdir"]["post"]
+    assert any(p["name"] == "path" and p["in"] == "query" for p in op.get("parameters", []))
+    assert not op.get("requestBody", {}).get("required", False)
+
+
+# ── gh #135 / #162: response schemas carry the runtime fields ────────────────
+
+
+@pytest.mark.asyncio
+async def test_openapi_cronjob_has_last_run_state(client):
+    spec = (await client.get("/openapi.json")).json()
+    assert "last_run_state" in spec["components"]["schemas"]["CronJob"]["properties"]
+
+
+@pytest.mark.asyncio
+async def test_openapi_filepreview_has_variant_fields(client):
+    spec = (await client.get("/openapi.json")).json()
+    props = spec["components"]["schemas"]["FilePreview"]["properties"]
+    for key in ("headers", "rows", "download_url", "mime"):
+        assert key in props, key
+
+
+@pytest.mark.asyncio
+async def test_csv_preview_body_unchanged_by_the_schema(client):
+    body = (await client.get("/api/files/preview?path=data.csv")).json()
+    assert body["headers"] == ["a", "b"]
+    assert body["rows"] == [{"a": "1", "b": "2"}]
+    assert "download_url" not in body and "mime" not in body  # unset optionals stay out

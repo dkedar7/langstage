@@ -1,7 +1,6 @@
 """CORS and authentication middleware."""
 
 import base64
-import os
 import secrets
 
 from fastapi import FastAPI
@@ -21,8 +20,9 @@ from starlette.websockets import WebSocketClose
 # the agent on the default local server. (gh #113)
 _LOOPBACK_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
 
-# Env opt-in for a user who genuinely needs to allow specific cross-origin sites.
-_CORS_ORIGINS_ENV = "LANGSTAGE_CORS_ORIGINS"
+# The opt-in for specific cross-origin sites is the resolved ``cors_origins`` config
+# field (LANGSTAGE_CORS_ORIGINS / ``[server] cors_origins``), passed in by the app
+# factory, so `config` shows exactly what the server enforces (gh #141).
 
 
 class BasicAuthMiddleware:
@@ -92,7 +92,7 @@ class BasicAuthMiddleware:
         )
 
 
-def _resolve_cors(env_origins: str | None) -> dict:
+def _resolve_cors(origins: str | list[str] | None) -> dict:
     """Compute safe CORS kwargs for ``CORSMiddleware``.
 
     Default: credentialed access is granted only to loopback origins via
@@ -100,14 +100,19 @@ def _resolve_cors(env_origins: str | None) -> dict:
     same-origin SPA and a local dev server, but a drive-by website is never
     reflected, so it can't read/write the workspace or drive the agent (gh #113).
 
-    Opt-in: ``LANGSTAGE_CORS_ORIGINS`` is a comma-separated list of origins a user
-    genuinely needs to allow. Those are matched exactly, with credentials. A literal
+    Opt-in: ``cors_origins`` (``LANGSTAGE_CORS_ORIGINS`` / ``[server] cors_origins``)
+    is a comma-separated list of origins a user genuinely needs to allow (a TOML
+    array works too). Those are matched exactly, with credentials. A literal
     ``*`` is honored but FORCES ``allow_credentials=False`` -- the browser forbids
     ``*`` together with credentials, and shipping the reflect-any-origin combination
     is exactly the anti-pattern this closes.
     """
     common = {"allow_methods": ["*"], "allow_headers": ["*"]}
-    entries = [o.strip() for o in (env_origins or "").split(",") if o.strip()]
+    if isinstance(origins, (list, tuple)):
+        raw = [str(o) for o in origins]
+    else:
+        raw = (origins or "").split(",")
+    entries = [o.strip() for o in raw if o.strip()]
     if entries:
         if "*" in entries:
             # `*` can never be combined with credentials (browser rule + gh #113).
@@ -123,6 +128,7 @@ def add_middleware(
     debug: bool = False,
     auth_username: str = "admin",
     auth_password: str = "",
+    cors_origins: str | list[str] | None = "",
 ) -> None:
     """Add middleware stack. CORS is always added; basic auth is conditional.
 
@@ -139,6 +145,7 @@ def add_middleware(
     # Browsers send preflights without credentials, so auth used to 401 them and
     # break every cross-origin client once a password was set. A preflight only
     # returns the CORS policy; the real request that follows is still
-    # authenticated. Loopback-only by default; LANGSTAGE_CORS_ORIGINS opts specific
-    # sites in. (gh #113, gh #155)
-    app.add_middleware(CORSMiddleware, **_resolve_cors(os.getenv(_CORS_ORIGINS_ENV)))
+    # authenticated. Loopback-only by default; the resolved cors_origins
+    # (LANGSTAGE_CORS_ORIGINS / [server] cors_origins) opts specific sites in.
+    # (gh #113, gh #155, gh #141)
+    app.add_middleware(CORSMiddleware, **_resolve_cors(cors_origins))

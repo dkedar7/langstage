@@ -80,9 +80,11 @@ async def test_message_and_cwd_reach_the_agent(monkeypatch, tmp_path):
         e.get("content", "") for e in _drain(session.event_queue) if e.get("type") == "content"
     )
     assert "the magic phrase" in content
-    # The REAL working directory (workspace + the browsed subfolder) reached the
-    # agent — not the raw virtual "/reports". (gh dogfood-F4)
+    # The browsed subfolder reached the agent as a REAL path, not the raw virtual
+    # "/reports" (gh dogfood-F4), but as the file browser's folder, not as the
+    # working directory, which stays the workspace root (gh #172).
     assert str(tmp_path / "reports") in content
+    assert f"[Working directory: {tmp_path}]" in content
 
 
 # --- Error path --------------------------------------------------------------
@@ -116,9 +118,25 @@ def test_context_parts_reports_real_workspace_not_virtual_root(monkeypatch, tmp_
     assert str(tmp_path) in wd
     assert "[Working directory: /]" not in wd  # the F4 symptom must be gone
 
-    # A browsed subfolder resolves under the workspace, not as a bare virtual path.
-    sub = next(p for p in context_parts(cwd="/notes") if "Working directory" in p)
-    assert str(tmp_path / "notes") in sub
+    # A browsed subfolder resolves under the workspace, not as a bare virtual path,
+    # and is reported as the file browser's folder. The working directory stays the
+    # workspace root, because that is the process cwd relative paths resolve against
+    # (ADR 0006: one chdir per process, never per turn). Claiming the subfolder as
+    # the working directory sent relative writes somewhere else (gh #172).
+    parts = context_parts(cwd="/notes")
+    wd = next(p for p in parts if "Working directory" in p)
+    assert wd == f"[Working directory: {tmp_path}]"
+    browsed = next(p for p in parts if "File browser" in p)
+    assert str(tmp_path / "notes") in browsed
+    assert "relative" in browsed.lower()
+
+
+def test_context_parts_ignores_a_browsed_path_outside_the_workspace(monkeypatch, tmp_path):
+    monkeypatch.setattr("langstage_core.host.workspace._ACTIVE", None)
+    monkeypatch.setenv("LANGSTAGE_WORKSPACE_ROOT", str(tmp_path / "ws"))
+    (tmp_path / "ws").mkdir()
+    parts = context_parts(cwd="/../outside")
+    assert not any("File browser" in p for p in parts)
 
 
 def test_prepare_agent_input_contract():

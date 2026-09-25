@@ -193,6 +193,13 @@ class AppConfig(HostConfig):
     # (like --port), instead of an unhandled ValueError traceback at startup. The
     # TaskRunner still clamps it to >= 1, so the effective bound is unchanged. (gh #102)
     task_concurrency: int = 3
+    # Extra origins granted credentialed CORS, comma-separated ("*" = any origin,
+    # credentials off). Empty = loopback-only. The one setting that widens who can
+    # reach the server cross-origin used to be read with os.getenv in the middleware,
+    # so `config` / --show-config never showed it and it had no TOML key. It now
+    # resolves like every other field, and the server enforces the resolved value
+    # (gh #141).
+    cors_origins: str = ""
 
     _ENV: ClassVar[dict] = {
         "subtitle": ("DEEPAGENT_SUBTITLE", str),
@@ -214,6 +221,7 @@ class AppConfig(HostConfig):
         # Canonical LANGSTAGE_TASK_CONCURRENCY wins; DEEPAGENT_TASK_CONCURRENCY is the
         # deprecated fallback (resolved by _env_pair, same as every other key). (gh #102)
         "task_concurrency": ("DEEPAGENT_TASK_CONCURRENCY", int),
+        "cors_origins": ("LANGSTAGE_CORS_ORIGINS", str),
     }
     _TOML: ClassVar[dict] = {
         "subtitle": "ui.subtitle",
@@ -230,6 +238,7 @@ class AppConfig(HostConfig):
         "show_canvas": "ui.show_canvas",
         "show_files": "ui.show_files",
         "task_concurrency": "tasks.concurrency",
+        "cors_origins": "server.cors_origins",
     }
 
     def __post_init__(self) -> None:

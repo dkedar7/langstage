@@ -21,6 +21,16 @@ _EXAMPLES: dict[str, str] = {
     "show_files": "true",
 }
 
+# What a ``None`` default actually means, so an example value is never mistaken for
+# the default. `show_canvas = true` looked exactly like `port = 8050`, but the real
+# default is Auto, and uncommenting the example forced an empty Canvas tab on for an
+# agent without CanvasMiddleware (gh #152).
+_NONE_MEANS: dict[str, str] = {
+    "agent_spec": "default: unset (the built-in default agent)",
+    "show_canvas": "default: auto (on when CanvasMiddleware is attached)",
+    "show_files": "default: auto (shown)",
+}
+
 # Section order for the generated file (any unlisted section is appended after).
 _SECTION_ORDER = ["agent", "workspace", "server", "ui", "auth", "workflow", "tasks"]
 
@@ -29,8 +39,8 @@ _HEADER = """\
 #
 # Priority (highest wins): Python args > CLI args > env vars > this file > defaults.
 # Every option is listed but commented out - uncomment and edit only what you need.
-# The value shown is the built-in default (or an example); the env-var equivalent is
-# noted after each key. Verify what any config actually resolves to with:
+# The value shown is the built-in default, unless the line says "example" (those keys
+# default to unset/auto, noted on the line); the env-var equivalent follows each key. Verify what any config actually resolves to with:
 #
 #     langstage config
 """
@@ -68,12 +78,14 @@ def _render_value(name: str, value: Any) -> str:
     return _toml_quote(s)
 
 
-def _env_comment(name: str, env_map: dict) -> str:
+def _env_comment(name: str, env_map: dict, default: Any = None) -> str:
+    notes = []
     entry = env_map.get(name)
-    if not entry:
-        return ""
-    canonical = _env_pair(entry[0])[0]  # normalize legacy DEEPAGENT_* declarations
-    return f"  # env: {canonical}"
+    if entry:
+        notes.append(f"env: {_env_pair(entry[0])[0]}")  # normalize legacy DEEPAGENT_* names
+    if default is None and name in _EXAMPLES:
+        notes.append("example; " + _NONE_MEANS.get(name, "default: unset"))
+    return f"  # {'  '.join(notes)}" if notes else ""
 
 
 def render_langstage_toml(config_cls: type[AppConfig] = AppConfig) -> str:
@@ -102,7 +114,7 @@ def render_langstage_toml(config_cls: type[AppConfig] = AppConfig) -> str:
     if toplevel:
         for name in toplevel:
             value = _render_value(name, defaults.get(name))
-            lines.append(f"# {name} = {value}{_env_comment(name, env_map)}")
+            lines.append(f"# {name} = {value}{_env_comment(name, env_map, defaults.get(name))}")
         lines.append("")
 
     for section in ordered:
@@ -110,7 +122,7 @@ def render_langstage_toml(config_cls: type[AppConfig] = AppConfig) -> str:
         for name in sections[section]:
             leaf = toml_map[name].split(".", 1)[1]
             value = _render_value(name, defaults.get(name))
-            lines.append(f"# {leaf} = {value}{_env_comment(name, env_map)}")
+            lines.append(f"# {leaf} = {value}{_env_comment(name, env_map, defaults.get(name))}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
