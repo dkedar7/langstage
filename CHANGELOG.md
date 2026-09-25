@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.13.40 — 2026-09-25
+
+Adopts langstage-core 1.0.37.
+
+### Fixed
+- **`tool_start` and `content` carry the right `node` on multi-node graphs (gh #173).**
+  With a tool call and the reply in different nodes, and complete messages instead of
+  streamed tokens, `/api/stream` labeled `tool_start` with the run's last node and the
+  reply with the node that made the tool call. The label came from the checkpoint,
+  and the web app's `AsyncSqliteSaver` could write it after the snapshot was read.
+  Core 1.0.37 takes each message's node from the step's own update instead. The web
+  app had no workaround to remove. `tests/test_node_attribution_173.py` runs the
+  issue's three-node graph under the server's SQLite saver and under a saver whose
+  writes land late.
+
+### Changed
+- `langstage-core[agui]` floor raised to `>=1.0.37`.
+
 ## 0.13.39 — 2026-09-25
 
 Makes several advertised behaviors true, or stops advertising them, and brings the
