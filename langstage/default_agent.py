@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from langstage_core.demo import create_default_agent as _build_default_agent
+from langstage_core.demo.agent import DEFAULT_MODEL
 from langstage_core.tasks import TASK_TOOLS
 
 from langstage.config import WORKSPACE_ROOT as _WORKSPACE_ROOT
@@ -143,7 +144,9 @@ def _make_default_agent(ws_root: str):
     """Build the LangStage default deepagent rooted at ``ws_root``."""
     a = _build_default_agent(
         workspace=ws_root,
-        model=None,  # let deepagents pick its default model (prior behavior)
+        # An explicit model: deepagents deprecates model=None (removed in 1.0), and
+        # core's DEFAULT_MODEL is the model it picked for None anyway (gh #169).
+        model=DEFAULT_MODEL,
         name="LangStage",
         system_prompt=SYSTEM_PROMPT,
         tools=AGENT_TOOLS,
@@ -161,19 +164,10 @@ def _make_default_agent(ws_root: str):
     return a
 
 
-# Module-level default (built from the config/env workspace) for any import-time
-# consumers. CoworkApp rebuilds rooted at the RESOLVED workspace via
-# create_default_agent(), so --workspace/toml/Python reach the agent too. (gh #44)
-#
-# Built defensively: a clean `pip install langstage` has no `deepagents` extra, and
-# the default agent needs it — so an unguarded build here crashed `langstage run`
-# (and every importer, incl. `--version`/`--help`) at import time with a traceback
-# that named the wrong package. Fall back to None; the runtime path
-# (create_default_agent) surfaces a clean, correctly-packaged error. (gh #46)
-try:
-    agent = _make_default_agent(workspace_root)
-except Exception:  # noqa: BLE001 — missing deepagents / API key must not brick the import
-    agent = None
+# No module-level agent: one used to be built here at import time, which nothing
+# consumed (CoworkApp builds its own via create_default_agent(), rooted at the
+# resolved workspace), so every start paid for two builds and printed each build
+# warning twice (gh #169).
 
 
 def create_default_agent(workspace: Path):

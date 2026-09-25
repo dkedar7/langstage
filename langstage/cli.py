@@ -205,7 +205,46 @@ def init(target, force):
         raise click.ClickException(f"{dest} already exists. Use --force to overwrite.")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(render_langstage_toml(), encoding="utf-8")
-    safe_print(f"Wrote {dest}  -  edit it, then `langstage config` to verify.")
+
+    # Project config is found by walking UP from the cwd for a file named
+    # langstage.toml, so a file written below the cwd (`--path cfg/`) or under another
+    # name is never read. Say so instead of pointing at a `langstage config` that
+    # would report "no langstage.toml found" (gh #142).
+    from langstage_core.host.config import PROJECT_TOML, _find_project_toml
+
+    found = _find_project_toml()
+    if found is not None and found.resolve() == dest.resolve():
+        safe_print(f"Wrote {dest}  -  edit it, then `langstage config` to verify.")
+        return
+    if dest.name != PROJECT_TOML:
+        why = (f"only a file named {PROJECT_TOML} is discovered, so rename it to "
+               f"{PROJECT_TOML} in the directory you run langstage from (or one above it)")
+    else:
+        why = (f"langstage looks for {PROJECT_TOML} in the current directory and its "
+               f"parents, so run langstage from {dest.parent} (or a directory below it)")
+    shadow = f" (the nearer {found} wins from here)" if found is not None else ""
+    safe_print(f"Wrote {dest}.\n"
+               f"note: it is not discovered from the current directory{shadow}: {why}. "
+               f"Check with `langstage config`, which lists the file it reads.")
+
+
+_NO_SPEC_MSG = (
+    "No agent to use. Pass --agent <spec> (or --demo), or configure one with "
+    "LANGSTAGE_AGENT_SPEC or `[agent] spec` in langstage.toml."
+)
+
+
+def _resolved_agent_spec():
+    """The ``agent_spec`` that ``run`` would serve when no ``--agent`` is given.
+
+    ``check`` and ``chat`` used to guard on the raw flag, so a spec configured through
+    ``LANGSTAGE_AGENT_SPEC`` or ``langstage.toml`` (which ``config`` shows and ``run``
+    honors) was ignored and they demanded ``--agent`` (gh #143). Returns the resolved
+    config too, so a ``file.py:attr`` spec from a TOML file can be loaded relative to
+    that file, as ``CoworkApp`` does.
+    """
+    cfg = AppConfig.resolve()
+    return cfg.agent_spec, cfg
 
 
 def _load_error_detail(e: BaseException) -> str:
@@ -237,7 +276,8 @@ def _agent_tool_names(agent) -> set[str] | None:
 
 
 @main.command()
-@click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec to check (e.g., my_agent.py:agent)")
+@click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec to check (e.g., my_agent.py:agent). Default: the configured "
+                   "LANGSTAGE_AGENT_SPEC / langstage.toml [agent] spec, as `run` uses.")
 @click.option("--demo", is_flag=True, default=False, help="Check the built-in demo agent instead")
 @click.option("--live", is_flag=True, default=False,
               help="Also run ONE real turn through the agent (needs a working "
@@ -265,8 +305,15 @@ def check(agent_spec, demo, live, as_json):
     from langstage.middleware import agent_uses_canvas_middleware
 
     spec = DEMO_AGENT_SPEC if demo else agent_spec
+    base_dir = None
     if not spec:
-        raise click.UsageError("Provide --agent <spec> (or --demo).")
+        # No flag: preflight what `run` would serve, i.e. the spec resolved from env /
+        # langstage.toml (gh #143).
+        spec, cfg = _resolved_agent_spec()
+        if spec:
+            base_dir = cfg.toml_dir_for("agent_spec")
+    if not spec:
+        raise click.UsageError(_NO_SPEC_MSG)
 
     ok = click.style("[ ok ]", fg="green")
     warn = click.style("[warn]", fg="yellow")
@@ -301,7 +348,7 @@ def check(agent_spec, demo, live, as_json):
         # Under --json, the agent's import-time prints (a library's load banner, a debug
         # print) go to stderr, so stdout stays the one JSON object the CI gate parses
         # (gh #140).
-        agent = load_agent_spec(spec, stdout_to_stderr=as_json)
+        agent = load_agent_spec(spec, base_dir=base_dir, stdout_to_stderr=as_json)
     except Exception as e:  # noqa: BLE001 - report load failure cleanly
         detail = _load_error_detail(e)  # falls back to the class name for a message-less exc (gh #92)
         report["error"] = detail
@@ -421,7 +468,9 @@ def check(agent_spec, demo, live, as_json):
 
 
 @main.command()
-@click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec (e.g., my_agent.py:agent)")
+@click.option("--agent", "-a", "agent_spec", default=None,
+              help="Agent spec (e.g., my_agent.py:agent). Default: the configured "
+                   "LANGSTAGE_AGENT_SPEC / langstage.toml [agent] spec, as `run` uses.")
 @click.option("--demo", is_flag=True, default=False, help="Run one turn against the built-in keyless demo agent - no API key needed")
 @click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
 @click.option("--json", "as_json", is_flag=True, default=False,
@@ -455,8 +504,10 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
         if agent_spec:
             raise click.UsageError("--demo and --agent are mutually exclusive.")
         agent_spec = DEMO_AGENT_SPEC
-    if not agent_spec:
-        raise click.UsageError("Provide --agent <spec> (or --demo).")
+    if not agent_spec and not _resolved_agent_spec()[0]:
+        # No flag and nothing configured. With a spec from env / langstage.toml,
+        # CoworkApp below resolves and loads it exactly as `run` does (gh #143).
+        raise click.UsageError(_NO_SPEC_MSG)
 
     try:
         # Reuse CoworkApp for agent-load + workspace + checkpointer resolution (the

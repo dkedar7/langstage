@@ -138,7 +138,13 @@ class FileContent(_Schema):
 
 class FilePreview(_Schema):
     """``/api/files/preview`` — richer than ``FileContent``: ``data`` carries the
-    body and ``preview_type`` says how to render it."""
+    body and ``preview_type`` says how to render it.
+
+    The variant fields are optional and present only for their ``preview_type``:
+    ``headers`` + ``rows`` for ``csv``, ``download_url`` for ``pdf`` / ``binary``, and
+    ``mime`` for ``image``. They were missing from the schema (the body always had
+    them), so a generated client couldn't read a CSV's table or a binary's download
+    link (gh #162)."""
 
     path: str
     name: str
@@ -146,6 +152,10 @@ class FilePreview(_Schema):
     preview_type: str
     language: str | None = None
     data: Any | None = None
+    headers: list[str] | None = None
+    rows: list[dict[str, Any]] | None = None
+    download_url: str | None = None
+    mime: str | None = None
 
 
 class FileOpResult(_Schema):
@@ -174,6 +184,7 @@ class Task(_Schema):
     parent_id: str | None = None
     title: str | None = None
     prompt: str | None = None
+    # Always null over REST: POST /api/tasks rejects a per-task spec (gh #165).
     agent_spec: str | None = None
     state: str
     thread_id: str | None = None
@@ -216,6 +227,10 @@ class CronJob(_Schema):
     last_status: str | None = None
     run_count: int = 0
     last_task_id: str | None = None
+    # State of the task the last run enqueued (e.g. "review" when it awaits human
+    # approval), or null. The README documents it and GET /api/cron always returns
+    # it, but the schema left it out (gh #135).
+    last_run_state: str | None = None
     session_id: str | None = None
 
 

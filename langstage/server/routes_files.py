@@ -144,13 +144,30 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(e))
 
     @r.post("/mkdir", response_model=FileOpResult, response_model_exclude_unset=True)
-    async def create_folder(body: PathRequest):
-        """Create a new directory in the workspace."""
+    async def create_folder(
+        path: str | None = Query(
+            None,
+            description="Directory path relative to workspace. Query form is symmetric "
+            'with read/download/upload/delete (mkdir?path=P); a JSON body {"path": ...} '
+            "also works.",
+        ),
+        body: PathRequest | None = None,
+    ):
+        """Create a new directory in the workspace. Accepts ``path`` as a **query**
+        parameter (``mkdir?path=P``, as the upload docs and README advertise) or a JSON
+        body ``{"path": ...}`` (used by the file browser UI). It used to take only the
+        body, so the advertised query form got a 422 (gh #159)."""
+        target = path if path is not None else (body.path if body else None)
+        if not target:
+            raise HTTPException(
+                status_code=422,
+                detail='Provide `path` as a query parameter or a JSON body {"path": ...}.',
+            )
         try:
-            result = file_manager.create_directory(body.path)
+            result = file_manager.create_directory(target)
             return result
         except FileExistsError:
-            raise HTTPException(status_code=409, detail=f"Already exists: {body.path}")
+            raise HTTPException(status_code=409, detail=f"Already exists: {target}")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

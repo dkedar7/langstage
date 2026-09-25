@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from langstage.server.models import OkResponse, Task, TaskEvent
 from langstage_core.tasks import TaskRunner
@@ -19,8 +19,26 @@ from langstage_core.tasks.store import TaskStore
 class TaskCreate(BaseModel):
     prompt: str
     title: Optional[str] = None
-    agent_spec: Optional[str] = None
+    agent_spec: Optional[str] = Field(
+        None,
+        description="Not supported: omit it or send null. Every task runs the agent "
+        "the server was started with; a non-null value is rejected with 422.",
+    )
     parent_id: Optional[str] = None
+
+    @field_validator("agent_spec")
+    @classmethod
+    def _reject_per_task_spec(cls, v: Optional[str]) -> None:
+        # The runner never read this field: a task "delegated" to another agent ran
+        # the host agent, and a bogus spec reported `done` (gh #165). Honoring it would
+        # let any REST caller import an arbitrary module path into the server, so it is
+        # rejected instead of silently ignored.
+        if v is not None:
+            raise ValueError(
+                "per-task agent_spec is not supported: every task runs the agent the "
+                "server was started with (--agent / LANGSTAGE_AGENT_SPEC). Omit agent_spec."
+            )
+        return None
 
 
 class ResumeBody(BaseModel):
@@ -51,7 +69,6 @@ def create_tasks_router(runner: TaskRunner, store: TaskStore) -> APIRouter:
             task_id = await runner.enqueue(
                 title=body.title or body.prompt,
                 prompt=body.prompt,
-                agent_spec=body.agent_spec,
                 parent_id=body.parent_id,
             )
         except ValueError as e:

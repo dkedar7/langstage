@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langstage"
-version = "0.13.38"
+version = "0.13.39"
 description = "The web stage for your LangGraph agent — AI-powered workspace with streaming, file browser, and canvas"
 readme = "README.md"
 license = "MIT"
@@ -55,7 +55,8 @@ dependencies = [
 
 [project.optional-dependencies]
 deepagents = [
-    "deepagents>=0.3",
+    # <1.0: deepagents 1.0 changes the create_deep_agent model contract (gh #169).
+    "deepagents>=0.3,<1.0",
 ]
 # Redundant since AG-UI moved into base deps (core 1.0); kept as a no-op alias so
 # existing `pip install langstage[agui]` scripts/READMEs still resolve.

@@ -137,3 +137,49 @@ def test_init_path_directory_drops_file_inside():
         result = runner.invoke(main, ["init", "--path", "cfg/"])
         assert result.exit_code == 0, result.output
         assert Path("cfg/langstage.toml").exists()
+
+
+# ── gh #152: None-default fields are marked as examples, not defaults ────────
+
+
+def test_template_marks_auto_fields_as_examples_not_defaults():
+    txt = render_langstage_toml()
+    line = next(ln for ln in txt.splitlines() if ln.startswith("# show_canvas = "))
+    # The real default is Auto (on when CanvasMiddleware is attached), not `true`.
+    assert "example" in line.lower() and "auto" in line.lower(), line
+    spec = next(ln for ln in txt.splitlines() if ln.startswith("# spec = "))
+    assert "example" in spec.lower(), spec
+
+
+def test_template_real_defaults_are_not_labeled_examples():
+    txt = render_langstage_toml()
+    port = next(ln for ln in txt.splitlines() if ln.startswith("# port = "))
+    assert "example" not in port.lower()
+
+
+# ── gh #142: init warns when the written file won't be discovered ────────────
+
+
+def test_init_into_subdir_warns_it_is_not_discovered(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(main, ["init", "--path", "cfg/"])
+    assert result.exit_code == 0, result.output
+    assert "not" in result.output and "discover" in result.output.lower()
+    assert "cd cfg" in result.output or "cfg" in result.output
+    # The success line must not claim plain `langstage config` will verify it.
+    assert "then `langstage config` to verify" not in result.output
+
+
+def test_init_custom_filename_warns_it_is_not_discovered(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(main, ["init", "--path", "my-settings.toml"])
+    assert result.exit_code == 0, result.output
+    assert "langstage.toml" in result.output and "discover" in result.output.lower()
+
+
+def test_init_default_location_keeps_the_verify_hint(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(main, ["init"])
+    assert result.exit_code == 0, result.output
+    assert "langstage config" in result.output
+    assert "discover" not in result.output.lower()

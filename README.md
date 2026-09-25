@@ -171,6 +171,8 @@ Point `--agent` at any compiled LangGraph graph — `langstage run --agent my_ag
 langstage check --agent my_agent.py:graph
 ```
 
+Without `--agent`, `check` and `chat` use the agent configured with `LANGSTAGE_AGENT_SPEC` or `[agent] spec` in `langstage.toml`, the same one `run` serves.
+
 ```
 [ ok ] loads
 [ ok ] checkpointer present (memory + interrupts + review gate)
@@ -220,7 +222,7 @@ The **Board** tab turns LangStage into a lightweight agent control room: delegat
 - **Cron is interpreted in UTC.** `0 9 * * *` fires at **09:00 UTC** — so scheduled runs are stable regardless of the host's timezone (and don't shift with DST) — and the Schedules tab shows `next` / `last` times in UTC to match, with the hour-specific presets labeled `9am UTC`. `next_run` in `GET /api/cron` is already an explicit UTC timestamp (`…+00:00`).
 - **A schedule never overlaps its own run.** If the previous fire's task is still queued, running, or **awaiting human review**, the next *automatic* fire is skipped (the schedule row shows `skipped: previous run still …`) instead of piling up duplicate tasks. This matters when the scheduled agent has a human-in-the-loop gate — e.g. the default agent gates `bash` — because such a run parks at **review** on the board for you to approve, and the schedule waits for you rather than stacking stuck reviews. Manual **Run now** bypasses this. `GET /api/cron` surfaces each schedule's `last_task_id` + `last_run_state` so a client can flag one awaiting review.
 
-Task REST API: `GET /api/tasks`, `POST /api/tasks` (delegate), `GET /api/tasks/{id}/events`, and `POST /api/tasks/{id}/{cancel,retry,resume,message}`. Concurrency is bounded by `LANGSTAGE_TASK_CONCURRENCY` (default 3).
+Task REST API: `GET /api/tasks`, `POST /api/tasks` (delegate), `GET /api/tasks/{id}/events`, and `POST /api/tasks/{id}/{cancel,retry,resume,message}`. Concurrency is bounded by `LANGSTAGE_TASK_CONCURRENCY` (default 3). Every task runs the agent the server was started with: `POST /api/tasks` rejects a non-null `agent_spec` with 422 rather than loading another agent over REST.
 
 Schedules (cron) REST API: `GET /api/cron`, `POST /api/cron` (create), `DELETE /api/cron/{id}`, and `POST /api/cron/{id}/run` (run now → enqueues a task). (The Schedules tab drives these; note the path is `/api/cron`, not `/api/schedules`.)
 
@@ -249,6 +251,8 @@ langstage init --force         # overwrite
 langstage init --path ./cfg/   # target a directory or file
 ```
 
+Only a file named `langstage.toml` at or above the directory you run `langstage` from is discovered (see above), so `init --path ./cfg/` writes a file that is read when you run from `cfg/`, not from the current directory. `init` prints a note when the file it wrote won't be discovered from where you ran it. Keys whose default is unset or auto (`agent.spec`, `ui.show_canvas`, `ui.show_files`) are shown with an example value and marked `example` on the line; leave them commented to keep the default.
+
 `init` is generated from the same field table `config` reads, so the two stay in lockstep — a `config → init → config` round-trip is exact.
 
 | Option | CLI Flag | Env Var | Default |
@@ -273,6 +277,7 @@ langstage init --path ./cfg/   # target a directory or file
 | Show Canvas tab | `--show-canvas/--no-show-canvas` | `LANGSTAGE_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
 | Show Files tab | `--show-files/--no-show-files` | `LANGSTAGE_SHOW_FILES` | `true` |
 | Task concurrency | _(env / `langstage.toml` only)_ | `LANGSTAGE_TASK_CONCURRENCY` | `3` |
+| CORS origins | _(env / `langstage.toml` `[server] cors_origins` only)_ | `LANGSTAGE_CORS_ORIGINS` | _(empty — loopback origins only)_. Comma-separated origins granted credentialed cross-origin access; `*` allows any origin with credentials off |
 
 > **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
 
