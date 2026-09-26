@@ -277,6 +277,7 @@ Only a file named `langstage.toml` at or above the directory you run `langstage`
 | Show Canvas tab | `--show-canvas/--no-show-canvas` | `LANGSTAGE_SHOW_CANVAS` | Auto — on when `CanvasMiddleware` is attached |
 | Show Files tab | `--show-files/--no-show-files` | `LANGSTAGE_SHOW_FILES` | `true` |
 | Task concurrency | _(env / `langstage.toml` only)_ | `LANGSTAGE_TASK_CONCURRENCY` | `3` |
+| `execute_python` memory limit (MB, default agent) | _(env only)_ | `LANGSTAGE_CELL_MEMORY_LIMIT_MB` | `512` |
 | CORS origins | _(env / `langstage.toml` `[server] cors_origins` only)_ | `LANGSTAGE_CORS_ORIGINS` | _(empty — loopback origins only)_. Comma-separated origins granted credentialed cross-origin access; `*` allows any origin with credentials off |
 
 > **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
@@ -401,7 +402,9 @@ spells out): `POST /api/files/upload` takes `path` as a **query** parameter (not
 field), and `path` is the **full destination path** — `upload?path=P` stores the file at
 `P`, so it round-trips with `read`/`download`/`delete?path=P` (end `path` with `/`, or point
 it at an existing directory, to drop the upload inside under its own filename instead);
-`/api/stream` is the SSE event stream keyed by `session_id`.
+`/api/stream` is the SSE event stream keyed by `session_id`. A session with no open stream
+and no running turn is dropped 60 seconds after its stream closes; reconnecting with the
+same `session_id` picks the conversation back up from the checkpointer.
 
 ## Development
 
