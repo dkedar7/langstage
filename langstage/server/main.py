@@ -23,6 +23,10 @@ from langstage.server.routes_tasks import create_tasks_router
 from langstage.scheduler import CronScheduler, set_scheduler
 from langstage.tasks import SqliteCronStore, SqliteTaskStore
 from langstage.workspace.file_manager import FileManager
+
+#: Where the lifespan keeps the durable checkpointer it swaps in for the in-memory
+#: one LangStage attached, relative to the workspace. `check` reports it (gh #183).
+CHECKPOINT_DB = Path(".langstage") / "checkpoints.db"
 from langstage.workspace.canvas_manager import CanvasManager
 
 
@@ -84,7 +88,7 @@ def create_fastapi_app(
             try:
                 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-                ckpt_db = workspace / ".langstage" / "checkpoints.db"
+                ckpt_db = workspace / CHECKPOINT_DB
                 ckpt_db.parent.mkdir(parents=True, exist_ok=True)
                 ckpt_cm = AsyncSqliteSaver.from_conn_string(str(ckpt_db))
                 saver = await ckpt_cm.__aenter__()

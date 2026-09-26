@@ -420,3 +420,65 @@ def test_check_without_any_spec_names_every_source(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli_mod.main, ["check"])
     assert result.exit_code == 1  # not configured is a failure (core ADR 0007)
     assert "LANGSTAGE_AGENT_SPEC" in result.output
+
+
+# ── gh #183: check reports the checkpointer `run` will actually use ──────────
+
+
+def _graph_file(tmp_path, checkpointer_expr="None"):
+    agent = tmp_path / "ckpt_agent.py"
+    agent.write_text(
+        "from langgraph.graph import StateGraph, MessagesState, START, END\n"
+        "from langgraph.checkpoint.memory import InMemorySaver\n"
+        "g = StateGraph(MessagesState)\n"
+        "g.add_node('n', lambda s: {'messages': []})\n"
+        "g.add_edge(START, 'n'); g.add_edge('n', END)\n"
+        f"graph = g.compile(checkpointer={checkpointer_expr})\n"
+    )
+    return f"{agent}:graph"
+
+
+def test_check_reports_sqlite_checkpointer_run_attaches(tmp_path):
+    """A graph without a checkpointer is served with a durable SQLite one (the server
+    upgrades the auto-attached saver at startup), so `check` must not call it
+    in-memory."""
+    import json
+
+    spec = _graph_file(tmp_path)
+    human = CliRunner().invoke(cli_mod.main, ["check", "--agent", spec])
+    assert human.exit_code == 0, human.output
+    line = next(ln for ln in human.output.splitlines() if "checkpointer" in ln)
+    assert "SQLite" in line and "checkpoints.db" in line, line
+    assert "in-memory" not in line and "[warn]" not in line, line
+
+    result = CliRunner().invoke(cli_mod.main, ["check", "--agent", spec, "--json"])
+    ckpt = json.loads(result.output)["checks"]["checkpointer"]
+    assert ckpt["ok"] is True
+    assert "SQLite" in ckpt["detail"] and "in-memory" not in ckpt["detail"]
+
+
+def test_check_reports_user_checkpointer_by_type(tmp_path):
+    """A graph's own checkpointer is used as is; `check` names it (an in-memory one
+    the user chose is not durable, so it warns)."""
+    import json
+
+    spec = _graph_file(tmp_path, "InMemorySaver()")
+    result = CliRunner().invoke(cli_mod.main, ["check", "--agent", spec, "--json"])
+    ckpt = json.loads(result.output)["checks"]["checkpointer"]
+    assert "InMemorySaver" in ckpt["detail"]
+    assert "SQLite" not in ckpt["detail"]
+
+
+def test_check_reports_in_memory_when_sqlite_unavailable(tmp_path, monkeypatch):
+    """If the SQLite saver can't be imported the server keeps the in-memory one, and
+    `check` says so."""
+    import json
+
+    from langstage import app as app_mod
+
+    monkeypatch.setattr(app_mod, "_sqlite_checkpointer_available", lambda: False)
+    spec = _graph_file(tmp_path)
+    result = CliRunner().invoke(cli_mod.main, ["check", "--agent", spec, "--json"])
+    ckpt = json.loads(result.output)["checks"]["checkpointer"]
+    assert ckpt["ok"] is False
+    assert "in-memory" in ckpt["detail"]

@@ -452,16 +452,15 @@ def check(agent_spec, demo, live, as_json):
         say(f"{warn} agent name: none (the graph's default name {raw_name!r} is ignored; "
             "the UI shows the defaults - set graph.name or --agent-name)")
 
-    # Checkpointer - LangStage auto-attaches an in-memory one if absent.
-    has_ckpt = getattr(agent, "checkpointer", None) is not None
-    report["checks"]["checkpointer"] = {
-        "ok": has_ckpt,
-        "detail": "present (memory + interrupts + review gate)" if has_ckpt
-        else "none - in-memory attached (supply your own for durability)",
-    }
-    say(f"{ok} checkpointer present (memory + interrupts + review gate)" if has_ckpt
-        else f"{warn} no checkpointer - LangStage will attach an in-memory one "
-             "(supply your own for durability across restarts)")
+    # Checkpointer - what `run` will actually serve with: the graph's own, else the
+    # SQLite one the server swaps in for its auto-attached saver (gh #183).
+    from langstage.app import served_checkpointer
+
+    durable, ckpt_detail = served_checkpointer(agent)
+    report["checks"]["checkpointer"] = {"ok": durable, "detail": ckpt_detail}
+    say(f"{ok} checkpointer: {ckpt_detail}" if durable
+        else f"{warn} checkpointer: {ckpt_detail} - supply a durable one to keep "
+             "conversations and interrupts across restarts")
 
     # Canvas
     has_canvas = agent_uses_canvas_middleware(agent)

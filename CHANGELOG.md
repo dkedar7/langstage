@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.43 — 2026-09-26
+
+### Fixed
+- **`langstage check` reports the checkpointer `run` actually uses** (gh #183). For a graph
+  compiled without one it said LangStage would attach an in-memory checkpointer, but the
+  server swaps that for a durable SQLite one at `<workspace>/.langstage/checkpoints.db`
+  (the persisted schedules and task board rely on it). `check` now reports that SQLite
+  saver, or the in-memory fallback (with a warning) when the SQLite saver can't be
+  imported. A graph's own checkpointer is named by type and used as is; an in-memory one
+  the graph brings (`InMemorySaver` / `MemorySaver`) now warns that it isn't durable. The
+  `--json` shape is unchanged (`checks.checkpointer.ok` / `.detail`).
+
 ## 0.13.42 — 2026-09-25
 
 ### Changed
