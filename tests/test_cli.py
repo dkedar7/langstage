@@ -418,5 +418,5 @@ def test_check_without_any_spec_names_every_source(tmp_path, monkeypatch):
     monkeypatch.delenv("LANGSTAGE_AGENT_SPEC", raising=False)
     monkeypatch.delenv("DEEPAGENT_AGENT_SPEC", raising=False)
     result = CliRunner().invoke(cli_mod.main, ["check"])
-    assert result.exit_code == 2
+    assert result.exit_code == 1  # not configured is a failure (core ADR 0007)
     assert "LANGSTAGE_AGENT_SPEC" in result.output

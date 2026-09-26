@@ -205,6 +205,19 @@ can assert a container resolved its env / `langstage.toml` the way it was meant 
 a malformed or invalid value (a bad port, an unknown theme), an unknown key.
 `langstage config --strict` exits 1 when that list isn't empty, so CI can gate on it.
 
+### Exit codes
+
+Every `langstage` command uses the LangStage family's exit codes
+([langstage-core ADR 0007](https://github.com/dkedar7/langstage-core/blob/main/docs/adr/0007-family-exit-codes.md)),
+so a CI gate reads them the same way here as in the other LangStage surfaces:
+
+| Code | Meaning | Examples |
+|---|---|---|
+| `0` | success | `run` exits cleanly, `check` passes, `chat` completes a turn |
+| `1` | failure | no agent configured, an agent that won't load, a failed `check` / `check --live`, `config --strict` with issues, `chat` turn error, `run` can't start (including a busy port) |
+| `2` | paused on a human-in-the-loop interrupt | `chat` ends waiting for an approval or answer |
+| `64` | usage error | an unknown option or command, an invalid `--port` / `--theme`, `--demo` with `--agent` |
+
 ## Task board
 
 The **Board** tab turns LangStage into a lightweight agent control room: delegate a task and it runs on a background copy of your agent while you keep chatting. No extra infrastructure — tasks are persisted in a local SQLite file (the board survives a restart) and executed by an in-process worker pool, built on the [`langstage-core`](https://github.com/dkedar7/langstage-core) task engine.

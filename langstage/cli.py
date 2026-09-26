@@ -13,6 +13,55 @@ from langstage.config import AppConfig
 # The keyless echo agent shipped with the shared core - see `--demo`.
 DEMO_AGENT_SPEC = "langstage_core.demo.stub:graph"
 
+# The LangStage family exit codes (langstage-core ADR 0007,
+# https://github.com/dkedar7/langstage-core/blob/main/docs/adr/0007-family-exit-codes.md).
+# Defined here rather than imported from langstage_core.cli so this release doesn't
+# need a newer core; the numbers are the contract.
+EXIT_OK = 0      # success
+EXIT_FAIL = 1    # not configured, load error, turn error, check failed, can't start
+EXIT_PAUSED = 2  # the turn paused on a human-in-the-loop interrupt
+EXIT_USAGE = 64  # bad or conflicting arguments (click's own default is 2 == "paused")
+
+
+class _Group(click.Group):
+    """click group whose usage errors exit 64, not click's 2.
+
+    click raises ``UsageError`` (and its ``BadParameter`` / ``NoSuchOption`` subclasses)
+    from argument parsing, from ``resolve_command`` for an unknown subcommand, and from
+    our own command bodies; all of them pass through ``make_context`` or ``invoke`` here.
+    Setting ``exit_code`` on the instance keeps click's message and formatting.
+    """
+
+    def make_context(self, *args, **kwargs):
+        try:
+            return super().make_context(*args, **kwargs)
+        except click.UsageError as e:
+            e.exit_code = EXIT_USAGE
+            raise
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except click.UsageError as e:
+            e.exit_code = EXIT_USAGE
+            raise
+
+
+def _port_bind_error(host, port):
+    """Return why ``host:port`` can't be bound, or None if it's free.
+
+    Probed before the server banner so a busy port is a clean one-line error and exit 1
+    rather than a success banner followed by uvicorn's own exit 3 (ADR 0007)."""
+    import socket
+
+    try:
+        family, type_, proto, _, addr = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)[0]
+        with socket.socket(family, type_, proto) as sock:
+            sock.bind(addr)
+    except OSError as exc:
+        return exc.strerror or str(exc)
+    return None
+
 
 def _echo(message: str) -> None:
     """``click.echo`` that can't crash on a non-UTF-8 console.
@@ -28,7 +77,9 @@ def _echo(message: str) -> None:
     click.echo(console_safe(message, sys.stdout))
 
 
-@click.group(invoke_without_command=True)
+@click.group(cls=_Group, invoke_without_command=True,
+             epilog="Exit codes: 0 ok, 1 failed (no/bad agent, turn error, check failed, "
+                    "can't start), 2 paused on a human-in-the-loop interrupt, 64 usage error.")
 @click.version_option(package_name="langstage", prog_name="langstage")
 @click.option(
     "--show-config",
@@ -119,7 +170,19 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
         # otherwise surface as a bare `Error: ` with nothing after the colon. This
         # keeps `run` in sync with `check`'s identical fallback. (gh #92)
         raise click.ClickException(str(e) or type(e).__name__) from e
-    app.run(open_browser=not no_browser)
+    # A busy port is "can't start": exit 1 with one clean line, before the banner.
+    cfg = getattr(app, "config", None)  # absent only on test doubles
+    reason = _port_bind_error(cfg.host, cfg.port) if cfg is not None else None
+    if reason:
+        raise click.ClickException(f"cannot serve at http://{cfg.host}:{cfg.port}: {reason}")
+    try:
+        app.run(open_browser=not no_browser)
+    except SystemExit as e:
+        # uvicorn exits 3 (STARTUP_FAILURE) when startup fails after the probe (a race
+        # on the port, a lifespan error). Map any non-zero code to the family's 1.
+        if e.code not in (None, 0):
+            raise SystemExit(EXIT_FAIL) from e
+        raise
 
 
 @main.command()
@@ -313,7 +376,8 @@ def check(agent_spec, demo, live, as_json):
         if spec:
             base_dir = cfg.toml_dir_for("agent_spec")
     if not spec:
-        raise click.UsageError(_NO_SPEC_MSG)
+        # Not configured is a failure (1), not a usage error (ADR 0007).
+        raise click.ClickException(_NO_SPEC_MSG)
 
     ok = click.style("[ ok ]", fg="green")
     warn = click.style("[warn]", fg="yellow")
@@ -504,7 +568,8 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
     whole system prompt is about the workspace). Pass ``--no-context`` for the terse
     echo that omits that context - cleaner for scripting, but no longer browser-identical.
 
-    Exits non-zero if the agent errors (like ``check --live``), so it doubles as a
+    Exits 1 if the agent errors (like ``check --live``) and 2 if the turn pauses on a
+    human-in-the-loop interrupt, so it doubles as a
     readiness gate that also *shows* the answer. Add ``--json`` for a machine-readable
     object a pipeline can assert on.
     """
@@ -515,7 +580,7 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
     if not agent_spec and not _resolved_agent_spec()[0]:
         # No flag and nothing configured. With a spec from env / langstage.toml,
         # CoworkApp below resolves and loads it exactly as `run` does (gh #143).
-        raise click.UsageError(_NO_SPEC_MSG)
+        raise click.ClickException(_NO_SPEC_MSG)
 
     try:
         # Reuse CoworkApp for agent-load + workspace + checkpointer resolution (the
@@ -571,8 +636,11 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
             reason = result.error or f"turn did not complete: {result.outcome}"
             safe_print(f"Error: {reason}", file=sys.stderr)
 
+    if result.outcome == "interrupted":
+        # Paused for human input: the run is fine but needs a decision (ADR 0007).
+        raise SystemExit(EXIT_PAUSED)
     if not result.ok:
-        raise SystemExit(1)
+        raise SystemExit(EXIT_FAIL)
 
 
 if __name__ == "__main__":
