@@ -19,9 +19,44 @@ from .canvas import parse_canvas_object, load_canvas_from_markdown, export_canva
 # =============================================================================
 
 
-# Memory limit for cell execution (in bytes)
-# Default: 512 MB - can be overridden via environment variable
-CELL_MEMORY_LIMIT_MB = int(os.environ.get("COWORK_CELL_MEMORY_LIMIT_MB", "512"))
+# Memory limit for cell execution. Default 512 MB; set LANGSTAGE_CELL_MEMORY_LIMIT_MB.
+# The older DEEPAGENT_/COWORK_ names still work with a deprecation notice, and a
+# malformed or non-positive value falls back to the default instead of raising on
+# import (gh #139).
+_CELL_MEMORY_DEFAULT_MB = 512
+
+
+def _cell_memory_limit_mb() -> int:
+    import warnings
+
+    raw = os.environ.get("LANGSTAGE_CELL_MEMORY_LIMIT_MB")
+    if raw is None:
+        for legacy in ("DEEPAGENT_CELL_MEMORY_LIMIT_MB", "COWORK_CELL_MEMORY_LIMIT_MB"):
+            raw = os.environ.get(legacy)
+            if raw is not None:
+                warnings.warn(
+                    f"{legacy} is deprecated; use LANGSTAGE_CELL_MEMORY_LIMIT_MB.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                break
+    if raw is None:
+        return _CELL_MEMORY_DEFAULT_MB
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        print(
+            f"Note: ignoring invalid cell memory limit {raw!r}; "
+            f"using {_CELL_MEMORY_DEFAULT_MB} MB.",
+            file=sys.stderr,
+        )
+        return _CELL_MEMORY_DEFAULT_MB
+    return value
+
+
+CELL_MEMORY_LIMIT_MB = _cell_memory_limit_mb()
 CELL_MEMORY_LIMIT_BYTES = CELL_MEMORY_LIMIT_MB * 1024 * 1024
 
 

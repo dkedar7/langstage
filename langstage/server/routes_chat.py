@@ -112,12 +112,17 @@ def create_chat_router(
                 file_watch_task = asyncio.create_task(
                     _push_file_changes(adapter, session.id, file_manager)
                 )
+            frames = adapter.sse(session.id)
             try:
-                async for frame in adapter.sse(session.id):
+                async for frame in frames:
                     yield frame
             finally:
                 if file_watch_task:
                     file_watch_task.cancel()
+                # Close the inner stream now (not at garbage collection) so the
+                # session is marked disconnected, then reclaim it once idle (gh #164).
+                await frames.aclose()
+                _schedule_reap(adapter, session.id)
 
         return StreamingResponse(
             event_generator(),
@@ -198,6 +203,45 @@ def create_chat_router(
         return {"status": "ok", "session_id": body.session_id}
 
     return router
+
+
+# How long a session with no stream and no running turn is kept, so a client that
+# reconnects (EventSource retry, page reload) finds its session again (gh #164).
+SESSION_REAP_GRACE_S = 60.0
+
+_reap_tasks: set[asyncio.Task] = set()
+
+
+def _schedule_reap(adapter: SessionAdapter, session_id: str) -> None:
+    task = asyncio.get_running_loop().create_task(_reap_when_idle(adapter, session_id))
+    _reap_tasks.add(task)
+    task.add_done_callback(_reap_tasks.discard)
+
+
+async def _reap_when_idle(adapter: SessionAdapter, session_id: str) -> None:
+    """Drop a session once it has no stream and no running turn.
+
+    Every ``GET /api/stream`` with a new or absent ``session_id`` creates a session,
+    and nothing removed it after the client left, so the store only grew (gh #164).
+    Dropping it loses no history: the thread lives in the checkpointer under the
+    session id, and a client that comes back with that id gets a session for it.
+    """
+    from langstage.tools import release_notebook_state
+
+    while True:
+        await asyncio.sleep(SESSION_REAP_GRACE_S)
+        session = adapter.get(session_id)
+        if session is None or session.sse_connected:
+            return
+        task = session.current_task
+        if task is not None and not task.done():
+            # A turn is still running (e.g. a HITL-free long run): wait for it, then
+            # give the client the grace period again.
+            await asyncio.wait([task])
+            continue
+        adapter.delete_session(session_id)
+        release_notebook_state(session_id)
+        return
 
 
 async def _push_file_changes(

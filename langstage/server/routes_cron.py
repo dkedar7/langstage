@@ -4,16 +4,32 @@ restarts in the workspace's tasks.db (gh #151)."""
 import asyncio
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from langstage.scheduler import CronScheduler
 from langstage.server.models import CronJob, OkResponse
 
 
 class CronCreate(BaseModel):
+    # Unknown fields are rejected, not dropped: `enabled: false` used to be ignored
+    # and the schedule fired anyway (gh #161).
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     cron: str
     prompt: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_enabled(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "enabled" in data:
+            raise ValueError(
+                "enabled is not supported: pausing a schedule isn't supported. "
+                "Delete the schedule and create it again later."
+            )
+        return data
 
 
 def create_cron_router(scheduler: CronScheduler) -> APIRouter:

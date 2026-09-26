@@ -112,3 +112,29 @@ def test_schedule_run_agent_tool_rejects_six_field_cron():
         assert s.list_jobs() == []
     finally:
         set_scheduler(None)
+
+
+# ── unknown body fields are rejected, not silently dropped ──────────────────
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_enabled_in_create_body_is_rejected(enabled):
+    """`enabled: false` used to be dropped, creating a schedule that fires anyway."""
+    client, scheduler = _client()
+    async with client as c:
+        r = await c.post("/api/cron", json={
+            "name": "A", "cron": "0 9 * * *", "prompt": "x", "enabled": enabled,
+        })
+    assert r.status_code == 422
+    assert "pausing" in str(r.json()["detail"]).lower()
+    assert scheduler.list_jobs() == []
+
+
+async def test_unknown_create_field_is_rejected():
+    client, scheduler = _client()
+    async with client as c:
+        r = await c.post("/api/cron", json={
+            "name": "A", "cron": "0 9 * * *", "prompt": "x", "timezone": "PST",
+        })
+    assert r.status_code == 422
+    assert scheduler.list_jobs() == []

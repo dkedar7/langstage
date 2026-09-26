@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.13.41 — 2026-09-25
+
+### Fixed
+- **Closed `/api/stream` sessions are reclaimed (gh #164).** Each stream connect with a
+  new or absent `session_id` created a session that stayed in memory after the client
+  left. A session with no open stream and no running turn is now dropped 60 seconds
+  after its stream closes, along with its notebook state. The conversation is still in
+  the checkpointer, so reconnecting with the same `session_id` continues it.
+- **`/api/config` `workspace_name` is set for a relative workspace (gh #145).** The
+  default workspace `.` has no basename, so `langstage run --demo` sent an empty name.
+  The app now keeps the resolved absolute workspace path.
+- **`langstage check` no longer reports `agent name: LangGraph` (gh #153).** `run`
+  ignores a compiled graph's default name and shows its own defaults. `check` now does
+  the same: it prints a `[warn]` line and `--json` reports `agent_name: null`.
+- **`LANGSTAGE_CELL_MEMORY_LIMIT_MB` sets the `execute_python` memory limit (gh #139).**
+  Only the old `COWORK_CELL_MEMORY_LIMIT_MB` worked, and a malformed value raised on
+  import. The `DEEPAGENT_` and `COWORK_` names still work with a deprecation notice, and
+  an invalid value falls back to 512 MB with a note.
+- **`POST /api/cron` rejects fields it would ignore (gh #161).** `enabled: false` was
+  dropped, so the schedule was created active and fired anyway. The body now takes only
+  `name`, `cron`, and `prompt`. `enabled` gets a 422 saying pausing isn't supported
+  (delete and recreate instead), and any other unknown field gets a 422 too.
+
 ## 0.13.40 — 2026-09-25
 
 Adopts langstage-core 1.0.37.

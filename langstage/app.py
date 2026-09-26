@@ -140,6 +140,19 @@ class BackgroundServer:
         return f'LangStage running at <a href="{self.url}" target="_blank">{self.url}</a>'
 
 
+
+# Default .name values that say nothing about the agent: a bare compiled graph is
+# "LangGraph". `run` keeps the LangStage defaults for these, and `check` reports no
+# name, so the two agree (gh #153).
+GENERIC_AGENT_NAMES = ("LangGraph", "agent", "graph")
+
+
+def meaningful_agent_name(agent) -> str | None:
+    """The agent's ``.name``, or None when it is missing or a generic default."""
+    name = getattr(agent, "name", None)
+    return None if name in GENERIC_AGENT_NAMES else name or None
+
+
 class CoworkApp:
     """Main entry point. Wraps a LangGraph agent with a web UI.
 
@@ -208,7 +221,9 @@ class CoworkApp:
         # must not move the process cwd out from under anything else.
         from langstage_core import apply_workspace
 
-        apply_workspace(self.config.workspace_root)
+        # Keep the absolute path: a relative root like the default "." has no
+        # basename, so /api/config sent an empty workspace_name (gh #145).
+        self.config.workspace_root = apply_workspace(self.config.workspace_root).root
 
         # _stdout_to_stderr (internal): the `chat --json` path loads the agent with its
         # import-time prints sent to stderr, so stdout stays pure JSON (gh #140).
@@ -237,9 +252,7 @@ class CoworkApp:
         # set — but a bare CompiledStateGraph's default .name is "LangGraph" (and
         # "agent"/"graph" are just as generic), which reads as a confusing app title for
         # a BYO agent. Treat those as "no meaningful name" and keep the LangStage default.
-        inferred_name = getattr(self.agent, "name", None)
-        if inferred_name in ("LangGraph", "agent", "graph"):
-            inferred_name = None
+        inferred_name = meaningful_agent_name(self.agent)
         if inferred_name:
             if self.config.title == "LangStage":
                 self.config.title = inferred_name

@@ -375,10 +375,18 @@ def check(agent_spec, demo, live, as_json):
 
     report["loads"] = True
     say(f"{ok} loads")
-    name = getattr(agent, "name", None)
+    # Report the name the UI will show: `run` discards a generic default like
+    # "LangGraph" and keeps its own defaults, so `check` must not advertise it (gh #153).
+    from langstage.app import meaningful_agent_name
+
+    raw_name = getattr(agent, "name", None)
+    name = meaningful_agent_name(agent)
     report["agent_name"] = name
     if name:
         say(f"{ok} agent name: {name}")
+    elif raw_name:
+        say(f"{warn} agent name: none (the graph's default name {raw_name!r} is ignored; "
+            "the UI shows the defaults - set graph.name or --agent-name)")
 
     # Checkpointer - LangStage auto-attaches an in-memory one if absent.
     has_ckpt = getattr(agent, "checkpointer", None) is not None
