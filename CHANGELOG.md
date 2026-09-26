@@ -18,6 +18,10 @@
   Only the old `COWORK_CELL_MEMORY_LIMIT_MB` worked, and a malformed value raised on
   import. The `DEEPAGENT_` and `COWORK_` names still work with a deprecation notice, and
   an invalid value falls back to 512 MB with a note.
+- **`POST /api/cron` rejects fields it would ignore (gh #161).** `enabled: false` was
+  dropped, so the schedule was created active and fired anyway. The body now takes only
+  `name`, `cron`, and `prompt`. `enabled` gets a 422 saying pausing isn't supported
+  (delete and recreate instead), and any other unknown field gets a 422 too.
 
 ## 0.13.40 — 2026-09-25
 

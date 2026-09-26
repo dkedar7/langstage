@@ -224,7 +224,7 @@ The **Board** tab turns LangStage into a lightweight agent control room: delegat
 
 Task REST API: `GET /api/tasks`, `POST /api/tasks` (delegate), `GET /api/tasks/{id}/events`, and `POST /api/tasks/{id}/{cancel,retry,resume,message}`. Concurrency is bounded by `LANGSTAGE_TASK_CONCURRENCY` (default 3). Every task runs the agent the server was started with: `POST /api/tasks` rejects a non-null `agent_spec` with 422 rather than loading another agent over REST.
 
-Schedules (cron) REST API: `GET /api/cron`, `POST /api/cron` (create), `DELETE /api/cron/{id}`, and `POST /api/cron/{id}/run` (run now → enqueues a task). (The Schedules tab drives these; note the path is `/api/cron`, not `/api/schedules`.)
+Schedules (cron) REST API: `GET /api/cron`, `POST /api/cron` (create), `DELETE /api/cron/{id}`, and `POST /api/cron/{id}/run` (run now → enqueues a task). (The Schedules tab drives these; note the path is `/api/cron`, not `/api/schedules`.) `POST /api/cron` takes exactly `name`, `cron`, and `prompt`; any other field, including `enabled`, is rejected with 422. Schedules can't be paused: delete one and create it again later.
 
 > **Single-process:** run one server worker. The atomic task claim and the worker pool are scoped to one process; multiple uvicorn workers would double-run tasks.
 
