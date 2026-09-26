@@ -1,5 +1,7 @@
 """CLI surface tests: --show-config, --demo, and flag wiring."""
 
+from typing import ClassVar
+
 from click.testing import CliRunner
 
 from langstage import cli as cli_mod
@@ -8,7 +10,7 @@ from langstage import cli as cli_mod
 class FakeApp:
     """Stands in for CoworkApp so CLI tests never start a server."""
 
-    captured: dict = {}
+    captured: ClassVar[dict] = {}
 
     def __init__(self, **kwargs):
         FakeApp.captured = dict(kwargs)
@@ -244,6 +246,37 @@ def test_check_json_emits_structured_report_for_demo():
     assert report["live"] == {"ran": False}
     # no ANSI/human markers leaked into the JSON stream
     assert "[ ok ]" not in result.output and "[warn]" not in result.output
+
+
+def test_agent_tool_names_detects_middleware_tools():
+    """Middleware-provided tools should be reported without guessing from node names."""
+
+    class Tool:
+        name = "write_todos"
+
+    class Middleware:
+        def __init__(self):
+            self.tools = [Tool()]
+
+    class Agent:
+        def __init__(self):
+            self.middleware = [Middleware()]
+            self.nodes = {
+                "__start__": None,
+                "model": None,
+                "tools": None,
+                "TodoListMiddleware.after_model": None,
+            }
+
+    assert "write_todos" in (cli_mod._agent_tool_names(Agent()) or set())
+
+
+def test_agent_tool_names_does_not_guess_from_todo_node_name():
+    class Agent:
+        def __init__(self):
+            self.nodes = {"TodoListMiddleware.after_model": None}
+
+    assert "write_todos" not in (cli_mod._agent_tool_names(Agent()) or set())
 
 
 def test_check_json_load_failure_still_json_and_exit_1():

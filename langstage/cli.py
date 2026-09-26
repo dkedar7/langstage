@@ -6,9 +6,9 @@ import sys
 import click
 from langstage_core.console import console_safe, safe_print
 
+from langstage.agent_tools import agent_tool_names as _agent_tool_names
 from langstage.app import CoworkApp
 from langstage.config import AppConfig
-
 
 # The keyless echo agent shipped with the shared core - see `--demo`.
 DEMO_AGENT_SPEC = "langstage_core.demo.stub:graph"
@@ -322,22 +322,6 @@ def _load_error_detail(e: BaseException) -> str:
     return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
 
 
-def _agent_tool_names(agent) -> set[str] | None:
-    """Best-effort: pull bound tool names out of a compiled graph. Returns None
-    if the graph can't be introspected (capabilities may still work)."""
-    try:
-        names: set[str] = set()
-        nodes = getattr(agent, "nodes", None) or {}
-        for node in nodes.values():
-            target = getattr(node, "bound", node)
-            tbn = getattr(target, "tools_by_name", None)
-            if isinstance(tbn, dict):
-                names.update(tbn.keys())
-        return names or None
-    except Exception:  # noqa: BLE001 - introspection is inherently best-effort
-        return None
-
-
 @main.command()
 @click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec to check (e.g., my_agent.py:agent). Default: the configured "
                    "LANGSTAGE_AGENT_SPEC / langstage.toml [agent] spec, as `run` uses.")
@@ -365,6 +349,7 @@ def check(agent_spec, demo, live, as_json):
     import json as _json
 
     from langstage_core import load_agent_spec
+
     from langstage.middleware import agent_uses_canvas_middleware
 
     spec = DEMO_AGENT_SPEC if demo else agent_spec
@@ -477,7 +462,7 @@ def check(agent_spec, demo, live, as_json):
     if not introspected:
         say(f"{warn} could not introspect tools - the checks below are best-effort")
         tools = set()
-    has_task = any(t.endswith("async_task") or t.endswith("async_tasks") for t in tools)
+    has_task = any(t.endswith(("async_task", "async_tasks")) for t in tools)
     has_cron = "schedule_run" in tools
     has_todos = "write_todos" in tools
 
