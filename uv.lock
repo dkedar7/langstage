@@ -1005,7 +1005,7 @@ wheels = [
 
 [[package]]
 name = "langstage"
-version = "0.13.42"
+version = "0.13.43"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },

@@ -15,7 +15,7 @@ import uvicorn
 from langstage_core import load_agent_spec
 from langstage_core.console import safe_print
 from langstage.config import AppConfig
-from langstage.server.main import create_fastapi_app
+from langstage.server.main import CHECKPOINT_DB, create_fastapi_app
 
 # NOTE: langstage.default_agent and langstage.middleware are imported lazily
 # (inside the methods below) because they pull in `langchain`/`deepagents`, which
@@ -486,3 +486,34 @@ def _resolve_local_icon(icon_path: str) -> tuple[str, str]:
         return "", ""
 
     return str(abs_path), "/api/icon"
+
+
+def _sqlite_checkpointer_available() -> bool:
+    """Whether the server's SQLite upgrade can import its saver."""
+    try:
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # noqa: F401
+    except Exception:  # noqa: BLE001 - any import failure means it stays in-memory
+        return False
+    return True
+
+
+def served_checkpointer(agent) -> tuple[bool, str]:
+    """``(durable, detail)`` for the checkpointer ``run`` will serve ``agent`` with.
+
+    Mirrors the wiring: ``CoworkApp`` attaches (and marks) an in-memory saver when
+    the graph has none, and the server's startup swaps a marked one for SQLite at
+    ``<workspace>/.langstage/checkpoints.db`` when the saver imports. A graph's own
+    checkpointer is used as is. ``check`` reports this instead of assuming the
+    in-memory fallback (gh #183).
+    """
+    own = getattr(agent, "checkpointer", None)
+    ours = getattr(agent, "_langstage_auto_checkpointer", False) is True
+    if own is not None and not ours:
+        kind = type(own).__name__
+        durable = not isinstance(own, bool) and "memory" not in kind.lower()
+        return durable, f"your own ({kind}), used as is"
+    if _sqlite_checkpointer_available():
+        where = CHECKPOINT_DB.as_posix()
+        return True, f"SQLite at <workspace>/{where}, attached by LangStage (durable)"
+    return False, ("in-memory, attached by LangStage (the SQLite saver is unavailable; "
+                   "state is lost on restart)")

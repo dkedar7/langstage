@@ -181,7 +181,7 @@ Without `--agent`, `check` and `chat` use the agent configured with `LANGSTAGE_A
 
 ```
 [ ok ] loads
-[ ok ] checkpointer present (memory + interrupts + review gate)
+[ ok ] checkpointer: SQLite at <workspace>/.langstage/checkpoints.db, attached by LangStage (durable)
 [warn] no CanvasMiddleware - Canvas hidden (attach it to enable)
 [ ok ] write_todos present - Plan tab will populate
 [warn] async task tools not found - add `from langstage import LANGSTAGE_TOOLS` ...
