@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.42 — 2026-09-25
+
+### Changed
+- **Exit codes follow the LangStage family scheme** ([langstage-core ADR 0007](https://github.com/dkedar7/langstage-core/blob/main/docs/adr/0007-family-exit-codes.md)):
+  `0` success, `1` failure, `2` paused on a human-in-the-loop interrupt, `64` usage error.
+  Scripts that matched the old codes need updating:
+  - Usage errors (an unknown option or command, an invalid `--port` / `--theme`,
+    `--demo` with `--agent`, a missing `chat` prompt) exit `64` (were click's `2`).
+  - `check` / `chat` with no agent configured exit `1` (were `2`).
+  - `chat` that ends on a human-in-the-loop interrupt exits `2` (was `1`).
+  - `run` on a busy port prints `cannot serve at <url>: ...` and exits `1` before the
+    banner (was the banner, then uvicorn's exit `3`). Any other startup failure from
+    uvicorn also exits `1`.
+- `langstage --help` lists the exit codes; README has an "Exit codes" section.
+
 ## 0.13.41 — 2026-09-25
 
 ### Fixed

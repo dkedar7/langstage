@@ -176,12 +176,12 @@ def test_theme_enum_is_case_sensitive_like_the_cli(monkeypatch, capsys):
 
 def test_cli_theme_flag_still_hard_rejects():
     # The interactive --theme flag keeps its immediate click.Choice rejection at
-    # parse time (exit 2, before the command body runs, so no server starts) --
+    # parse time (usage exit 64, core ADR 0007, before the command body runs, so no server starts) --
     # only ambient config degrades. Guards that this fix left the CLI path alone.
     result = CliRunner().invoke(
         cli_mod.main, ["run", "--theme", "purple", "--demo", "--no-browser"]
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 64
     assert "Invalid value for '--theme'" in result.output
 
 
@@ -386,13 +386,13 @@ def test_valid_env_port_still_resolves_with_source(monkeypatch):
 
 
 def test_cli_port_flag_hard_rejects_out_of_range():
-    # The interactive --port flag hard-errors at parse time (exit 2, before the command
+    # The interactive --port flag hard-errors at parse time (usage exit 64, before the command
     # body runs, so no server starts) via click.IntRange — the clean CLI error an
     # explicit flag deserves, mirroring --theme. Guards the silent-misbind is gone.
     result = CliRunner().invoke(
         cli_mod.main, ["run", "--port", "70000", "--demo", "--no-browser"]
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 64
     assert "Invalid value for '--port'" in result.output
 
 
