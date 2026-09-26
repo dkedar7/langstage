@@ -8,6 +8,12 @@
   <img src="assets/header.svg" alt="langstage — the web stage for your LangGraph agent" width="100%" />
 </p>
 
+<p align="center">
+  <img src="https://dkedar7.github.io/langstage-docs/assets/demos/web.gif" alt="Animated demo: the web app streams a reply with a tool call, then runs a task delegated from the Board tab" width="800" />
+</p>
+
+<p align="center"><sub>The keyless demo agent (<code>langstage run -a langstage_core.demo.tools:graph</code>), recorded by CI against the latest release. <a href="https://dkedar7.github.io/langstage-docs/stages/web/">Docs for the web stage</a></sub></p>
+
 **Stack**: Python (FastAPI, chat over Server-Sent Events) backend, React (TypeScript + Vite) frontend.
 
 ## Every stage for your LangGraph agent
@@ -23,7 +29,7 @@ langstage is the web stage (and namesake) of the **LangStage family**: write you
 | Terminal | [langstage-cli](https://github.com/dkedar7/langstage-cli) | `langstage-cli -a my_agent.py:graph` |
 | VS Code | [langstage-vscode](https://github.com/dkedar7/langstage-vscode) | chat participant + stdio sidecar |
 | Reference agent | [langstage-hermes](https://github.com/dkedar7/langstage-hermes) | `LANGSTAGE_AGENT_SPEC=langstage_hermes.agent:graph` on any stage |
-| Shared core | [langstage-core](https://github.com/dkedar7/langstage-core) | typed events + config resolver behind every stage |
+| Shared core | [langstage-core](https://github.com/dkedar7/langstage-core) | AG-UI streaming bridge + config resolver behind every stage |
 
 ### Serve over AG-UI
 
@@ -153,7 +159,7 @@ Point `--agent` at any compiled LangGraph graph — `langstage run --agent my_ag
 
 **Works out of the box (no agent changes):** chat with token streaming, tool-call visualization, the file browser, the **task board** (delegate any agent from the UI), and **schedules**.
 
-**Auto-handled:** if your graph has no checkpointer, LangStage attaches an in-memory one so conversation memory, human-in-the-loop interrupts, and the task review gate work. Supply your own checkpointer for durability across restarts.
+**Auto-handled:** if your graph has no checkpointer, LangStage attaches one so conversation memory, human-in-the-loop interrupts, and the task review gate work. When the server starts, that auto-attached saver is upgraded to a durable SQLite checkpointer at `<workspace>/.langstage/checkpoints.db`, so conversations, pending interrupts, and the review gate survive a restart. (If SQLite can't be opened, it stays in memory and logs a warning.) A checkpointer you supply yourself is always used as-is.
 
 **Unlock the rest:**
 
@@ -315,20 +321,24 @@ All commands support inline arguments:
 
 The prompt templates behind each command are configurable via Python API, CLI flags, or environment variables (see Configuration table above).
 
-## Stream Parser Config
+## Tool extractors
 
-Control how agent events are parsed by passing `stream_parser_config` to `CoworkApp`:
+An extractor turns a tool's result into a structured `extraction` frame. Pass them to
+`CoworkApp` under `stream_parser_config` (the argument keeps its pre-1.0 name; `extractors`
+is the key it uses, and the old stream-parser keys are accepted and ignored):
 
 ```python
+from langstage_core.demo.tools import DemoLookupExtractor  # a small working example
+
 app = CoworkApp(
     agent=agent,
-    stream_parser_config={
-        "extractors": [...],  # Custom tool extractors
-    },
+    stream_parser_config={"extractors": [DemoLookupExtractor()]},
 )
 ```
 
-See [langstage-core](https://github.com/dkedar7/langstage-core) for details.
+An extractor implements langstage-core's `ToolExtractor` protocol (`tool_name`,
+`extracted_type`, `extract(content)`). The built-ins are listed under
+[What's in the box](https://github.com/dkedar7/langstage-core#whats-in-the-box).
 
 ## Custom CSS Theming
 
@@ -383,7 +393,7 @@ even on the affected versions, so setting it directly is a safe fallback.
 ## Architecture
 
 ```
-Browser  <--SSE / REST-->  FastAPI  <--astream_events-->  LangGraph Agent
+Browser  <--SSE / REST-->  FastAPI  <--SessionAdapter (AG-UI bridge, langstage-core)-->  LangGraph Agent
                               |
    chat (Server-Sent Events):  GET /api/stream?session_id=...   (event stream)
                                POST /api/chat {session_id, content}
@@ -395,7 +405,7 @@ Browser  <--SSE / REST-->  FastAPI  <--astream_events-->  LangGraph Agent
                                /api/tasks       (async task board)
 ```
 
-The frontend is pre-built and bundled into the Python package as static files. No Node.js required at runtime.
+Every chat turn streams through langstage-core's `SessionAdapter`, which runs the graph via the in-process AG-UI adapter and relays its frames to the browser over SSE. The frontend is pre-built and bundled into the Python package as static files. No Node.js required at runtime.
 
 ## REST API
 
