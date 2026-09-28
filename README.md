@@ -20,6 +20,10 @@
 
 langstage is the web stage (and namesake) of the **LangStage family**: write your agent once — any LangGraph `CompiledGraph`, from a single ReAct agent to a multi-agent supervisor — and run it on every stage with the same spec string (`module:attr` or `path/to/file.py:attr`), the same `langstage.toml` config file, and the same `LANGSTAGE_*` environment variables.
 
+<p align="center">
+  <a href="https://dkedar7.github.io/langstage-docs/"><img src="https://dkedar.com/media/langstage/langstage-cube.gif" alt="Animated overview: you define one LangGraph agent, and six LangStage faces assemble into a cube around it: a web app, a terminal, a notebook, an editor, an agent that learns, and your own app" width="800" /></a>
+</p>
+
 > **Multi-agent works out of the box.** A supervisor, swarm, or crew compiles to the same `CompiledStateGraph` langstage loads, so its routing and hand-offs stream just like a single agent — no extra setup. See [Running a multi-agent supervisor](https://dkedar7.github.io/langstage-docs/guides/multi-agent-supervisor/).
 
 | Stage | Package | Try it |
@@ -27,7 +31,7 @@ langstage is the web stage (and namesake) of the **LangStage family**: write you
 | Web app | langstage | **you are here** |
 | JupyterLab | [langstage-jupyter](https://github.com/dkedar7/langstage-jupyter) | `pip install langstage-jupyter`, then the chat sidebar in `jupyter lab` |
 | Terminal | [langstage-cli](https://github.com/dkedar7/langstage-cli) | `langstage-cli -a my_agent.py:graph` |
-| VS Code | [langstage-vscode](https://github.com/dkedar7/langstage-vscode) | chat participant + stdio sidecar |
+| VS Code | [langstage-vscode](https://github.com/dkedar7/langstage-vscode) | install **LangStage** from the Marketplace or Open VSX: a standalone chat panel that also runs in Cursor and VSCodium |
 | Reference agent | [langstage-hermes](https://github.com/dkedar7/langstage-hermes) | `LANGSTAGE_AGENT_SPEC=langstage_hermes.agent:graph` on any stage |
 | Shared core | [langstage-core](https://github.com/dkedar7/langstage-core) | AG-UI streaming bridge + config resolver behind every stage |
 
