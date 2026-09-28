@@ -61,7 +61,7 @@ async def test_stream_delivers_content_and_complete():
     assert "error" not in types
 
 
-async def test_message_and_cwd_reach_the_agent(monkeypatch, tmp_path):
+async def test_message_and_cwd_reach_the_agent(monkeypatch, tmp_path, raw_demo_echo):
     """The user message + the resolved working directory must reach the agent.
 
     The stub echoes the human message it receives, so both the message and the
