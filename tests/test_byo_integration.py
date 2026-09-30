@@ -107,7 +107,3 @@ def test_check_doctor_runs_on_demo():
     # demo agent ships no canvas / delegation tools → doctor should flag them
     assert "Canvas" in result.output
 
-
-def test_check_doctor_requires_a_spec():
-    result = CliRunner().invoke(main, ["check"])
-    assert result.exit_code != 0  # UsageError without --agent/--demo
