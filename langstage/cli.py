@@ -291,12 +291,6 @@ def init(target, force):
                f"Check with `langstage config`, which lists the file it reads.")
 
 
-_NO_SPEC_MSG = (
-    "No agent to use. Pass --agent <spec> (or --demo), or configure one with "
-    "LANGSTAGE_AGENT_SPEC or `[agent] spec` in langstage.toml."
-)
-
-
 def _resolved_agent_spec():
     """The ``agent_spec`` that ``run`` would serve when no ``--agent`` is given.
 
@@ -323,8 +317,9 @@ def _load_error_detail(e: BaseException) -> str:
 
 
 @main.command()
-@click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec to check (e.g., my_agent.py:agent). Default: the configured "
-                   "LANGSTAGE_AGENT_SPEC / langstage.toml [agent] spec, as `run` uses.")
+@click.option("--agent", "-a", "agent_spec", default=None, help="Agent spec to check (e.g., my_agent.py:agent). Default: what `run` serves: "
+                   "the configured LANGSTAGE_AGENT_SPEC / langstage.toml [agent] spec, else "
+                   "the built-in default agent.")
 @click.option("--demo", is_flag=True, default=False, help="Check the built-in demo agent instead")
 @click.option("--live", is_flag=True, default=False,
               help="Also run ONE real turn through the agent (needs a working "
@@ -354,17 +349,18 @@ def check(agent_spec, demo, live, as_json):
 
     spec = DEMO_AGENT_SPEC if demo else agent_spec
     base_dir = None
+    default_workspace = None
     if not spec:
         # No flag: preflight what `run` would serve, i.e. the spec resolved from env /
-        # langstage.toml (gh #143).
+        # langstage.toml (gh #143), or with nothing configured the built-in default
+        # agent, built for the resolved workspace exactly as CoworkApp does (gh #187).
         spec, cfg = _resolved_agent_spec()
         if spec:
             base_dir = cfg.toml_dir_for("agent_spec")
-    if not spec:
-        # Not configured is a failure (1), not a usage error (ADR 0007).
-        raise click.ClickException(_NO_SPEC_MSG)
+        else:
+            default_workspace = cfg.workspace_root
 
-    ok = click.style("[ ok ]", fg="green")
+    ok =click.style("[ ok ]", fg="green")
     warn = click.style("[warn]", fg="yellow")
     fail = click.style("[fail]", fg="red")
 
@@ -372,6 +368,7 @@ def check(agent_spec, demo, live, as_json):
     # diverge; `--json` prints it and suppresses the human output (gh #73).
     report = {
         "spec": spec,
+        "default_agent": default_workspace is not None,
         "loads": False,
         "agent_name": None,
         "checks": {},
@@ -392,12 +389,27 @@ def check(agent_spec, demo, live, as_json):
             safe_print(_json.dumps(report, indent=2))
         raise SystemExit(code)
 
-    say(f"Checking agent: {spec}\n")
+    if default_workspace is not None:
+        say("Checking agent: the built-in default agent (nothing is configured, so this "
+            "is what `run` serves)\n")
+    else:
+        say(f"Checking agent: {spec}\n")
     try:
-        # Under --json, the agent's import-time prints (a library's load banner, a debug
-        # print) go to stderr, so stdout stays the one JSON object the CI gate parses
-        # (gh #140).
-        agent = load_agent_spec(spec, base_dir=base_dir, stdout_to_stderr=as_json)
+        if default_workspace is not None:
+            # Needs the `deepagents` extra; without it this raises the same install hint
+            # `run` shows, reported below as a load failure (gh #187).
+            import contextlib
+
+            from langstage.default_agent import create_default_agent
+
+            quiet = contextlib.redirect_stdout(sys.stderr) if as_json else contextlib.nullcontext()
+            with quiet:
+                agent = create_default_agent(default_workspace)
+        else:
+            # Under --json, the agent's import-time prints (a library's load banner, a
+            # debug print) go to stderr, so stdout stays the one JSON object the CI gate
+            # parses (gh #140).
+            agent = load_agent_spec(spec, base_dir=base_dir, stdout_to_stderr=as_json)
     except Exception as e:  # noqa: BLE001 - report load failure cleanly
         detail = _load_error_detail(e)  # falls back to the class name for a message-less exc (gh #92)
         report["error"] = detail
@@ -561,15 +573,12 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
         if agent_spec:
             raise click.UsageError("--demo and --agent are mutually exclusive.")
         agent_spec = DEMO_AGENT_SPEC
-    if not agent_spec and not _resolved_agent_spec()[0]:
-        # No flag and nothing configured. With a spec from env / langstage.toml,
-        # CoworkApp below resolves and loads it exactly as `run` does (gh #143).
-        raise click.ClickException(_NO_SPEC_MSG)
-
     try:
         # Reuse CoworkApp for agent-load + workspace + checkpointer resolution (the
         # exact wiring `run` uses), so `chat` resolves --workspace/toml/env the same
-        # way — without starting a server. A load failure surfaces as a clean
+        # way — without starting a server. With no --agent that is the configured spec
+        # (gh #143) or, with nothing configured, the built-in default agent (gh #187),
+        # whose missing-`deepagents` hint surfaces here as it does for `run`. A load failure surfaces as a clean
         # one-line CLI error, mirroring `run` / `check`. (gh #90, #101)
         # Under --json the agent's import-time prints go to stderr so stdout stays pure
         # JSON (gh #140).

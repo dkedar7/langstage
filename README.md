@@ -181,7 +181,7 @@ Point `--agent` at any compiled LangGraph graph — `langstage run --agent my_ag
 langstage check --agent my_agent.py:graph
 ```
 
-Without `--agent`, `check` and `chat` use the agent configured with `LANGSTAGE_AGENT_SPEC` or `[agent] spec` in `langstage.toml`, the same one `run` serves.
+Without `--agent`, `check` and `chat` use the same agent `run` serves: the one configured with `LANGSTAGE_AGENT_SPEC` or `[agent] spec` in `langstage.toml`, or with nothing configured, the built-in default agent (which needs the `deepagents` extra).
 
 ```
 [ ok ] loads

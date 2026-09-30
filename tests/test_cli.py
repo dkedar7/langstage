@@ -2,6 +2,8 @@
 
 from typing import ClassVar
 
+import pytest
+
 from click.testing import CliRunner
 
 from langstage import cli as cli_mod
@@ -368,11 +370,6 @@ def test_chat_requires_a_prompt():
     assert result.exit_code != 0  # PROMPT is a required argument
 
 
-def test_chat_requires_an_agent_or_demo():
-    result = CliRunner().invoke(cli_mod.main, ["chat", "hi"])
-    assert result.exit_code != 0
-    assert "--agent" in result.output and "LANGSTAGE_AGENT_SPEC" in result.output
-
 
 def test_chat_nonzero_exit_when_the_agent_errors(tmp_path):
     """Like `check --live`, a turn that errors exits non-zero — so `chat` doubles as
@@ -446,13 +443,70 @@ def test_chat_honors_agent_spec_from_env(tmp_path, monkeypatch):
     assert "hello resolved" in result.output
 
 
-def test_check_without_any_spec_names_every_source(tmp_path, monkeypatch):
+# ── gh #187: with nothing configured, check / chat use the default agent `run` serves ──
+
+
+def _nothing_configured(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("LANGSTAGE_AGENT_SPEC", raising=False)
     monkeypatch.delenv("DEEPAGENT_AGENT_SPEC", raising=False)
+    monkeypatch.setenv("LANGSTAGE_CONFIG_HOME", str(tmp_path / "no-global"))
+    monkeypatch.setenv("LANGSTAGE_WORKSPACE_ROOT", str(tmp_path))
+
+
+def test_check_with_nothing_configured_preflights_the_default_agent(tmp_path, monkeypatch):
+    import json
+
+    pytest.importorskip("deepagents")
+    _nothing_configured(tmp_path, monkeypatch)
+    result = CliRunner().invoke(cli_mod.main, ["check", "--json"])
+    report = json.loads(result.stdout)
+    assert report["default_agent"] is True and report["spec"] is None
+    assert report["loads"] is True, report
+    assert report["agent_name"] == "LangStage"
+
+
+def test_check_with_nothing_configured_says_so(tmp_path, monkeypatch):
+    pytest.importorskip("deepagents")
+    _nothing_configured(tmp_path, monkeypatch)
     result = CliRunner().invoke(cli_mod.main, ["check"])
-    assert result.exit_code == 1  # not configured is a failure (core ADR 0007)
-    assert "LANGSTAGE_AGENT_SPEC" in result.output
+    assert "built-in default agent" in result.output
+    assert "No agent to use" not in result.output
+
+
+def test_check_default_agent_without_deepagents_is_a_load_failure(tmp_path, monkeypatch):
+    """No `deepagents` extra: the same install hint `run` gives, as a load failure (1)."""
+    import langstage.default_agent as da
+
+    _nothing_configured(tmp_path, monkeypatch)
+
+    def _missing(_ws):
+        raise RuntimeError('needs the deepagents extra: pip install "langstage[deepagents]"')
+
+    monkeypatch.setattr(da, "create_default_agent", _missing)
+    result = CliRunner().invoke(cli_mod.main, ["check"])
+    assert result.exit_code == 1, result.output
+    assert "failed to load" in result.output and "deepagents" in result.output
+
+
+def test_chat_with_nothing_configured_uses_the_default_agent(tmp_path, monkeypatch):
+    """`chat` builds the agent `run` would serve; the keyless stub stands in for the
+    default agent here, which would need a model key to answer."""
+    import langstage.default_agent as da
+    from langstage_core import load_agent_spec
+
+    _nothing_configured(tmp_path, monkeypatch)
+    seen = {}
+
+    def _default(ws):
+        seen["workspace"] = ws
+        return load_agent_spec(_STUB)
+
+    monkeypatch.setattr(da, "create_default_agent", _default)
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--no-context", "hello default"])
+    assert result.exit_code == 0, result.output
+    assert "hello default" in result.output
+    assert seen["workspace"] is not None
 
 
 # ── gh #183: check reports the checkpointer `run` will actually use ──────────

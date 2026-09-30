@@ -64,10 +64,18 @@ def test_usage_errors_exit_64(args):
 
 
 @pytest.mark.parametrize("args", [["check"], ["chat", "hi"]])
-def test_no_spec_is_failure_1(args, no_spec):
+def test_no_spec_without_the_default_agent_is_failure_1(args, no_spec, monkeypatch):
+    """Nothing configured means the built-in default agent, as for `run` (gh #187).
+    When it can't be built (no `deepagents` extra) that is a failure, 1."""
+    import langstage.default_agent as da
+
+    def _missing(_ws):
+        raise RuntimeError('needs the deepagents extra: pip install "langstage[deepagents]"')
+
+    monkeypatch.setattr(da, "create_default_agent", _missing)
     result = _invoke(args)
     assert result.exit_code == 1, result.output
-    assert "LANGSTAGE_AGENT_SPEC" in result.output
+    assert "deepagents" in result.output
 
 
 @pytest.mark.parametrize(

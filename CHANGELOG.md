@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.13.44 — 2026-09-30
+
+### Fixed
+- **The built-in default agent populates the Plan tab again** (gh #149, #150, thanks
+  @kkkhs). deepagents 0.7 dropped `write_todos` from its defaults, so the bundled agent
+  stopped emitting todos. It now adds `TodoListMiddleware` when the built graph lacks
+  `write_todos`, without duplicating it on deepagents versions that still include it. Tool
+  introspection (used by `check`) also reads middleware-provided tools.
+- **`check` and `chat` use the default agent `run` serves when nothing is configured**
+  (gh #187). With no `--agent`, no `LANGSTAGE_AGENT_SPEC` and no `[agent] spec`, `run` serves
+  the built-in default agent, but `check` and `chat` failed with "No agent to use".
+  `check` now preflights that agent (`--json` reports `"default_agent": true` and
+  `"spec": null`), and `chat` runs its turn. Without the `deepagents` extra, both show the
+  same install hint as `run`.
+
+### Changed
+- **Requires langstage-core 1.0.40**, which fixes a hang in the task runner's shutdown on
+  Python 3.11 (a stop that raced a worker wake-up was lost, so the server never finished
+  shutting down).
+
 ## 0.13.43 — 2026-09-26
 
 ### Fixed
