@@ -109,7 +109,7 @@ def test_run_turn_sync_drives_one_turn_end_to_end():
 # ── the two siblings feed the agent the SAME input (gh #106) ─────────────────
 
 
-def test_cli_and_endpoint_feed_the_agent_the_same_input(monkeypatch):
+def test_cli_and_endpoint_feed_the_agent_the_same_input(monkeypatch, raw_demo_echo):
     """gh #106: `langstage chat` and `POST /api/chat/complete` share `complete_turn`
     and are documented as producing an identical, browser-faithful reply — so they must
     feed the agent the *same input* for the same prompt. Previously the CLI withheld the
@@ -159,7 +159,7 @@ def test_cli_and_endpoint_feed_the_agent_the_same_input(monkeypatch):
     assert "ping" in cli_content
 
 
-def test_cli_no_context_flag_restores_the_terse_echo():
+def test_cli_no_context_flag_restores_the_terse_echo(raw_demo_echo):
     """gh #106: `--no-context` opts back out of the browser-identical context injection
     for a clean scriptable echo — so the CLI's default (context injected) and its escape
     hatch (context withheld) are demonstrably different, and the flag exists at all
