@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.45 — 2026-10-01
+
+### Fixed
+- **`chat --json` prints JSON when the agent fails to load** (gh #189). A load failure (a
+  bad `--agent` spec, or the default agent without the `deepagents` extra) printed only a
+  plain `Error: ...` line to stderr, so a `langstage chat --json | jq` pipeline failed to
+  parse instead of reading the error. It now prints the same
+  `{"content": "", "tool_calls": [], "error": ...}` object as a failed turn (with the error
+  formatted as `check --json` formats it), and still exits 1.
+
 ## 0.13.44 — 2026-09-30
 
 ### Fixed

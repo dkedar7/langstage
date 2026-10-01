@@ -394,6 +394,38 @@ def test_chat_bad_agent_spec_is_a_clean_error():
     _assert_clean_run_error(result)
 
 
+def test_chat_json_load_failure_is_still_json():
+    """gh #189: with --json a load failure prints the turn-error object to stdout (exit 1),
+    so `chat --json | jq -e .error` reads the error instead of failing to parse."""
+    import json
+
+    result = CliRunner().invoke(
+        cli_mod.main, ["chat", "--json", "--agent", "nope_missing_mod:graph", "hi"]
+    )
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["content"] == "" and payload["tool_calls"] == []
+    assert payload["error"].startswith("ModuleNotFoundError")
+    assert "nope_missing_mod" in payload["error"]
+
+
+def test_chat_json_default_agent_unavailable_is_still_json(tmp_path, monkeypatch):
+    """The no-config path (default agent without the deepagents extra) keeps --json too."""
+    import json
+
+    import langstage.default_agent as da
+
+    _nothing_configured(tmp_path, monkeypatch)
+
+    def _missing(_ws):
+        raise RuntimeError('needs the deepagents extra: pip install "langstage[deepagents]"')
+
+    monkeypatch.setattr(da, "create_default_agent", _missing)
+    result = CliRunner().invoke(cli_mod.main, ["chat", "--json", "hi"])
+    assert result.exit_code == 1, result.output
+    assert "deepagents" in json.loads(result.stdout)["error"]
+
+
 # ── check / chat honor the resolved agent_spec (gh #143) ─────────────────────
 # `run` serves LANGSTAGE_AGENT_SPEC / `[agent] spec` with no --agent; check and chat
 # used to guard on the raw flag and demand --agent anyway.
