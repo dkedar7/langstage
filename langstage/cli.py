@@ -584,6 +584,16 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
         # JSON (gh #140).
         app = CoworkApp(agent_spec=agent_spec, workspace=workspace, _stdout_to_stderr=as_json)
     except (RuntimeError, ValueError, FileNotFoundError, AttributeError, ImportError) as e:
+        if as_json:
+            # --json keeps its contract on a load failure too: the same object the
+            # turn-error path prints, with the error formatted as `check --json` does,
+            # so a `chat --json | jq` gate reads `.error` instead of failing to parse
+            # (gh #189).
+            import json as _json
+
+            payload = {"content": "", "tool_calls": [], "error": _load_error_detail(e)}
+            safe_print(_json.dumps(payload, indent=2))
+            raise SystemExit(EXIT_FAIL) from e
         raise click.ClickException(str(e) or type(e).__name__) from e
 
     from langstage.oneturn import run_turn_sync
