@@ -252,11 +252,15 @@ class CoworkApp:
         # set — but a bare CompiledStateGraph's default .name is "LangGraph" (and
         # "agent"/"graph" are just as generic), which reads as a confusing app title for
         # a BYO agent. Treat those as "no meaningful name" and keep the LangStage default.
+        # "Not set" is the recorded source, not the value: an explicit --title "LangStage"
+        # or LANGSTAGE_AGENT_NAME=Agent equals the default string but is still the
+        # user's choice, and must not be replaced by the agent's name (gh #192).
         inferred_name = meaningful_agent_name(self.agent)
         if inferred_name:
-            if self.config.title == "LangStage":
+            sources = self.config.sources
+            if sources.get("title", "default") == "default":
                 self.config.title = inferred_name
-            if self.config.agent_name == "Agent":
+            if sources.get("agent_name", "default") == "default":
                 self.config.agent_name = inferred_name
 
         # Resolve local icon_url to a serveable path

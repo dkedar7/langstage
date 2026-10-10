@@ -245,17 +245,20 @@ def create_fastapi_app(
     app.state.task_runner = runner
     app.state.task_store = task_store
 
-    # Serve custom CSS (always register so it returns 404 instead of SPA catch-all)
-    # Stylesheet, not JSON — declare the real media type rather than letting the
-    # schema advertise an empty application/json body (gh #98).
+    # Serve custom CSS (always registered, so it never falls through to the SPA
+    # catch-all). Stylesheet, not JSON — declare the real media type rather than
+    # letting the schema advertise an empty application/json body (gh #98).
+    # No custom CSS is the normal case, not an error: the frontend fetches this on
+    # every load, and a 404 put a red console error on every page (gh #193). 204
+    # tells it there's nothing to apply.
     @app.get(
         "/api/custom-css",
         response_class=Response,
-        responses={200: {"content": {"text/css": {}}}},
+        responses={200: {"content": {"text/css": {}}}, 204: {"description": "No custom CSS configured"}},
     )
     async def get_custom_css():
         if not custom_css_content:
-            return Response(status_code=404)
+            return Response(status_code=204)
         return Response(content=custom_css_content, media_type="text/css")
 
     # Serve local icon file if configured

@@ -69,3 +69,21 @@ def test_workspace_name_is_the_resolved_folder_for_a_relative_workspace(
     monkeypatch.setattr("langstage_core.host.workspace._ACTIVE", None)
     app = CoworkApp(agent=_graph(), workspace=".")
     assert app.config.to_client_dict()["workspace_name"] == "my-cool-project"
+
+
+def test_explicit_default_title_and_agent_name_are_kept(tmp_path):
+    """An explicit value that equals the default string is still the user's choice:
+    it must not be replaced by the agent's name (gh #192)."""
+    app = CoworkApp(
+        agent=_graph("Research Assistant"), workspace=str(tmp_path),
+        title="LangStage", agent_name="Agent",
+    )
+    assert app.config.title == "LangStage"
+    assert app.config.agent_name == "Agent"
+
+
+def test_explicit_default_title_from_env_is_kept(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGSTAGE_TITLE", "LangStage")
+    app = CoworkApp(agent=_graph("Research Assistant"), workspace=str(tmp_path))
+    assert app.config.title == "LangStage"
+    assert app.config.agent_name == "Research Assistant"  # unset: still inferred
