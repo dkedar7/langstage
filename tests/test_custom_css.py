@@ -22,7 +22,8 @@ def mock_agent():
 
 @pytest.mark.asyncio
 async def test_custom_css_not_configured(workspace, mock_agent):
-    """Without custom CSS, /api/custom-css returns 404."""
+    """Without custom CSS, /api/custom-css returns 204 No Content, not 404: the
+    frontend fetches it on every load, and the 404 logged a console error (gh #193)."""
     config = AppConfig(workspace_root=workspace)
     app = create_fastapi_app(
         agent=mock_agent,
@@ -32,7 +33,8 @@ async def test_custom_css_not_configured(workspace, mock_agent):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         resp = await c.get("/api/custom-css")
-        assert resp.status_code == 404
+        assert resp.status_code == 204
+        assert resp.content == b""
 
 
 @pytest.mark.asyncio

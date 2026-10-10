@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.46 — 2026-10-10
+
+### Fixed
+- **An explicit title or agent name equal to the default is kept** (gh #192). With a named
+  agent, `--title "LangStage"` or `LANGSTAGE_AGENT_NAME=Agent` (and the same value from
+  `langstage.toml` or the Python API) was replaced by the agent's name, because "not set"
+  was decided by comparing the value to the default string. It is now decided by where the
+  value came from, so only an unset title or agent name takes the agent's name.
+- **`/api/custom-css` answers 204 No Content when no custom CSS is configured** (gh #193).
+  It returned 404, and the frontend fetches it on every page load, so the default setup
+  logged a console error on every page. The frontend already treats an empty response as
+  "nothing to apply", so the page itself is unchanged.
+
 ## 0.13.45 — 2026-10-01
 
 ### Fixed
