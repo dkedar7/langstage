@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, Loader2, Send, Check, Ban } from "lucide-react";
-import type { ChatMessage, Task, ToolCall, Decision } from "../types";
+import { X, Loader2, Send } from "lucide-react";
+import type { ChatMessage, Task, ToolCall, Decision, InterruptEventMsg } from "../types";
 import { MessageBubble } from "./MessageBubble";
+import { InterruptPanel } from "./InterruptDialog";
 import { extractionTargetId, findExtractionTarget } from "../extraction";
 
 interface TaskDetailModalProps {
@@ -134,8 +135,15 @@ export function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
   const messages = reduceEvents(events);
   const isReview = task?.state === "review_needed";
   const isTerminal = task ? TERMINAL.has(task.state) : false;
-  const actionRequests =
-    (task?.interrupt?.action_requests as Array<Record<string, unknown>>) || [];
+  // The task stores the interrupt event it paused on; render it like the chat does.
+  const interrupt: InterruptEventMsg | null = task?.interrupt
+    ? {
+        type: "interrupt",
+        action_requests: (task.interrupt.action_requests as InterruptEventMsg["action_requests"]) ?? [],
+        review_configs: (task.interrupt.review_configs as InterruptEventMsg["review_configs"]) ?? [],
+        allowed_decisions: (task.interrupt.allowed_decisions as string[]) ?? [],
+      }
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -171,7 +179,8 @@ export function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
             <MessageBubble key={m.id} message={m} agentName="Task agent" />
           ))}
           {task?.error && <div className="text-xs text-red-500">{task.error}</div>}
-          {messages.length === 0 && !task?.error && (
+          {/* A paused task's review gate below says what it's waiting for. */}
+          {messages.length === 0 && !task?.error && !isReview && (
             <div className="text-xs text-[var(--color-text-muted)]">
               {isTerminal ? "No stream output." : "Waiting for the agent…"}
             </div>
@@ -179,27 +188,20 @@ export function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
         </div>
 
         {/* Review gate */}
+        {/* What the agent asked, with a control for each decision it allows
+            (approve, reject, edit, respond), the same panel as the chat (gh #198). */}
         {isReview && (
-          <div className="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] shrink-0">
+          <div className="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] shrink-0 max-h-[50%] overflow-y-auto">
             <div className="text-[11px] text-[var(--color-text-muted)] mb-2">
-              This task is paused for your approval.
+              This task is paused for your decision.
             </div>
-            <div className="flex gap-2">
-              <button
-                disabled={busy}
-                onClick={() => respond(actionRequests.map(() => ({ type: "approve" })))}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-emerald-600 text-white disabled:opacity-40 hover:opacity-90"
-              >
-                <Check size={13} /> Approve
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => respond(actionRequests.map(() => ({ type: "reject" })))}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 text-white disabled:opacity-40 hover:opacity-90"
-              >
-                <Ban size={13} /> Reject
-              </button>
-            </div>
+            <InterruptPanel
+              interrupt={
+                interrupt ?? { type: "interrupt", action_requests: [], review_configs: [], allowed_decisions: [] }
+              }
+              onRespond={respond}
+              disabled={busy}
+            />
           </div>
         )}
 

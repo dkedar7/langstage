@@ -55,7 +55,7 @@ langstage-agui --agent my_agent.py:graph
 - **Canvas panel** — persistent report surface for charts, tables, diagrams, images, and narrative markdown. Opt-in via `CanvasMiddleware`; auto-detected by the UI.
 - **File browser** — workspace file tree with syntax-highlighted viewer and live file change detection
 - **Plan** — sidebar todo list with progress bar, synced with agent `write_todos` calls (the **Plan** tab)
-- **Async task board** — delegate tasks to background copies of the agent and track them on a Kanban board (`queued → ongoing → review → done`); click a task to live-tail its stream, approve/reject human-in-the-loop pauses, and send follow-ups. The agent can also spawn its own async sub-tasks. See [Task board](#task-board).
+- **Async task board** — delegate tasks to background copies of the agent and track them on a Kanban board (`queued → ongoing → review → done`); click a task to live-tail its stream, answer human-in-the-loop pauses (approve, reject, edit or respond, whichever the interrupt allows), and send follow-ups. The agent can also spawn its own async sub-tasks. See [Task board](#task-board).
 - **Human-in-the-loop** — interrupt dialog for reviewing and approving agent actions, or typing an answer when the agent asks a question
 - **Slash commands** — `/save-workflow`, `/create-workflow`, and `/run-workflow` with autocomplete
 - **Print / export** — print conversations via browser Print dialog with optimized CSS
@@ -234,7 +234,7 @@ so a CI gate reads them the same way here as in the other LangStage surfaces:
 The **Board** tab turns LangStage into a lightweight agent control room: delegate a task and it runs on a background copy of your agent while you keep chatting. No extra infrastructure — tasks are persisted in a local SQLite file (the board survives a restart) and executed by an in-process worker pool, built on the [`langstage-core`](https://github.com/dkedar7/langstage-core) task engine.
 
 - **Delegate** from the Board tab (or let the agent delegate to itself — see below). A task moves `queued → ongoing → review → done`; cancel or retry from any card.
-- **Open a task** (click its card) to **live-tail the agent's full event stream** — content, reasoning and tool calls, rendered like the chat. Approve/reject a task paused for human review, or send it a **follow-up**.
+- **Open a task** (click its card) to **live-tail the agent's full event stream** — content, reasoning and tool calls, rendered like the chat. A task paused for human review shows what the agent asked, with the same controls as the chat's approval dialog: Approve, Reject, Edit and Respond, each shown when the interrupt allows it. Or send a finished task a **follow-up**.
 - **Agent self-delegation** — the default agent carries five tools (`start_async_task`, `check_async_task`, `list_async_tasks`, `update_async_task`, `cancel_async_task`) so it can spawn async sub-tasks; spawned tasks are linked to their parent on the board. Add them to a custom agent with:
 
   ```python
