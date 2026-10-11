@@ -347,6 +347,81 @@ test.describe('langstage', () => {
     return posted;
   }
 
+  test('a resumed tool call keeps one card in the chat', async ({ page }) => {
+    // After an approval the resumed turn re-announces the call it paused in, with
+    // the same id. The UI used to add a second card and leave the first spinning.
+    const args = { order_id: 'NW-1041', amount: 189 };
+    await page.route('**/api/stream*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sse([
+          { type: 'session_init', session_id: 'e2e-resumed-call' },
+          { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
+          { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
+          { type: 'tool_end', id: 'call_r', name: 'issue_refund', result: 'Refund RF-2001 issued', status: 'success', error_message: null, duration_ms: 88 },
+          { type: 'content', content: 'Refund issued.', role: 'assistant', node: 'agent' },
+          { type: 'complete', outcome: 'complete' }
+        ])
+      })
+    );
+    await page.goto('/');
+
+    await expect(page.getByText('Refund issued.', { exact: true })).toBeVisible();
+    await expect(page.getByText('issue_refund', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('88ms')).toBeVisible();
+  });
+
+  test('a resumed Board task keeps one card for the call it paused in', async ({ page }) => {
+    const task = {
+      task_id: 'e2e-task-resumed',
+      parent_id: null,
+      title: 'Resumed task',
+      prompt: 'refund it',
+      agent_spec: null,
+      state: 'done',
+      thread_id: 't3',
+      created_at: '2026-10-11T00:00:00Z',
+      started_at: '2026-10-11T00:00:01Z',
+      finished_at: '2026-10-11T00:00:09Z',
+      result: 'Refund issued.',
+      artifacts: null,
+      error: null,
+      interrupt: null
+    };
+    const json = (body: unknown) => ({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body)
+    });
+    const args = { order_id: 'NW-1041', amount: 189 };
+    await page.route(/\/api\/tasks(\?.*)?$/, (route) => route.fulfill(json([task])));
+    await page.route(/\/api\/tasks\/e2e-task-resumed$/, (route) => route.fulfill(json(task)));
+    await page.route(/\/api\/tasks\/e2e-task-resumed\/events$/, (route) =>
+      route.fulfill(
+        json([
+          // The first run pauses inside the tool; the resumed run re-announces it.
+          { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
+          { type: 'interrupt', action_requests: [{ name: 'issue_refund', args }], allowed_decisions: ['approve'] },
+          { type: 'complete', outcome: 'interrupted' },
+          { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
+          { type: 'tool_end', id: 'call_r', name: 'issue_refund', result: 'Refund RF-2001 issued', status: 'success', error_message: null, duration_ms: 88 },
+          { type: 'content', content: 'Refund issued.', role: 'assistant', node: 'agent' },
+          { type: 'complete', outcome: 'complete' }
+        ])
+      )
+    );
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Board/ }).click();
+    await page.getByText('Resumed task').click();
+
+    const modal = page.locator('div.fixed.inset-0');
+    await expect(modal.getByText('Refund issued.', { exact: true })).toBeVisible();
+    await expect(modal.getByText('issue_refund', { exact: true })).toHaveCount(1);
+    await expect(modal.getByText('88ms')).toBeVisible();
+  });
+
   test('answers a paused Board task that allows respond', async ({ page }) => {
     // gh #198: the review gate offered only Approve/Reject and never showed the
     // question, so a background task that asked one couldn't be answered.
