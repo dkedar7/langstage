@@ -95,6 +95,15 @@ class FileManager:
     def __init__(self, workspace: Path):
         self.workspace = workspace.resolve()
 
+    def _rel(self, path: Path) -> str:
+        r"""``path`` as a workspace path the UI uses: a leading ``/`` and forward slashes.
+
+        ``str()`` of a relative path uses backslashes on Windows, so a canvas write
+        arrived as ``/.canvas\canvas.md``, the UI's ``/.canvas/`` check never matched,
+        and the Canvas didn't refresh.
+        """
+        return "/" + path.relative_to(self.workspace).as_posix()
+
     def get_tree(self, path: str = "/", depth: int = 1) -> dict:
         """Return directory listing with lazy loading support."""
         target = self._resolve_path(path)
@@ -131,7 +140,7 @@ class FileManager:
             if not self._is_contained(item):
                 continue
 
-            rel_path = "/" + str(item.relative_to(self.workspace))
+            rel_path = self._rel(item)
             entry: dict = {
                 "name": item.name,
                 "path": rel_path,
@@ -351,7 +360,7 @@ class FileManager:
         async for changes in awatch(self.workspace):
             for change_type, change_path in changes:
                 try:
-                    rel_path = "/" + str(Path(change_path).relative_to(self.workspace))
+                    rel_path = self._rel(Path(change_path))
                 except ValueError:
                     continue
 

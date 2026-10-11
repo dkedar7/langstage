@@ -347,3 +347,35 @@ def test_delete_through_an_escaping_dir_link_is_still_rejected(escaping_symlinks
     with pytest.raises(ValueError, match="escapes workspace"):
         FileManager(escaping_symlinks).delete_path("leak/private")
     assert (escaping_symlinks.parent / "SECRET_OUTSIDE" / "private").is_dir()
+
+
+# --- Workspace paths use forward slashes on every OS ------------------------------
+
+
+def test_tree_paths_use_forward_slashes(tmp_path):
+    # On Windows, str() of a relative path uses backslashes, so nested tree entries
+    # came back as "/data\sales.csv" instead of "/data/sales.csv".
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "sales.csv").write_text("a,b\n", encoding="utf-8")
+    tree = FileManager(tmp_path).get_tree("/", depth=2)
+    paths = [c["path"] for d in tree["entries"] for c in d.get("children", [])]
+    assert paths == ["/data/sales.csv"]
+
+
+async def test_watch_reports_canvas_writes_with_forward_slashes(tmp_path):
+    # The UI refreshes the Canvas on a change under "/.canvas/". On Windows the
+    # watcher reported "/.canvas\canvas.md", so the Canvas never refreshed.
+    import asyncio
+
+    fm = FileManager(tmp_path)
+    (tmp_path / ".canvas").mkdir()
+
+    async def first_change():
+        async for change in fm.watch():
+            return change.path
+
+    watcher = asyncio.create_task(first_change())
+    await asyncio.sleep(0.5)  # let the watcher start
+    (tmp_path / ".canvas" / "canvas.md").write_text("# report\n", encoding="utf-8")
+    path = await asyncio.wait_for(watcher, timeout=10)
+    assert path == "/.canvas/canvas.md"
