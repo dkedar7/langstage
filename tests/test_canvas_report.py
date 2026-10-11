@@ -392,3 +392,29 @@ def test_middleware_registers_its_tools():
     assert names == sorted([
         "add_to_canvas", "update_canvas_item", "remove_canvas_item", "add_canvas_section", "reorder_canvas",
     ])
+
+
+# --- Non-ASCII text survives the canvas on every OS ------------------------------
+
+
+def test_plotly_chart_with_non_ascii_text_round_trips(tmp_workspace: Path):
+    # Plotly writes its JSON as UTF-8. The canvas read it with the locale encoding
+    # (cp1252 on Windows), so an axis titled "Q2→Q3" came back as "Q2â†’Q3".
+    import json
+
+    chart = tmp_workspace / "chart.json"
+    chart.write_text(json.dumps({"data": [{"type": "bar", "x": ["a"], "y": [1]}],
+                                 "layout": {"title": {"text": "Revenue Q2→Q3 · ±5%"}}},
+                                ensure_ascii=False), encoding="utf-8")
+    tools_mod.add_to_canvas("chart.json", title="Change", item_id="c")
+    (item,) = load_canvas_from_markdown(tmp_workspace)
+    assert item["data"]["layout"]["title"]["text"] == "Revenue Q2→Q3 · ±5%"
+
+
+def test_markdown_with_non_ascii_text_round_trips(tmp_workspace: Path):
+    # canvas.md was written with the locale encoding, so "→" or an emoji failed to
+    # save on Windows (cp1252 can't encode it) or came back garbled.
+    note = "Footwear returns 6% → 8.2% ✅"
+    assert tools_mod.add_to_canvas(note, title="Finding", item_id="f").startswith("Added")
+    (item,) = load_canvas_from_markdown(tmp_workspace)
+    assert item["data"] == note

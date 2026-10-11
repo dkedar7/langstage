@@ -114,7 +114,7 @@ def _maybe_copy_asset_to_canvas(
         try:
             import pandas as pd
             sep = "\t" if ext == ".tsv" else ","
-            df = pd.read_csv(str(src) if isinstance(src, Path) else io.StringIO(src.read_text()), sep=sep)
+            df = pd.read_csv(str(src) if isinstance(src, Path) else io.StringIO(src.read_text(encoding="utf-8")), sep=sep)
             return {
                 "type": "dataframe",
                 "file": dest_name,
@@ -132,7 +132,7 @@ def _maybe_copy_asset_to_canvas(
 
     if ext in _PLOTLY_EXTENSIONS:
         try:
-            plotly_data = json.loads(src.read_text())
+            plotly_data = json.loads(src.read_text(encoding="utf-8"))
             if isinstance(plotly_data, dict) and ("data" in plotly_data or "layout" in plotly_data):
                 return {
                     "type": "plotly",
@@ -243,7 +243,7 @@ def parse_canvas_object(
         filepath = canvas_dir / filename
 
         plotly_data = json.loads(obj.to_json())
-        filepath.write_text(json.dumps(plotly_data, indent=2))
+        filepath.write_text(json.dumps(plotly_data, indent=2), encoding="utf-8")
 
         return add_metadata({
             "type": "plotly",
@@ -282,7 +282,7 @@ def parse_canvas_object(
         filename = f"plotly_{timestamp}.json"
         filepath = canvas_dir / filename
 
-        filepath.write_text(json.dumps(obj, indent=2))
+        filepath.write_text(json.dumps(obj, indent=2), encoding="utf-8")
 
         return add_metadata({
             "type": "plotly",
@@ -412,7 +412,7 @@ def export_canvas_to_markdown(
                 lines.append(f"\n```json\n{json.dumps(parsed.get('data'), indent=2)}\n```\n")
 
     # Write to file
-    output_file.write_text("\n".join(lines))
+    output_file.write_text("\n".join(lines), encoding="utf-8")
     return str(output_file)
 
 
@@ -437,7 +437,7 @@ def load_canvas_from_markdown(
     if not canvas_md.exists():
         return []
 
-    content = canvas_md.read_text()
+    content = canvas_md.read_text(encoding="utf-8")
     canvas_items = []
 
     # Get parent directory for loading referenced files
@@ -526,7 +526,7 @@ def _parse_item_content(
             file_path = canvas_dir / file_ref
             if file_path.exists():
                 item["file"] = file_ref
-                item["data"] = json.loads(file_path.read_text())
+                item["data"] = json.loads(file_path.read_text(encoding="utf-8"))
                 return item
 
     elif item_type in ("matplotlib", "image"):
@@ -640,7 +640,7 @@ def _parse_legacy_canvas(content: str, canvas_dir: AnyPath) -> List[Dict]:
             if file_path.exists():
                 item["type"] = "plotly"
                 item["file"] = block['content']
-                item["data"] = json.loads(file_path.read_text())
+                item["data"] = json.loads(file_path.read_text(encoding="utf-8"))
                 canvas_items.append(item)
         elif block['type'] == 'image_file':
             file_path = canvas_dir / block['content']
