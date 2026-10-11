@@ -102,4 +102,207 @@ test.describe('langstage', () => {
     await expect(second.getByText('1.5s')).toBeVisible();
     await expect(second.getByText('Reflection A')).toHaveCount(0);
   });
+
+  // Canned SSE body: a long `retry` keeps EventSource from reconnecting and
+  // replaying the frames.
+  const sse = (frames: object[]) =>
+    'retry: 3600000\n\n' + frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join('');
+
+  test('answers an interrupt that allows respond', async ({ page }) => {
+    // The interrupt the keyless demo agent raises on "ask me" (gh #195): an
+    // `ask_user` request keyed `action`, not `tool`, with `respond` allowed.
+    await page.route('**/api/stream*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sse([
+          { type: 'session_init', session_id: 'e2e-respond' },
+          {
+            type: 'interrupt',
+            action_requests: [{ action: 'ask_user', args: { question: 'What should I call you?' } }],
+            review_configs: [],
+            allowed_decisions: ['respond', 'approve']
+          }
+        ])
+      })
+    );
+    const posted: unknown[] = [];
+    await page.route('**/api/chat/interrupt', (route) => {
+      posted.push(route.request().postDataJSON());
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"ok"}' });
+    });
+
+    await page.goto('/');
+
+    // The label falls back to `action` instead of rendering blank.
+    await expect(page.getByText('ask_user', { exact: true })).toBeVisible();
+    await expect(page.getByText(/What should I call you\?/)).toBeVisible();
+    // Approve is still offered alongside the answer box.
+    await expect(page.getByRole('button', { name: 'Approve' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reject' })).toHaveCount(0);
+
+    const answer = page.getByRole('textbox', { name: 'Your response' });
+    const respond = page.getByRole('button', { name: 'Respond' });
+    await expect(respond).toBeDisabled();
+    await answer.fill('   ');
+    await expect(respond).toBeDisabled();
+
+    await answer.fill('Call me Ada');
+    await expect(respond).toBeEnabled();
+    await answer.press('Enter');
+
+    // One respond decision per action request, carrying the typed answer.
+    await expect.poll(() => posted.length).toBe(1);
+    expect(posted[0]).toEqual({
+      session_id: 'e2e-respond',
+      decisions: [{ type: 'respond', message: 'Call me Ada' }]
+    });
+    await expect(answer).toHaveCount(0);
+  });
+
+  test('shows the text of a bare-string interrupt', async ({ page }) => {
+    // `interrupt("What is your name?")` reaches the wire as a string action request,
+    // with core's default decisions. The question must show, not a blank card.
+    await page.route('**/api/stream*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sse([
+          { type: 'session_init', session_id: 'e2e-scalar' },
+          {
+            type: 'interrupt',
+            action_requests: ['What is your name?'],
+            review_configs: [],
+            allowed_decisions: ['reject', 'edit', 'respond', 'approve']
+          }
+        ])
+      })
+    );
+
+    await page.goto('/');
+
+    await expect(page.getByText('What is your name?', { exact: true })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Your response' })).toBeVisible();
+  });
+
+  test('shows no respond control when respond is not allowed', async ({ page }) => {
+    // LangChain's HITL middleware keys the request `name` (the label's last fallback).
+    await page.route('**/api/stream*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sse([
+          { type: 'session_init', session_id: 'e2e-approve' },
+          {
+            type: 'interrupt',
+            action_requests: [{ name: 'delete_file', args: { path: 'notes.txt' } }],
+            review_configs: [],
+            allowed_decisions: ['approve', 'reject']
+          }
+        ])
+      })
+    );
+    const posted: unknown[] = [];
+    await page.route('**/api/chat/interrupt', (route) => {
+      posted.push(route.request().postDataJSON());
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"ok"}' });
+    });
+
+    await page.goto('/');
+
+    await expect(page.getByText('delete_file', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reject' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Respond' })).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Your response' })).toHaveCount(0);
+
+    // Approve is unchanged.
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await expect.poll(() => posted.length).toBe(1);
+    expect(posted[0]).toEqual({ session_id: 'e2e-approve', decisions: [{ type: 'approve' }] });
+  });
+
+  test('renders reasoning as a collapsed Thinking block above the answer', async ({ page }) => {
+    // The frames the demo agent streams on "think" (gh #196).
+    await page.route('**/api/stream*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sse([
+          { type: 'session_init', session_id: 'e2e-reasoning' },
+          { type: 'reasoning', content: 'Let me reason about this step by step. ', node: 'agent' },
+          { type: 'reasoning', content: 'The answer is a reasoning frame demo.', node: 'agent' },
+          { type: 'content', content: 'Done reasoning.', role: 'assistant', node: 'agent' },
+          { type: 'complete', outcome: 'complete' }
+        ])
+      })
+    );
+
+    await page.goto('/');
+
+    const thinking = page.getByRole('button', { name: 'Thinking' });
+    const answer = page.getByText('Done reasoning.', { exact: true });
+    await expect(thinking).toBeVisible();
+    await expect(answer).toBeVisible();
+    // Collapsed by default, and above the answer.
+    await expect(thinking).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByText(/reason about this step by step/)).toHaveCount(0);
+    const [t, a] = [await thinking.boundingBox(), await answer.boundingBox()];
+    expect(t!.y).toBeLessThan(a!.y);
+
+    // Expanding shows the chunks accumulated in order.
+    await thinking.click();
+    await expect(thinking).toHaveAttribute('aria-expanded', 'true');
+    await expect(
+      page.getByText(
+        'Let me reason about this step by step. The answer is a reasoning frame demo.',
+        { exact: true }
+      )
+    ).toBeVisible();
+  });
+
+  test('renders reasoning in the Board task detail', async ({ page }) => {
+    const task = {
+      task_id: 'e2e-task-reasoning',
+      parent_id: null,
+      title: 'Reasoning task',
+      prompt: 'think about it',
+      agent_spec: null,
+      state: 'done',
+      thread_id: 't1',
+      created_at: '2026-10-11T00:00:00Z',
+      started_at: '2026-10-11T00:00:01Z',
+      finished_at: '2026-10-11T00:00:02Z',
+      result: null,
+      artifacts: null,
+      error: null,
+      interrupt: null
+    };
+    const json = (body: unknown) => ({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body)
+    });
+    await page.route(/\/api\/tasks(\?.*)?$/, (route) => route.fulfill(json([task])));
+    await page.route(/\/api\/tasks\/e2e-task-reasoning$/, (route) => route.fulfill(json(task)));
+    await page.route(/\/api\/tasks\/e2e-task-reasoning\/events$/, (route) =>
+      route.fulfill(
+        json([
+          { type: 'reasoning', content: 'Task reasoning, ', node: 'agent' },
+          { type: 'reasoning', content: 'in two chunks.', node: 'agent' },
+          { type: 'content', content: 'Task answer.', role: 'assistant', node: 'agent' },
+          { type: 'complete', outcome: 'complete' }
+        ])
+      )
+    );
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Board/ }).click();
+    await page.getByText('Reasoning task').click();
+
+    const thinking = page.getByRole('button', { name: 'Thinking' });
+    await expect(thinking).toBeVisible();
+    await expect(page.getByText('Task answer.', { exact: true })).toBeVisible();
+    await thinking.click();
+    await expect(page.getByText('Task reasoning, in two chunks.', { exact: true })).toBeVisible();
+  });
 });

@@ -6,6 +6,7 @@
 // Server → Client events (match langgraph-stream-parser to_dict() output)
 export type AgentEvent =
   | ContentEvent
+  | ReasoningEvent
   | ToolStartEvent
   | ToolEndEvent
   | ExtractionEvent
@@ -23,6 +24,13 @@ export interface ContentEvent {
   type: "content";
   content: string;
   role: string;
+  node: string | null;
+}
+
+/** A chain-of-thought delta from a reasoning model, streamed apart from the answer. */
+export interface ReasoningEvent {
+  type: "reasoning";
+  content: string;
   node: string | null;
 }
 
@@ -55,15 +63,23 @@ export interface ExtractionEvent {
 
 export interface InterruptEventMsg {
   type: "interrupt";
-  action_requests: ActionRequest[];
+  action_requests: (ActionRequest | string)[];
   review_configs: ReviewConfig[];
   allowed_decisions: string[];
 }
 
+/**
+ * One thing an interrupt asks the human about. Agents name it differently:
+ * `tool` (our own shape), `action` (the HumanInterrupt / `ask_user` shape) or
+ * `name` (LangChain's HumanInTheLoopMiddleware). A bare `interrupt("...")` value
+ * arrives as a plain string.
+ */
 export interface ActionRequest {
-  tool: string;
+  tool?: string;
+  action?: string;
+  name?: string;
   tool_call_id?: string;
-  args: Record<string, unknown>;
+  args?: Record<string, unknown>;
   description?: string;
 }
 
@@ -131,7 +147,7 @@ export interface SendCancel {
 }
 
 export interface Decision {
-  type: "approve" | "reject" | "edit";
+  type: "approve" | "reject" | "edit" | "respond";
   edited_action?: { name: string; args: Record<string, unknown> };
   message?: string;
 }
@@ -141,6 +157,8 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  /** Streamed `reasoning` deltas for this turn, shown as a collapsed "Thinking" block. */
+  reasoning?: string;
   toolCalls: ToolCall[];
   isStreaming?: boolean;
   timestamp?: number;

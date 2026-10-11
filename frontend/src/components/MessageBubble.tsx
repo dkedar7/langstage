@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Sparkles, User } from "lucide-react";
 import type { ChatMessage } from "../types";
 import { ToolCallCard } from "./ToolCallCard";
+import { ThinkingBlock } from "./ThinkingBlock";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -102,6 +103,16 @@ export function MessageBubble({ message, agentName = "Agent", iconUrl, showLabel
                 {formatDuration(displayDuration!)}
               </span>
             )}
+          </div>
+        )}
+
+        {/* Reasoning, collapsed, above the answer it led to */}
+        {message.reasoning && (
+          <div className={message.content || message.toolCalls.length > 0 ? "mb-2" : ""}>
+            <ThinkingBlock
+              reasoning={message.reasoning}
+              active={!!message.isStreaming && !message.content && message.toolCalls.length === 0}
+            />
           </div>
         )}
 

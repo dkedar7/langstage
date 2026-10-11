@@ -3,17 +3,29 @@ import {
   Check,
   X,
   Pencil,
+  Reply,
 } from "lucide-react";
-import type { InterruptEventMsg, Decision } from "../types";
+import type { ActionRequest, InterruptEventMsg, Decision } from "../types";
 
 interface InterruptDialogProps {
   interrupt: InterruptEventMsg;
   onRespond: (decisions: Decision[]) => void;
 }
 
+/**
+ * An action request's name. Agents key it `tool`, `action` (the HumanInterrupt /
+ * `ask_user` shape) or `name` (LangChain's HITL middleware); reading only `tool`
+ * left the label blank for the other two (gh #195). A bare-string request has none.
+ */
+function actionLabel(action: ActionRequest | string): string {
+  if (typeof action === "string") return "";
+  return action.tool ?? action.action ?? action.name ?? "";
+}
+
 export function InterruptDialog({ interrupt, onRespond }: InterruptDialogProps) {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editedArgs, setEditedArgs] = useState("");
+  const [response, setResponse] = useState("");
   const allowed = new Set(interrupt.allowed_decisions);
   const hasActions = interrupt.action_requests.length > 0;
 
@@ -40,12 +52,24 @@ export function InterruptDialog({ interrupt, onRespond }: InterruptDialogProps) 
       const action = interrupt.action_requests[idx];
       const decisions: Decision[] = interrupt.action_requests.map((_, i) =>
         i === idx
-          ? { type: "edit" as const, edited_action: { name: action.tool, args: parsed } }
+          ? { type: "edit" as const, edited_action: { name: actionLabel(action), args: parsed } }
           : { type: "approve" as const }
       );
       onRespond(decisions);
     } catch {
       // Invalid JSON -- keep dialog open
+    }
+  };
+
+  // The agent asked a question (`respond` allowed): send the typed answer, one
+  // decision per action request like Approve/Reject (gh #195).
+  const handleRespond = () => {
+    const message = response.trim();
+    if (!message) return;
+    if (hasActions) {
+      onRespond(interrupt.action_requests.map(() => ({ type: "respond", message })));
+    } else {
+      onRespond([{ type: "respond", message }]);
     }
   };
 
@@ -72,19 +96,30 @@ export function InterruptDialog({ interrupt, onRespond }: InterruptDialogProps) 
                 key={idx}
                 className="border border-[var(--color-border)] rounded p-3"
               >
-                <div className="mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
-                    {action.tool}
-                  </span>
-                </div>
-                {action.description && (
-                  <p className="text-xs text-[var(--color-text-secondary)] mb-2 leading-relaxed whitespace-pre-wrap">
-                    {action.description}
-                  </p>
+                {actionLabel(action) && (
+                  <div className="mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-secondary)]">
+                      {actionLabel(action)}
+                    </span>
+                  </div>
                 )}
-                <pre className="bg-[var(--color-surface-3)] rounded p-2 text-xs overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-text)]">
-                  {JSON.stringify(action.args, null, 2)}
-                </pre>
+                {typeof action === "string" ? (
+                  // A bare `interrupt("...")` value: the text is the whole request.
+                  <p className="text-sm text-[var(--color-text)] leading-relaxed whitespace-pre-wrap">
+                    {action}
+                  </p>
+                ) : (
+                  <>
+                    {action.description && (
+                      <p className="text-xs text-[var(--color-text-secondary)] mb-2 leading-relaxed whitespace-pre-wrap">
+                        {action.description}
+                      </p>
+                    )}
+                    <pre className="bg-[var(--color-surface-3)] rounded p-2 text-xs overflow-x-auto whitespace-pre-wrap break-all text-[var(--color-text)]">
+                      {JSON.stringify(action.args, null, 2)}
+                    </pre>
+                  </>
+                )}
 
                 {editingIdx === idx && (
                   <div className="mt-2">
@@ -124,14 +159,44 @@ export function InterruptDialog({ interrupt, onRespond }: InterruptDialogProps) 
           )}
         </div>
 
+        {/* Free-text answer, when the agent asked a question */}
+        {allowed.has("respond") && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRespond();
+            }}
+            className="px-5 pb-4 flex gap-2"
+          >
+            <input
+              type="text"
+              value={response}
+              onChange={(e) => setResponse(e.target.value)}
+              aria-label="Your response"
+              placeholder="Type your response..."
+              autoFocus
+              className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-[var(--color-surface-3)] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-text-muted)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+            />
+            <button
+              type="submit"
+              disabled={!response.trim()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[var(--color-text)] text-[var(--color-surface)] rounded hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Reply size={12} />
+              Respond
+            </button>
+          </form>
+        )}
+
         {/* Buttons */}
         <div className="px-5 py-3 border-t border-[var(--color-border)] flex justify-end gap-2">
           {allowed.has("edit") && hasActions && (
             <button
               onClick={() => {
+                const first = interrupt.action_requests[0];
                 setEditingIdx(0);
                 setEditedArgs(
-                  JSON.stringify(interrupt.action_requests[0]?.args ?? {}, null, 2)
+                  JSON.stringify((typeof first === "object" ? first.args : undefined) ?? {}, null, 2)
                 );
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] rounded hover:bg-[var(--color-surface-3)] transition-colors"
