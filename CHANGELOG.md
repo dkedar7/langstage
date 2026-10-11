@@ -7,9 +7,11 @@
   re-announces the tool call it paused in, with the same id. The chat and the Board's
   task detail added a second card for it and left the first one spinning, even after
   the task finished. Both now keep the one card, and its result completes it.
-- **Requires langstage-core 1.0.46**, where a resumed turn no longer re-sends what it
-  said before it paused. That was why a resumed Board task showed the first half of
-  its transcript twice.
+- **Requires langstage-core 1.0.47**, which fixes two things the web app showed:
+  - A resumed turn no longer re-sends what it said before it paused (1.0.46). That was
+    why a resumed Board task showed the first half of its transcript twice.
+  - An agent's own recursion limit is honored (1.0.47). Every agent, the default
+    deepagents one included, used to stop with `GraphRecursionError` after 25 steps.
 
 ## 0.13.48 — 2026-10-11
 
