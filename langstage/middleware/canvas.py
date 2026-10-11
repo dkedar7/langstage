@@ -63,6 +63,8 @@ from langchain.agents.middleware.types import (
     AgentMiddleware,
     ModelRequest,
 )
+from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as as_tool
 
 from langstage.tools import (
     add_canvas_section,
@@ -139,6 +141,12 @@ class CanvasMiddleware(AgentMiddleware):
             add_canvas_section,
             reorder_canvas,
         ]
+        # Register the tools with the agent, not only the model request. LangChain's
+        # create_agent (and deepagents on it) builds its tool node from `tools=` plus
+        # each middleware's `tools`; a tool added only in wrap_model_call is offered to
+        # the model, but calling it fails with "add_to_canvas is not a valid tool", so
+        # the Canvas stayed empty.
+        self.tools = [t if isinstance(t, BaseTool) else as_tool(t) for t in self._canvas_tools]
 
     def _apply(self, request: ModelRequest) -> None:
         """Mutate the request in place: append canvas prompt + inject tools."""

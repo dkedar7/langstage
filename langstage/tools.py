@@ -860,6 +860,12 @@ def _resolve_source_cell(
     return last.get("cell_index"), execution_count if execution_count is not None else last.get("execution_count")
 
 
+# The canvas is one file that each tool loads, changes and writes back. A model often
+# issues several canvas calls in one message, and the agent's tool node runs them in
+# parallel, so unguarded read-modify-writes lost items. One lock serializes them.
+_CANVAS_LOCK = threading.RLock()
+
+
 def add_to_canvas(
     content: Any,
     title: Optional[str] = None,
@@ -917,14 +923,15 @@ def add_to_canvas(
         )
 
         # Load existing items, append new one, write back
-        items = load_canvas_from_markdown(workspace_root)
+        with _CANVAS_LOCK:
+            items = load_canvas_from_markdown(workspace_root)
 
-        # If item_id provided and already exists, replace it
-        if item_id:
-            items = [item for item in items if item.get("id") != item_id]
+            # If item_id provided and already exists, replace it
+            if item_id:
+                items = [item for item in items if item.get("id") != item_id]
 
-        items.append(parsed)
-        export_canvas_to_markdown(items, workspace_root)
+            items.append(parsed)
+            export_canvas_to_markdown(items, workspace_root)
 
         item_type = parsed.get("type", "item")
         item_title = parsed.get("title", parsed.get("id", ""))
@@ -976,17 +983,18 @@ def update_canvas_item(
         )
 
         # Load existing items, replace matching ID or append
-        items = load_canvas_from_markdown(workspace_root)
-        replaced = False
-        for i, item in enumerate(items):
-            if item.get("id") == item_id:
-                items[i] = parsed
-                replaced = True
-                break
-        if not replaced:
-            items.append(parsed)
+        with _CANVAS_LOCK:
+            items = load_canvas_from_markdown(workspace_root)
+            replaced = False
+            for i, item in enumerate(items):
+                if item.get("id") == item_id:
+                    items[i] = parsed
+                    replaced = True
+                    break
+            if not replaced:
+                items.append(parsed)
 
-        export_canvas_to_markdown(items, workspace_root)
+            export_canvas_to_markdown(items, workspace_root)
         return f"Updated canvas item: {item_id}"
     except Exception as e:
         return f"Failed to update canvas item: {e}"
@@ -1038,16 +1046,17 @@ def reorder_canvas(item_ids: List[str]) -> str:
     """
     try:
         workspace_root = _get_workspace_root_for_context()
-        items = load_canvas_from_markdown(workspace_root)
-        by_id = {item.get("id"): item for item in items if item.get("id")}
+        with _CANVAS_LOCK:
+            items = load_canvas_from_markdown(workspace_root)
+            by_id = {item.get("id"): item for item in items if item.get("id")}
 
-        # Build the new ordered list, preserving only items whose IDs appear
-        new_items = [by_id[iid] for iid in item_ids if iid in by_id]
+            # Build the new ordered list, preserving only items whose IDs appear
+            new_items = [by_id[iid] for iid in item_ids if iid in by_id]
 
-        if not new_items:
-            return "No matching canvas items to reorder"
+            if not new_items:
+                return "No matching canvas items to reorder"
 
-        export_canvas_to_markdown(new_items, workspace_root)
+            export_canvas_to_markdown(new_items, workspace_root)
         return f"Reordered canvas: {len(new_items)} item(s)"
     except Exception as e:
         return f"Failed to reorder canvas: {e}"
@@ -1072,14 +1081,15 @@ def remove_canvas_item(item_id: str) -> str:
     try:
         workspace_root = _get_workspace_root_for_context()
 
-        items = load_canvas_from_markdown(workspace_root)
-        original_count = len(items)
-        items = [item for item in items if item.get("id") != item_id]
+        with _CANVAS_LOCK:
+            items = load_canvas_from_markdown(workspace_root)
+            original_count = len(items)
+            items = [item for item in items if item.get("id") != item_id]
 
-        if len(items) == original_count:
-            return f"Canvas item not found: {item_id}"
+            if len(items) == original_count:
+                return f"Canvas item not found: {item_id}"
 
-        export_canvas_to_markdown(items, workspace_root)
+            export_canvas_to_markdown(items, workspace_root)
         return f"Removed canvas item: {item_id}"
     except Exception as e:
         return f"Failed to remove canvas item: {e}"

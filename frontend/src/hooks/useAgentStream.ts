@@ -228,6 +228,9 @@ export function useAgentStream() {
           if (contentBufferRef.current) flushContentBuffer();
 
           setMessages((prev) => {
+            // A resumed turn re-announces the call it paused in (same id): keep the
+            // one card, so its result completes it instead of leaving a spinner.
+            if (prev.some((m) => m.toolCalls.some((t) => t.id === event.id))) return prev;
             const last = prev[prev.length - 1];
             const tc: ToolCall = {
               id: event.id,

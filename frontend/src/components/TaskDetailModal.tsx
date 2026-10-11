@@ -40,6 +40,8 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
       if (!m || m.toolCalls.length > 0 || m.content) m = pushAssistant();
       m.reasoning = (m.reasoning ?? "") + ((e.content as string) || "");
     } else if (type === "tool_start") {
+      // A resumed task re-announces the call it paused in (same id): keep one card.
+      if (msgs.some((x) => x.toolCalls.some((t) => t.id === e.id))) continue;
       const m = lastAssistant() || pushAssistant();
       const tc: ToolCall = {
         id: e.id as string,

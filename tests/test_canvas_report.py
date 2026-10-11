@@ -336,3 +336,59 @@ async def test_middleware_async_disabled_is_passthrough():
 
     result = await mw.awrap_model_call(req, handler)
     assert result == "orig"
+
+
+# --- The tools run inside a real agent -------------------------------------------
+
+
+def test_canvas_tools_run_in_a_create_agent_agent(tmp_workspace: Path):
+    """CanvasMiddleware offered its tools to the model but never registered them, so
+    create_agent's tool node answered "add_to_canvas is not a valid tool" and the
+    Canvas stayed empty for an agent built the way the README shows."""
+    from langchain.agents import create_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage, ToolMessage
+    from langchain_core.tools import tool
+
+    @tool
+    def noop() -> str:
+        """Do nothing."""
+        return "ok"
+
+    class FakeModel(GenericFakeChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    model = FakeModel(messages=iter([
+        AIMessage(content="", tool_calls=[
+            {"name": "add_canvas_section", "args": {"title": "Findings"}, "id": "c1"},
+            {"name": "add_to_canvas", "args": {"content": "Apparel drove Q3.", "title": "Summary"}, "id": "c2"},
+        ]),
+        AIMessage(content="done"),
+    ]))
+    agent = create_agent(model, tools=[noop], middleware=[CanvasMiddleware()])
+    out = agent.invoke({"messages": [{"role": "user", "content": "report"}]})
+
+    results = [m for m in out["messages"] if isinstance(m, ToolMessage)]
+    assert [m.status for m in results] == ["success", "success"], [m.content for m in results]
+    # The two calls run in parallel, so both must land (in either order).
+    items = load_canvas_from_markdown(tmp_workspace)
+    assert sorted(i.get("type") for i in items) == ["markdown", "section"]
+
+
+def test_parallel_canvas_writes_keep_every_item(tmp_workspace: Path):
+    # A model's parallel canvas calls used to lose items: each one loaded the canvas,
+    # appended and wrote it back without a lock.
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda i: tools_mod.add_to_canvas(f"note {i}", item_id=f"n{i}"), range(24)))
+    items = load_canvas_from_markdown(tmp_workspace)
+    assert sorted(i.get("id") for i in items) == sorted(f"n{i}" for i in range(24))
+
+
+def test_middleware_registers_its_tools():
+    names = sorted(t.name for t in CanvasMiddleware().tools)
+    assert names == sorted([
+        "add_to_canvas", "update_canvas_item", "remove_canvas_item", "add_canvas_section", "reorder_canvas",
+    ])
