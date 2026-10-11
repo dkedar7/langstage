@@ -371,8 +371,20 @@ def test_canvas_tools_run_in_a_create_agent_agent(tmp_workspace: Path):
 
     results = [m for m in out["messages"] if isinstance(m, ToolMessage)]
     assert [m.status for m in results] == ["success", "success"], [m.content for m in results]
+    # The two calls run in parallel, so both must land (in either order).
     items = load_canvas_from_markdown(tmp_workspace)
-    assert [i.get("type") for i in items] == ["section", "markdown"]
+    assert sorted(i.get("type") for i in items) == ["markdown", "section"]
+
+
+def test_parallel_canvas_writes_keep_every_item(tmp_workspace: Path):
+    # A model's parallel canvas calls used to lose items: each one loaded the canvas,
+    # appended and wrote it back without a lock.
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda i: tools_mod.add_to_canvas(f"note {i}", item_id=f"n{i}"), range(24)))
+    items = load_canvas_from_markdown(tmp_workspace)
+    assert sorted(i.get("id") for i in items) == sorted(f"n{i}" for i in range(24))
 
 
 def test_middleware_registers_its_tools():

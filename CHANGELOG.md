@@ -9,6 +9,10 @@
   agent built the way this README shows. The middleware now registers the tools
   through its `tools` attribute, the way LangChain's `create_agent` (and deepagents)
   expects.
+- **Parallel canvas calls keep every item.** A model often sends several canvas calls in
+  one message, and the agent runs them in parallel. Each one loaded the canvas file,
+  changed it and wrote it back, so concurrent calls overwrote each other. A lock now
+  serializes them.
 - **A resumed tool call keeps one card.** After an approval, the resumed turn
   re-announces the tool call it paused in, with the same id. The chat and the Board's
   task detail added a second card for it and left the first one spinning, even after
