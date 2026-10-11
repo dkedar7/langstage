@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 test.describe('langstage', () => {
   test('streams an agent reply in the chat', async ({ page }) => {
@@ -304,5 +304,100 @@ test.describe('langstage', () => {
     await expect(page.getByText('Task answer.', { exact: true })).toBeVisible();
     await thinking.click();
     await expect(page.getByText('Task reasoning, in two chunks.', { exact: true })).toBeVisible();
+  });
+
+  // A Board task paused on an interrupt, served with its transcript; returns the
+  // decisions the page posts to /resume.
+  async function openPausedTask(page: Page, interrupt: object) {
+    const task = {
+      task_id: 'e2e-task-review',
+      parent_id: null,
+      title: 'Paused task',
+      prompt: 'deploy it',
+      agent_spec: null,
+      state: 'review_needed',
+      thread_id: 't2',
+      created_at: '2026-10-11T00:00:00Z',
+      started_at: '2026-10-11T00:00:01Z',
+      finished_at: null,
+      result: null,
+      artifacts: null,
+      error: null,
+      interrupt
+    };
+    const json = (body: unknown) => ({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body)
+    });
+    await page.route(/\/api\/tasks(\?.*)?$/, (route) => route.fulfill(json([task])));
+    await page.route(/\/api\/tasks\/e2e-task-review$/, (route) => route.fulfill(json(task)));
+    await page.route(/\/api\/tasks\/e2e-task-review\/events$/, (route) =>
+      route.fulfill(json([{ type: 'content', content: 'Checking the target.', role: 'assistant', node: 'agent' }]))
+    );
+    const posted: unknown[] = [];
+    await page.route(/\/api\/tasks\/e2e-task-review\/resume$/, (route) => {
+      posted.push(route.request().postDataJSON());
+      return route.fulfill(json({ ok: true }));
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Board/ }).click();
+    await page.getByText('Paused task').click();
+    return posted;
+  }
+
+  test('answers a paused Board task that allows respond', async ({ page }) => {
+    // gh #198: the review gate offered only Approve/Reject and never showed the
+    // question, so a background task that asked one couldn't be answered.
+    const posted = await openPausedTask(page, {
+      type: 'interrupt',
+      action_requests: [{ action: 'ask_user', args: { question: 'Which region should I deploy to?' } }],
+      review_configs: [],
+      allowed_decisions: ['respond', 'approve']
+    });
+
+    await expect(page.getByText('ask_user', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Which region should I deploy to\?/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reject' })).toHaveCount(0);
+
+    const respond = page.getByRole('button', { name: 'Respond' });
+    await expect(respond).toBeDisabled();
+    await page.getByRole('textbox', { name: 'Your response' }).fill('us-west-2');
+    await respond.click();
+    await expect.poll(() => posted).toEqual([
+      { decisions: [{ type: 'respond', message: 'us-west-2' }] }
+    ]);
+  });
+
+  test('a paused Board task offers Edit when the interrupt allows it', async ({ page }) => {
+    const posted = await openPausedTask(page, {
+      type: 'interrupt',
+      action_requests: [{ tool: 'deploy', args: { region: 'us-east-1' }, description: 'Deploy the app' }],
+      review_configs: [],
+      allowed_decisions: ['approve', 'edit', 'reject']
+    });
+
+    await expect(page.getByText('deploy', { exact: true })).toBeVisible();
+    await expect(page.getByText('Deploy the app')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Your response' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Edit' }).click();
+    await page.getByPlaceholder('Edit args JSON...').fill('{"region": "eu-west-1"}');
+    await page.getByRole('button', { name: 'Submit' }).click();
+    await expect.poll(() => posted).toEqual([
+      { decisions: [{ type: 'edit', edited_action: { name: 'deploy', args: { region: 'eu-west-1' } } }] }
+    ]);
+  });
+
+  test('a paused Board task with no allowed verbs keeps Approve and Reject', async ({ page }) => {
+    const posted = await openPausedTask(page, {
+      type: 'interrupt',
+      action_requests: [{ tool: 'deploy', args: {} }]
+    });
+
+    await expect(page.getByRole('button', { name: 'Reject' })).toBeVisible();
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await expect.poll(() => posted).toEqual([{ decisions: [{ type: 'approve' }] }]);
   });
 });

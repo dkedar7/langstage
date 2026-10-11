@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.48 — 2026-10-11
+
+### Fixed
+- **A paused task on the Board can be answered** (gh #198). The review gate in a task's
+  detail view offered only Approve and Reject, whatever the interrupt allowed, and didn't
+  show what the agent asked. So a background task that asked a question (`ask_user`, or a
+  plain `interrupt("...")`) couldn't be answered from the Board. The gate now shows the
+  request (its name, description and arguments, or the question's text) with the same
+  controls as the chat's approval dialog: Approve, Reject, Edit and Respond, each shown
+  when the interrupt allows it. An interrupt that names no verbs still gets Approve and
+  Reject. A paused task no longer says "Waiting for the agent…" above the gate.
+
 ## 0.13.47 — 2026-10-11
 
 ### Fixed
