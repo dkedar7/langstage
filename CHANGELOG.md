@@ -3,6 +3,12 @@
 ## 0.13.49 — 2026-10-11
 
 ### Fixed
+- **The Canvas works.** `CanvasMiddleware` offered its five tools to the model but never
+  registered them with the agent, so every call failed with "add_to_canvas is not a
+  valid tool" and the Canvas stayed empty. That held for the default agent and for an
+  agent built the way this README shows. The middleware now registers the tools
+  through its `tools` attribute, the way LangChain's `create_agent` (and deepagents)
+  expects.
 - **A resumed tool call keeps one card.** After an approval, the resumed turn
   re-announces the tool call it paused in, with the same id. The chat and the Board's
   task detail added a second card for it and left the first one spinning, even after
