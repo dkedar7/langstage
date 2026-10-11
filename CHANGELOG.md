@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.50 — 2026-10-11
+
+### Fixed
+- **The Canvas refreshes on Windows.** The file watcher built workspace paths with
+  `str()`, which uses backslashes on Windows, so a canvas write arrived as
+  `/.canvas\canvas.md`. The UI refreshes the Canvas on a change under `/.canvas/`, so
+  on Windows it stayed empty until a reload. File-tree paths had the same backslashes.
+  Both now use forward slashes on every OS.
+
 ## 0.13.49 — 2026-10-11
 
 ### Fixed
