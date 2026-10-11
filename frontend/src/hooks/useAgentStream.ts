@@ -87,6 +87,7 @@ export function useAgentStream() {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const contentBufferRef = useRef("");
+  const reasoningBufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
   // The most recent tool_end, for pairing the extraction frame that follows it.
   const lastEndedToolRef = useRef<{ id: string; name: string } | null>(null);
@@ -165,6 +166,55 @@ export function useAgentStream() {
       ];
     });
   }, []);
+
+  // Reasoning deltas are batched like content. They open the turn's message (or
+  // fill one that has no answer yet), so the "Thinking" block renders above the
+  // answer that follows; reasoning after answer text or a tool call starts a new
+  // message for the same reason (gh #196).
+  const flushReasoningBuffer = useCallback(() => {
+    const buffered = reasoningBufferRef.current;
+    if (!buffered) return;
+    reasoningBufferRef.current = "";
+
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (
+        last &&
+        last.role === "assistant" &&
+        last.isStreaming &&
+        last.toolCalls.length === 0 &&
+        !last.content
+      ) {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...last,
+          reasoning: (last.reasoning ?? "") + buffered,
+        };
+        return updated;
+      }
+      const now = Date.now();
+      return [
+        ...prev,
+        {
+          id: nextId(),
+          role: "assistant",
+          content: "",
+          reasoning: buffered,
+          toolCalls: [],
+          isStreaming: true,
+          timestamp: now,
+          startedAt: now,
+        },
+      ];
+    });
+  }, []);
+
+  // Flush whichever stream buffer is pending. Only one is ever non-empty: a frame
+  // of the other kind flushes it first, which keeps reasoning and answer in order.
+  const flushBuffers = useCallback(() => {
+    flushReasoningBuffer();
+    flushContentBuffer();
+  }, [flushReasoningBuffer, flushContentBuffer]);
 
   const dispatch = useCallback(
     (event: AgentEvent) => {
@@ -418,19 +468,28 @@ export function useAgentStream() {
       setConnectionStatus("disconnected");
     };
 
+    const scheduleFlush = () => {
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(() => {
+          flushBuffers();
+          rafRef.current = null;
+        });
+      }
+    };
+
     es.onmessage = (e) => {
       const event: AgentEvent = JSON.parse(e.data);
 
       if (event.type === "content") {
+        if (reasoningBufferRef.current) flushReasoningBuffer();
         contentBufferRef.current += event.content;
-        if (!rafRef.current) {
-          rafRef.current = requestAnimationFrame(() => {
-            flushContentBuffer();
-            rafRef.current = null;
-          });
-        }
-      } else {
+        scheduleFlush();
+      } else if (event.type === "reasoning") {
         if (contentBufferRef.current) flushContentBuffer();
+        reasoningBufferRef.current += event.content ?? "";
+        scheduleFlush();
+      } else {
+        flushBuffers();
         dispatch(event);
       }
     };
@@ -438,9 +497,12 @@ export function useAgentStream() {
     eventSourceRef.current = es;
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      // Clear the handle too, or a reconnect's scheduleFlush would see it still
+      // set and never schedule again.
+      rafRef.current = null;
       es.close();
     };
-  }, [dispatch, flushContentBuffer, reconnectKey]);
+  }, [dispatch, flushBuffers, flushContentBuffer, flushReasoningBuffer, reconnectKey]);
 
   // --- Actions via fetch POST ---
   const sendMessage = useCallback(
@@ -501,7 +563,7 @@ export function useAgentStream() {
     if (!sessionIdRef.current) return;
 
     // Flush any buffered content before cancelling
-    if (contentBufferRef.current) flushContentBuffer();
+    flushBuffers();
 
     fetch("/api/chat/cancel", {
       method: "POST",
@@ -513,7 +575,7 @@ export function useAgentStream() {
       console.error("Failed to cancel stream:", err);
     });
     // isStreaming will be set to false when the "cancelled" event arrives via SSE
-  }, [flushContentBuffer]);
+  }, [flushBuffers]);
 
   const resetSession = useCallback(() => {
     // Clean up backend session
@@ -544,6 +606,7 @@ export function useAgentStream() {
     setInterrupt(null);
     setFileChanges([]);
     contentBufferRef.current = "";
+    reasoningBufferRef.current = "";
 
     // Reconnect with a fresh session
     setReconnectKey((k) => k + 1);

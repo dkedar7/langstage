@@ -33,6 +33,11 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
       let m = lastAssistant();
       if (!m || m.toolCalls.length > 0) m = pushAssistant(); // new bubble after tools
       m.content += (e.content as string) || "";
+    } else if (type === "reasoning") {
+      // Same placement as the live chat: above the answer that follows (gh #196).
+      let m = lastAssistant();
+      if (!m || m.toolCalls.length > 0 || m.content) m = pushAssistant();
+      m.reasoning = (m.reasoning ?? "") + ((e.content as string) || "");
     } else if (type === "tool_start") {
       const m = lastAssistant() || pushAssistant();
       const tc: ToolCall = {
@@ -70,7 +75,7 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
       }
     }
   }
-  return msgs.filter((m) => m.content.trim() || m.toolCalls.length);
+  return msgs.filter((m) => m.content.trim() || m.toolCalls.length || m.reasoning?.trim());
 }
 
 export function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {

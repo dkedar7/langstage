@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.47 — 2026-10-11
+
+### Fixed
+- **The approval dialog can answer a question** (gh #195). An interrupt that allows
+  `respond`, such as the demo agent's `ask me` ("What should I call you?"), showed only an
+  Approve button, so the agent's question could not be answered. The dialog now adds a text
+  box and a **Respond** button whenever `respond` is allowed; it sends
+  `{"type": "respond", "message": ...}` (one decision per action request, like Approve) and
+  submits on Enter. The action's label also fell back to blank for requests keyed `action`
+  (`ask_user`) or `name` (LangChain's HITL middleware) instead of `tool`; it now shows
+  whichever is present, and a bare-string `interrupt("...")` request shows its text.
+- **Reasoning shows in the web chat** (gh #196). `/api/stream` sends
+  `{"type": "reasoning", ...}` frames, but the frontend had no handler, so a reasoning
+  model's chain-of-thought was silently dropped. It now accumulates into a collapsed
+  "Thinking" block above that turn's answer. The Board's task detail renders a task's
+  reasoning the same way.
+
 ## 0.13.46 — 2026-10-10
 
 ### Fixed
