@@ -1050,8 +1050,8 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.0" },
     { name = "langgraph", specifier = ">=1.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0" },
-    { name = "langstage-core", extras = ["agui"], specifier = ">=1.0.46" },
-    { name = "langstage-core", extras = ["agui"], marker = "extra == 'agui'", specifier = ">=1.0.46" },
+    { name = "langstage-core", extras = ["agui"], specifier = ">=1.0.47" },
+    { name = "langstage-core", extras = ["agui"], marker = "extra == 'agui'", specifier = ">=1.0.47" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
@@ -1065,14 +1065,14 @@ provides-extras = ["deepagents", "agui", "dev"]
 
 [[package]]
 name = "langstage-core"
-version = "1.0.46"
+version = "1.0.47"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain-core" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/89/aa5296e2a95c687fda77a3fcbb6f83cf8cd1138e7ddf985ee43236a638c8/langstage_core-1.0.46.tar.gz", hash = "sha256:4e332f7aef33b2cd492dd611338f682fcbcfad1755e1973941bcbca97224d27c", size = 11736303, upload-time = "2026-10-11T21:05:52.246Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/61/cccc7fff0680bd22dd0b1761f4e743cac957d29b26f18a27e4cf3add5d8a/langstage_core-1.0.47.tar.gz", hash = "sha256:a2f577d02f707d8df55cafcec9e1a6f53d05e2c5f3bb0d6f1586adc5ef718d9d", size = 11737427, upload-time = "2026-10-11T21:35:17.446Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/60/341a8168d769072c5839c6e9034faf92fd2c12b6f726f7df8245e1e97dae/langstage_core-1.0.46-py3-none-any.whl", hash = "sha256:f95ae651eab6cf3128871cfec69c334bc68334967ee0d3a255a585ca78a15f36", size = 127702, upload-time = "2026-10-11T21:05:48.076Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/ac/2ad62f6d3e32bb69b1166437e0035d1fcb0f0fdcd9dc3669e52c589ca29b/langstage_core-1.0.47-py3-none-any.whl", hash = "sha256:f75606ca73bb65aedf9951d556a7110bc9352ce11953d94c39478951a7b69d85", size = 127919, upload-time = "2026-10-11T21:35:13.022Z" },
 ]
 
 [package.optional-dependencies]
