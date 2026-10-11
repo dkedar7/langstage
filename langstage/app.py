@@ -275,7 +275,7 @@ class CoworkApp:
         if self.config.custom_css:
             css_path = Path(self.config.custom_css).resolve()
             if css_path.is_file():
-                self._custom_css_content = css_path.read_text()
+                self._custom_css_content = css_path.read_text(encoding="utf-8")
             else:
                 logger.warning("custom_css file not found: %s", css_path)
 

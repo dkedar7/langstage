@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.51 — 2026-10-11
+
+### Fixed
+- **The Canvas keeps non-ASCII text on Windows.** Every canvas file (`canvas.md`, chart
+  JSON, tables) was read and written with the locale encoding, which is cp1252 on
+  Windows. Plotly writes UTF-8, so a chart titled "Q2→Q3" showed as "Q2â†’Q3", and a
+  markdown note with "→" or an emoji failed to save. The canvas now reads and writes
+  UTF-8 everywhere, and so does the custom CSS file.
+
 ## 0.13.50 — 2026-10-11
 
 ### Fixed
