@@ -535,6 +535,62 @@ def check(agent_spec, demo, live, as_json):
     finish(0)
 
 
+def _chat_payload(content, tool_calls, outcome, *, interrupt=None, error=None) -> dict:
+    """The one ``chat --json`` object, the same keys on every path (complete, paused,
+    errored, failed to load), so a pipeline reads ``.outcome`` / ``.interrupt`` /
+    ``.error`` without checking which keys exist. ``outcome`` and ``interrupt`` match
+    what ``POST /api/chat/complete`` returns for the same turn (gh #203)."""
+    return {
+        "content": content,
+        "tool_calls": tool_calls,
+        "outcome": outcome,
+        "interrupt": interrupt,
+        "error": error,
+    }
+
+
+def _indented(text, prefix: str) -> str:
+    """``text`` with ``prefix`` before each of its lines (a multi-line question too)."""
+    return "\n".join(prefix + line for line in str(text).splitlines() or [""])
+
+
+def _interrupt_lines(interrupt) -> list[str]:
+    """What a paused turn is waiting for, as the lines human-mode ``chat`` prints:
+    each action request (its name, description and arguments, or the bare text of an
+    ``interrupt("...")``) and the decisions the interrupt allows (gh #203).
+
+    A request names itself ``tool``, ``action`` (the HumanInterrupt / ``ask_user``
+    shape) or ``name`` (LangChain's HITL middleware), the same keys the web chat's
+    approval dialog reads.
+    """
+    import json as _json
+
+    lines = ["Paused: the agent is waiting for a decision."]
+    if not isinstance(interrupt, dict):
+        return lines
+    for request in interrupt.get("action_requests") or []:
+        if not isinstance(request, dict):
+            lines.append(_indented(request, "  "))
+            continue
+        label = request.get("tool") or request.get("action") or request.get("name")
+        detail_prefix = "    " if label else "  "
+        if label:
+            lines.append(f"  {label}")
+        if request.get("description"):
+            lines.append(_indented(request["description"], detail_prefix))
+        args = request.get("args")
+        if isinstance(args, dict):
+            for key, value in args.items():
+                shown = value if isinstance(value, str) else _json.dumps(value, default=str)
+                lines.append(_indented(f"{key}: {shown}", detail_prefix))
+        elif args is not None:
+            lines.append(_indented(_json.dumps(args, default=str), detail_prefix))
+    decisions = interrupt.get("allowed_decisions") or []
+    if decisions:
+        lines.append(f"Allowed decisions: {', '.join(str(d) for d in decisions)}")
+    return lines
+
+
 @main.command()
 @click.option("--agent", "-a", "agent_spec", default=None,
               help="Agent spec (e.g., my_agent.py:agent). Default: the configured "
@@ -542,8 +598,8 @@ def check(agent_spec, demo, live, as_json):
 @click.option("--demo", is_flag=True, default=False, help="Run one turn against the built-in keyless demo agent - no API key needed")
 @click.option("--workspace", default=None, type=click.Path(), help="Workspace directory")
 @click.option("--json", "as_json", is_flag=True, default=False,
-              help="Emit the reply as JSON ({content, tool_calls}) for scripting/CI, "
-                   "instead of just the assistant text.")
+              help="Emit the turn as JSON ({content, tool_calls, outcome, interrupt, "
+                   "error}) for scripting/CI, instead of just the assistant text.")
 @click.option("--no-context", "no_context", is_flag=True, default=False,
               help="Withhold the per-message time + working-directory context the web "
                    "chat injects, for a terse scriptable echo. By default `chat` injects "
@@ -565,9 +621,13 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
     echo that omits that context - cleaner for scripting, but no longer browser-identical.
 
     Exits 1 if the agent errors (like ``check --live``) and 2 if the turn pauses on a
-    human-in-the-loop interrupt, so it doubles as a
-    readiness gate that also *shows* the answer. Add ``--json`` for a machine-readable
-    object a pipeline can assert on.
+    human-in-the-loop interrupt, so it doubles as a readiness gate that also *shows*
+    the answer. A paused turn prints what the agent is waiting for (each request and
+    the decisions it allows) to stderr; the reply alone goes to stdout. Add ``--json``
+    for a machine-readable object a pipeline can assert on: ``content``,
+    ``tool_calls``, ``outcome`` (``complete`` / ``interrupted`` / ``error``), the
+    ``interrupt`` (or null) and the ``error`` (or null), with ``outcome`` and
+    ``interrupt`` as ``POST /api/chat/complete`` reports them.
     """
     if demo:
         if agent_spec:
@@ -591,7 +651,7 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
             # (gh #189).
             import json as _json
 
-            payload = {"content": "", "tool_calls": [], "error": _load_error_detail(e)}
+            payload = _chat_payload("", [], "error", error=_load_error_detail(e))
             safe_print(_json.dumps(payload, indent=2))
             raise SystemExit(EXIT_FAIL) from e
         raise click.ClickException(str(e) or type(e).__name__) from e
@@ -623,23 +683,32 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
     finally:
         os.chdir(prior_cwd)
 
+    paused = result.outcome == "interrupted"
+    # A pause is not an error: the run is fine but waits for a decision (ADR 0007).
+    error = None if result.ok or paused else (
+        result.error or f"turn did not complete: {result.outcome}"
+    )
     if as_json:
         import json as _json
 
-        payload = {"content": result.content, "tool_calls": result.tool_calls}
-        if not result.ok:
-            payload["error"] = result.error or f"turn did not complete: {result.outcome}"
+        payload = _chat_payload(
+            result.content, result.tool_calls, result.outcome,
+            interrupt=result.interrupt if paused else None, error=error,
+        )
         safe_print(_json.dumps(payload, indent=2))
     else:
         if result.content:
             # Encoding-tolerant so an emoji/CJK/arrow in the reply can't crash the
             # turn (and falsely exit 1) on a cp1252 console. (gh #115)
             safe_print(result.content)
-        if not result.ok:
-            reason = result.error or f"turn did not complete: {result.outcome}"
-            safe_print(f"Error: {reason}", file=sys.stderr)
+        # The reply alone goes to stdout, so `reply=$(langstage chat ...)` stays clean;
+        # what the agent waits for and any error go to stderr (gh #203).
+        if paused:
+            safe_print("\n".join(_interrupt_lines(result.interrupt)), file=sys.stderr)
+        elif error:
+            safe_print(f"Error: {error}", file=sys.stderr)
 
-    if result.outcome == "interrupted":
+    if paused:
         # Paused for human input: the run is fine but needs a decision (ADR 0007).
         raise SystemExit(EXIT_PAUSED)
     if not result.ok:
