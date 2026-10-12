@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.52 — 2026-10-12
+
+### Fixed
+- **`chat` shows what a paused turn is waiting for** (gh #203). When a turn paused on a
+  human-in-the-loop interrupt, `chat` exited 2 but dropped the interrupt and reported
+  the pause as an error: `--json` gave `{"error": "turn did not complete: interrupted"}`
+  with no `outcome` or `interrupt`, and human mode printed only `Error: ...`, so the
+  agent's question never showed. `--json` now always has the same keys, `content`,
+  `tool_calls`, `outcome` (`complete` / `interrupted` / `error`), `interrupt` and
+  `error`, with `outcome` and `interrupt` as `POST /api/chat/complete` reports them and
+  `error` null for a pause. Human mode prints each request (its name, question or
+  arguments) and the decisions it allows to stderr, under "Paused: the agent is waiting
+  for a decision.", and keeps stdout for the reply. Exit codes are unchanged.
+
 ## 0.13.51 — 2026-10-11
 
 ### Fixed

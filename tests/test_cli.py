@@ -426,6 +426,184 @@ def test_chat_json_default_agent_unavailable_is_still_json(tmp_path, monkeypatch
     assert "deepagents" in json.loads(result.stdout)["error"]
 
 
+# ── chat: a turn that pauses on a HITL interrupt (gh #203) ───────────────────
+# A paused turn exits 2 (ADR 0007). It used to drop the interrupt and report the pause
+# as an error: `--json` gave `{"error": "turn did not complete: interrupted"}` with no
+# `outcome` / `interrupt`, and human mode printed only `Error: ...`, so the agent's
+# question never showed. `--json` now reports `outcome` + `interrupt` the way
+# `POST /api/chat/complete` does, and human mode prints what the agent is waiting for.
+
+_TOOLS_DEMO = "langstage_core.demo.tools:graph"  # "ask me" raises a HITL interrupt
+_ASK_USER = {"action": "ask_user", "args": {"question": "What should I call you?"}}
+
+
+def _chat(tmp_path, *args):
+    return CliRunner().invoke(
+        cli_mod.main, ["chat", "--workspace", str(tmp_path), "--no-context", *args]
+    )
+
+
+def test_chat_json_paused_turn_reports_outcome_and_interrupt(tmp_path):
+    import json
+
+    pytest.importorskip("ag_ui_langgraph")
+    result = _chat(tmp_path, "--agent", _TOOLS_DEMO, "--json", "ask me")
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.stdout)
+    assert payload["outcome"] == "interrupted"
+    assert payload["error"] is None  # a pause is not an error
+    assert payload["interrupt"]["action_requests"] == [_ASK_USER]
+    assert payload["interrupt"]["review_configs"] == []
+    assert payload["interrupt"]["allowed_decisions"] == ["respond", "approve"]
+    # the existing keys stay, so scripts reading them don't break
+    assert payload["content"] == "" and payload["tool_calls"] == []
+
+
+def test_chat_json_interrupt_matches_the_rest_route(tmp_path):
+    """`chat --json` and `POST /api/chat/complete` run the same one-turn path, so they
+    report the same `outcome` and `interrupt` for the same paused turn."""
+    import asyncio
+    import json
+
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from langstage_core import load_agent_spec
+    from langstage_core.adapters import SessionAdapter
+
+    from langstage.server.routes_chat import create_chat_router
+
+    pytest.importorskip("ag_ui_langgraph")
+
+    async def _rest():
+        app = FastAPI()
+        app.include_router(create_chat_router(SessionAdapter(graph=load_agent_spec(_TOOLS_DEMO))))
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            r = await c.post("/api/chat/complete", json={"content": "ask me"})
+        assert r.status_code == 200
+        return r.json()
+
+    rest = asyncio.run(_rest())
+    cli = json.loads(_chat(tmp_path, "--agent", _TOOLS_DEMO, "--json", "ask me").stdout)
+    assert cli["outcome"] == rest["outcome"] == "interrupted"
+    assert cli["interrupt"] == rest["interrupt"]
+
+
+def test_chat_paused_turn_shows_the_question_not_an_error(tmp_path):
+    pytest.importorskip("ag_ui_langgraph")
+    result = _chat(tmp_path, "--agent", _TOOLS_DEMO, "ask me")
+    assert result.exit_code == 2, result.output
+    # What the agent is waiting for goes to stderr with the other diagnostics; stdout
+    # carries only the reply (none here), so `reply=$(langstage chat ...)` stays clean.
+    assert result.stdout == ""
+    assert "Paused" in result.stderr
+    assert "waiting for a decision" in result.stderr
+    assert "ask_user" in result.stderr
+    assert "What should I call you?" in result.stderr
+    assert "respond, approve" in result.stderr
+    assert "Error" not in result.stderr
+
+
+def _fake_turn(monkeypatch, **fields):
+    """Make `chat` return a canned one-turn result, to cover interrupt shapes the demo
+    agent doesn't produce."""
+    from langstage import oneturn
+
+    result = oneturn.OneTurnResult(session_id="s", **fields)
+    monkeypatch.setattr(oneturn, "run_turn_sync", lambda *a, **k: result)
+
+
+def test_chat_paused_turn_renders_each_request_shape(tmp_path, monkeypatch):
+    """A LangChain HITL request (`name` + `description` + args), a bare-string request,
+    and a reply written before the pause, which stays alone on stdout."""
+    _fake_turn(
+        monkeypatch,
+        content="Let me check first.",
+        outcome="interrupted",
+        interrupt={
+            "type": "interrupt",
+            "action_requests": [
+                {"name": "write_file", "description": "Write the report",
+                 "args": {"path": "out.md", "lines": [1, 2]}},
+                "Approve deleting old.log?",
+            ],
+            "review_configs": [],
+            "allowed_decisions": ["approve", "edit", "reject"],
+        },
+    )
+    result = _chat(tmp_path, "--demo", "go")
+    assert result.exit_code == 2, result.output
+    assert result.stdout == "Let me check first.\n"
+    err = result.stderr
+    for text in ("write_file", "Write the report", "path: out.md", "lines: [1, 2]",
+                 "Approve deleting old.log?", "approve, edit, reject"):
+        assert text in err, err
+
+
+def test_chat_paused_turn_without_details_still_says_paused(tmp_path, monkeypatch):
+    _fake_turn(monkeypatch, content="", outcome="interrupted", interrupt=None)
+    result = _chat(tmp_path, "--demo", "go")
+    assert result.exit_code == 2, result.output
+    assert "waiting for a decision" in result.stderr
+    assert "Error" not in result.stderr
+
+
+def test_chat_json_completed_turn_has_the_same_keys(tmp_path):
+    import json
+
+    result = _chat(tmp_path, "--demo", "--json", "hi json")
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert "hi json" in payload["content"] and payload["tool_calls"] == []
+    assert payload["outcome"] == "complete"
+    assert payload["interrupt"] is None and payload["error"] is None
+
+
+_BROKEN_AGENT = (
+    "from langgraph.graph import StateGraph, START, END, MessagesState\n"
+    "def boom(s):\n"
+    "    raise RuntimeError('tool exploded')\n"
+    "b = StateGraph(MessagesState)\n"
+    "b.add_node('boom', boom)\n"
+    "b.add_edge(START, 'boom')\n"
+    "b.add_edge('boom', END)\n"
+    "graph = b.compile()\n"
+)
+
+
+def test_chat_json_errored_turn_is_still_an_error(tmp_path):
+    import json
+
+    agent = _write(tmp_path, "broken.py", _BROKEN_AGENT)
+    result = _chat(tmp_path, "--agent", f"{agent}:graph", "--json", "hi")
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["outcome"] == "error"
+    assert "tool exploded" in payload["error"]
+    assert payload["interrupt"] is None
+
+
+def test_chat_errored_turn_still_prints_error(tmp_path):
+    agent = _write(tmp_path, "broken.py", _BROKEN_AGENT)
+    result = _chat(tmp_path, "--agent", f"{agent}:graph", "hi")
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert result.stderr.startswith("Error: ")
+    assert "tool exploded" in result.stderr
+    assert "Paused" not in result.stderr
+
+
+def test_chat_json_load_failure_has_the_same_keys():
+    import json
+
+    result = CliRunner().invoke(
+        cli_mod.main, ["chat", "--json", "--agent", "nope_missing_mod:graph", "hi"]
+    )
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["outcome"] == "error" and payload["interrupt"] is None
+    assert payload["error"].startswith("ModuleNotFoundError")
+
+
 # ── check / chat honor the resolved agent_spec (gh #143) ─────────────────────
 # `run` serves LANGSTAGE_AGENT_SPEC / `[agent] spec` with no --agent; check and chat
 # used to guard on the raw flag and demand --agent anyway.
