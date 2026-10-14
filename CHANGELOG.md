@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.13.53 — 2026-10-14
+
+### Security
+- **A cross-site form can no longer change the workspace** (gh #206). CORS only stops a
+  foreign page reading a response. A plain HTML `<form>` POST, with its input in the
+  query string or a urlencoded / multipart / text/plain body, is a CORS "simple
+  request" that the browser sends without a preflight, so any website could delete,
+  overwrite or create workspace files (`/api/files/delete|upload|mkdir`) and start a
+  schedule (`/api/cron/{id}/run`) on a default local server. The server now refuses,
+  with `403` and a JSON `detail`, every `POST`/`PUT`/`PATCH`/`DELETE` whose `Origin` is
+  neither the server's own origin nor allowed by the CORS setting (loopback origins by
+  default, or exactly `LANGSTAGE_CORS_ORIGINS`), including `Origin: null`, and any
+  without `Origin` that the browser marks `Sec-Fetch-Site: cross-site` or `same-site`.
+  `Sec-Fetch-Site: same-origin` is accepted as the browser's own attestation. Requests
+  with neither header (curl, scripts, the CLI) are unchanged, and so are `GET` routes
+  and the SSE stream. One middleware covers every route, and it runs with
+  `--auth-password` set too.
+
+### Added
+- **`chat` says how to answer a paused turn** (gh #205). After the "Allowed decisions"
+  line, human mode prints the commands that run the same agent where the decision can
+  be made, `langstage run -a <spec>` (the web app's approval dialog) and
+  `langstage-cli -a <spec>` (the terminal's approval menu, with langstage-cli
+  installed), or `--demo` for the demo agent. It goes to stderr like the rest of the
+  pause; `--json` is unchanged.
+
 ## 0.13.52 — 2026-10-12
 
 ### Fixed

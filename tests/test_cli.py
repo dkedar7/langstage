@@ -503,6 +503,64 @@ def test_chat_paused_turn_shows_the_question_not_an_error(tmp_path):
     assert "Error" not in result.stderr
 
 
+def _hint_tail(stderr: str) -> list[str]:
+    lines = stderr.rstrip("\n").splitlines()
+    i = next(n for n, line in enumerate(lines) if line.startswith("Allowed decisions"))
+    return lines[i + 1:]
+
+
+def test_chat_paused_turn_says_how_to_answer_with_the_agent_that_ran(tmp_path):
+    """gh #205: after the allowed decisions, name the commands that can answer the
+    pause, with the agent spec the turn ran, so they can be copied as-is."""
+    pytest.importorskip("ag_ui_langgraph")
+    result = _chat(tmp_path, "--agent", _TOOLS_DEMO, "ask me")
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""  # the hint is stderr-only too
+    tail = _hint_tail(result.stderr)
+    assert tail[0] == "To answer it, run the prompt where you can decide:"
+    assert len(tail) == 3, tail
+    assert tail[1].strip().startswith(f"langstage run -a {_TOOLS_DEMO} --workspace ")
+    assert "web app's approval dialog" in tail[1]
+    assert tail[2].strip().startswith(f"langstage-cli -a {_TOOLS_DEMO} ")
+    assert "approval menu" in tail[2] and "with langstage-cli installed" in tail[2]
+
+
+def test_chat_paused_demo_turn_hint_names_demo(tmp_path, monkeypatch):
+    _fake_turn(
+        monkeypatch, content="", outcome="interrupted",
+        interrupt={"action_requests": [_ASK_USER], "allowed_decisions": ["respond"]},
+    )
+    result = _chat(tmp_path, "--demo", "go")
+    assert result.exit_code == 2, result.output
+    tail = _hint_tail(result.stderr)
+    assert tail[1].strip().startswith("langstage run --demo --workspace ")
+    assert tail[2].strip().startswith("langstage-cli --demo ")
+    assert "-a" not in "".join(tail)
+
+
+def test_chat_paused_turn_hint_quotes_a_spec_with_spaces():
+    from langstage import cli
+
+    lines = cli._decide_hint_lines("C:/My Agents/a.py:graph", False, None)
+    assert 'langstage run -a "C:/My Agents/a.py:graph"' in lines[1]
+    assert 'langstage-cli -a "C:/My Agents/a.py:graph"' in lines[2]
+    # The built-in default agent: no spec langstage-cli could load, so only `run`.
+    assert cli._decide_hint_lines(None, False, None)[1:] == [
+        "  langstage run   (the web app's approval dialog)"
+    ]
+
+
+def test_chat_json_paused_turn_has_no_hint(tmp_path):
+    import json
+
+    pytest.importorskip("ag_ui_langgraph")
+    result = _chat(tmp_path, "--agent", _TOOLS_DEMO, "--json", "ask me")
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.stdout)
+    assert set(payload) == {"content", "tool_calls", "outcome", "interrupt", "error"}
+    assert "To answer it" not in result.stderr
+
+
 def _fake_turn(monkeypatch, **fields):
     """Make `chat` return a canned one-turn result, to cover interrupt shapes the demo
     agent doesn't produce."""

@@ -306,6 +306,8 @@ Only a file named `langstage.toml` at or above the directory you run `langstage`
 
 > **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
 
+> **Cross-site requests are refused.** A web page on another site can't change your workspace or start a run through this server, even with no password: every state-changing request (`POST`/`PUT`/`PATCH`/`DELETE`) that a browser marks as cross-site gets `403`. That means an `Origin` header other than the server's own origin or one the CORS setting allows (loopback origins by default, or exactly what `LANGSTAGE_CORS_ORIGINS` lists), including `Origin: null`, or `Sec-Fetch-Site: cross-site`/`same-site` with no `Origin`. CORS alone only stops a foreign page *reading* responses; a plain HTML form POST needs no preflight. The app's own pages and the origins you list keep working, and so do clients that send neither header (curl, scripts, the CLI). `GET` routes and the SSE stream are unaffected. The check applies with `--auth-password` too, since a browser resends saved credentials on a cross-site form.
+
 ## Slash Commands
 
 Type `/` in the chat input to access built-in commands:
