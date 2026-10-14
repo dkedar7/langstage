@@ -1,7 +1,10 @@
 """CORS and authentication middleware."""
 
 import base64
+import json
+import re
 import secrets
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,6 +95,96 @@ class BasicAuthMiddleware:
         )
 
 
+class CrossSiteRequestGuard:
+    """Refuse state-changing requests a browser sent on behalf of another site.
+
+    CORS only stops a foreign page *reading* a response. A plain HTML ``<form>``
+    POST (query-string, urlencoded, multipart or text/plain body) is a CORS
+    "simple request": the browser sends it with no preflight, and the route runs
+    before any CORS decision matters -- so a drive-by page could delete, overwrite
+    and create workspace files or start schedule runs (gh #206). This closes that
+    for EVERY unsafe method (anything but GET/HEAD/OPTIONS) on every route, at one
+    place, instead of route by route.
+
+    A request is refused with 403 when a browser marks it as coming from somewhere
+    the user didn't allow:
+
+    * it carries an ``Origin`` that is neither the server's own origin (its
+      ``host:port`` equals the ``Host`` header) nor allowed by the resolved CORS
+      policy (:func:`_resolve_cors`: loopback origins by default, or exactly the
+      ``cors_origins`` the user listed; ``*`` allows any). ``Origin: null``
+      (sandboxed iframe, ``file://``) is never allowed.
+    * it carries no ``Origin`` but ``Sec-Fetch-Site`` is ``cross-site`` or
+      ``same-site`` -- the browser says it came from another site and gives no
+      origin to check against the allow-list.
+
+    ``Sec-Fetch-Site: same-origin`` / ``none`` is a browser attestation (pages
+    can't forge ``Sec-Fetch-*``) and is let through even if ``Origin`` and ``Host``
+    disagree, e.g. behind a reverse proxy that rewrites ``Host``. A request with
+    neither header -- curl, scripts, the CLI, server-to-server -- isn't a browser
+    acting for a web page, so it passes unchanged.
+
+    It sits inside ``CORSMiddleware`` (preflights are answered before this) and
+    outside Basic Auth, so it applies with auth on too: a browser replays cached
+    Basic credentials on a cross-site form POST just as it does cookies.
+    """
+
+    _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+    def __init__(self, app: ASGIApp, cors: dict) -> None:
+        self.app = app
+        self._any_origin = "*" in (cors.get("allow_origins") or ())
+        self._origins = {o.lower().rstrip("/") for o in cors.get("allow_origins") or ()}
+        regex = cors.get("allow_origin_regex")
+        self._origin_regex = re.compile(regex) if regex else None
+
+    def _origin_allowed(self, origin: str, host: str) -> bool:
+        origin = origin.strip().lower().rstrip("/")
+        if not origin or origin == "null":
+            return False
+        if self._any_origin or origin in self._origins:
+            return True
+        if self._origin_regex is not None and self._origin_regex.fullmatch(origin):
+            return True
+        try:
+            netloc = urlsplit(origin).netloc
+        except ValueError:
+            return False
+        return bool(host) and netloc == host.strip().lower()
+
+    def _reject_reason(self, scope: Scope) -> str | None:
+        headers = {k.lower(): v for k, v in scope.get("headers", [])}
+        fetch_site = headers.get(b"sec-fetch-site", b"").decode("latin-1").strip().lower()
+        if fetch_site in ("same-origin", "none"):
+            return None
+        origin = headers.get(b"origin")
+        if origin is not None:
+            host = headers.get(b"host", b"").decode("latin-1")
+            if self._origin_allowed(origin.decode("latin-1"), host):
+                return None
+            return f"origin {origin.decode('latin-1').strip()!r} is not allowed"
+        if fetch_site in ("cross-site", "same-site"):
+            return f"Sec-Fetch-Site is {fetch_site!r} and no allowed Origin was sent"
+        return None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("method", "GET").upper() in self._SAFE_METHODS:
+            await self.app(scope, receive, send)
+            return
+        reason = self._reject_reason(scope)
+        if reason is None:
+            await self.app(scope, receive, send)
+            return
+        body = json.dumps({
+            "detail": (
+                f"Cross-site request refused: {reason}. State-changing requests are only "
+                "accepted from this server's own pages or an origin listed in "
+                "LANGSTAGE_CORS_ORIGINS ([server] cors_origins)."
+            ),
+        })
+        await Response(body, status_code=403, media_type="application/json")(scope, receive, send)
+
+
 def _resolve_cors(origins: str | list[str] | None) -> dict:
     """Compute safe CORS kwargs for ``CORSMiddleware``.
 
@@ -141,6 +234,13 @@ def add_middleware(
     if auth_password:
         app.add_middleware(BasicAuthMiddleware, username=auth_username or "admin", password=auth_password)
 
+    # Cross-site request guard, between auth and CORS: a browser form POST from
+    # another site is refused before any route (or auth) runs, with or without a
+    # password; same-origin pages, allowed origins and header-less clients
+    # (curl, scripts) pass. Shares the CORS allow-list. (gh #206)
+    cors = _resolve_cors(cors_origins)
+    app.add_middleware(CrossSiteRequestGuard, cors=cors)
+
     # CORS, outermost, so it answers a preflight OPTIONS itself before auth sees it.
     # Browsers send preflights without credentials, so auth used to 401 them and
     # break every cross-origin client once a password was set. A preflight only
@@ -148,4 +248,4 @@ def add_middleware(
     # authenticated. Loopback-only by default; the resolved cors_origins
     # (LANGSTAGE_CORS_ORIGINS / [server] cors_origins) opts specific sites in.
     # (gh #113, gh #155, gh #141)
-    app.add_middleware(CORSMiddleware, **_resolve_cors(cors_origins))
+    app.add_middleware(CORSMiddleware, **cors)

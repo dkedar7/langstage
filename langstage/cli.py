@@ -591,6 +591,42 @@ def _interrupt_lines(interrupt) -> list[str]:
     return lines
 
 
+def _arg(value: str) -> str:
+    """Quote a command-line argument only when it needs it (a path with spaces)."""
+    return f'"{value}"' if any(ch.isspace() for ch in value) else value
+
+
+def _decide_hint_lines(agent_spec: str | None, demo: bool, workspace: str | None) -> list[str]:
+    """How to answer a paused ``chat`` turn, printed after its interrupt (gh #205).
+
+    ``chat`` can't resume: the paused thread lives in its one-shot process. So point at
+    the two stages that can, naming the agent that ran so the line can be copied as-is:
+    the web app's approval dialog and langstage-cli's terminal approval menu (a separate
+    package, so it's phrased as optional). The built-in default agent has no spec
+    langstage-cli could load, so then only ``langstage run`` is named.
+    """
+    if demo:
+        run_cmd, cli_cmd = "langstage run --demo", "langstage-cli --demo"
+    elif agent_spec:
+        run_cmd = f"langstage run -a {_arg(agent_spec)}"
+        cli_cmd = f"langstage-cli -a {_arg(agent_spec)}"
+    else:
+        run_cmd, cli_cmd = "langstage run", None
+    if workspace:
+        # langstage-cli has no --workspace; only `run` takes it.
+        run_cmd += f" --workspace {_arg(str(workspace))}"
+    width = max(len(run_cmd), len(cli_cmd or ""))
+    lines = [
+        "To answer it, run the prompt where you can decide:",
+        f"  {run_cmd.ljust(width)}   (the web app's approval dialog)",
+    ]
+    if cli_cmd:
+        lines.append(
+            f"  {cli_cmd.ljust(width)}   (the terminal's approval menu, with langstage-cli installed)"
+        )
+    return lines
+
+
 @main.command()
 @click.option("--agent", "-a", "agent_spec", default=None,
               help="Agent spec (e.g., my_agent.py:agent). Default: the configured "
@@ -623,7 +659,9 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
     Exits 1 if the agent errors (like ``check --live``) and 2 if the turn pauses on a
     human-in-the-loop interrupt, so it doubles as a readiness gate that also *shows*
     the answer. A paused turn prints what the agent is waiting for (each request and
-    the decisions it allows) to stderr; the reply alone goes to stdout. Add ``--json``
+    the decisions it allows) to stderr, then the ``langstage run`` / ``langstage-cli``
+    command that runs the same agent where the decision can be made; the reply alone
+    goes to stdout. Add ``--json``
     for a machine-readable object a pipeline can assert on: ``content``,
     ``tool_calls``, ``outcome`` (``complete`` / ``interrupted`` / ``error``), the
     ``interrupt`` (or null) and the ``error`` (or null), with ``outcome`` and
@@ -704,7 +742,11 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
         # The reply alone goes to stdout, so `reply=$(langstage chat ...)` stays clean;
         # what the agent waits for and any error go to stderr (gh #203).
         if paused:
-            safe_print("\n".join(_interrupt_lines(result.interrupt)), file=sys.stderr)
+            # ...then how to answer it, naming the agent that ran (gh #205).
+            hint = _decide_hint_lines(
+                None if demo else (agent_spec or app.config.agent_spec), demo, workspace
+            )
+            safe_print("\n".join([*_interrupt_lines(result.interrupt), *hint]), file=sys.stderr)
         elif error:
             safe_print(f"Error: {error}", file=sys.stderr)
 
