@@ -241,7 +241,15 @@ class AppConfig(HostConfig):
         "cors_origins": "server.cors_origins",
     }
 
+    # A relative ``[ui] custom_css`` resolves against the langstage.toml that set it,
+    # like ``[workspace] root`` and ``[agent] spec``, so the theme survives a run from a
+    # subdirectory of the project; ``~`` is expanded in every layer. (gh #209)
+    _TOML_PATHS: ClassVar[dict] = {"custom_css": "path"}
+
     def __post_init__(self) -> None:
+        # Core's path normalization hands back a Path; the field stays a str.
+        if not isinstance(self.custom_css, str):
+            self.custom_css = str(self.custom_css)
         # Enforce the theme enum on EVERY construction path -- crucially including
         # the direct Python-API constructor AppConfig(theme=...), which never
         # touches resolve(). resolve() builds its result via cls(**values) too, so
@@ -269,6 +277,12 @@ class AppConfig(HostConfig):
         supplied the rejected value. A valid theme keeps its real source. (gh #104)
         """
         obj = super().resolve(**kwargs)
+        # A blank ``custom_css = ""`` means "no theme", not the toml's directory (which
+        # is what rebasing an empty relative path onto it would give). (gh #209)
+        if obj.sources.get("custom_css", "").startswith("toml"):
+            raw = (obj._toml_data.get("ui") or {}).get("custom_css")  # type: ignore[attr-defined]
+            if isinstance(raw, str) and not raw.strip():
+                obj.custom_css = ""
         if getattr(obj, "_theme_degraded", False):
             obj._theme_rejected_source = obj._sources.get("theme", "override")  # type: ignore[attr-defined]
             obj._sources["theme"] = "default"  # type: ignore[attr-defined]

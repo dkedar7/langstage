@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.54 — 2026-10-15
+
+### Fixed
+- **A relative `[ui] custom_css` resolves against its `langstage.toml`** (gh #209). It
+  used to resolve against the working directory, so running from a subdirectory of the
+  project (where the toml is found by walking up) silently dropped the theme:
+  `/api/custom-css` returned `204` and only a log line said why. It now resolves like
+  `[workspace] root` and `[agent] spec`, and `langstage config` shows the absolute path.
+  A leading `~` is expanded in every layer (`LANGSTAGE_CUSTOM_CSS=~/theme.css`, `--custom-css`);
+  env and flag values stay relative to the working directory, and a blank
+  `custom_css = ""` still means no theme.
+
 ## 0.13.53 — 2026-10-14
 
 ### Security

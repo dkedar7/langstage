@@ -1,5 +1,7 @@
 """Tests for custom CSS serving endpoint."""
 
+from pathlib import Path
+
 import pytest
 from unittest.mock import MagicMock
 from httpx import AsyncClient, ASGITransport
@@ -79,3 +81,53 @@ async def test_custom_css_content_matches(workspace, mock_agent):
         resp = await c.get("/api/custom-css")
         assert resp.status_code == 200
         assert resp.text == css_content
+
+
+# ---- [ui] custom_css path resolution (gh #209) ----
+
+def _project(tmp_path, value):
+    proj = tmp_path / "proj"
+    (proj / "src").mkdir(parents=True)
+    (proj / "theme.css").write_text(":root { --color-primary: #ff0000; }", encoding="utf-8")
+    (proj / "langstage.toml").write_text(f'[ui]\ncustom_css = "{value}"\n', encoding="utf-8")
+    return proj
+
+
+def _resolve(start, env=None):
+    env = {"LANGSTAGE_CONFIG_HOME": str(start / "_nohome"), **(env or {})}
+    return AppConfig.resolve(toml_start=start, env=env)
+
+
+def test_relative_custom_css_resolves_against_the_toml_not_the_cwd(tmp_path, monkeypatch):
+    """Run from a subdirectory: the theme still points at the toml's sibling file."""
+    proj = _project(tmp_path, "theme.css")
+    monkeypatch.chdir(proj / "src")
+    cfg = _resolve(proj / "src")
+    assert isinstance(cfg.custom_css, str)
+    assert cfg.custom_css == str(proj / "theme.css")
+    assert cfg.sources["custom_css"].startswith("toml")
+
+
+def test_absolute_custom_css_is_kept(tmp_path):
+    css = tmp_path / "abs.css"
+    css.write_text("x", encoding="utf-8")
+    proj = _project(tmp_path, css.as_posix())
+    cfg = _resolve(proj / "src")
+    assert Path(cfg.custom_css) == css
+
+
+def test_blank_custom_css_in_toml_means_no_theme(tmp_path):
+    proj = _project(tmp_path, "")
+    assert _resolve(proj / "src").custom_css == ""
+
+
+def test_env_custom_css_expands_home_and_stays_cwd_relative(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    proj = _project(tmp_path, "theme.css")
+    cfg = _resolve(proj / "src", {"LANGSTAGE_CUSTOM_CSS": "~/home-theme.css"})
+    assert cfg.custom_css == str(home / "home-theme.css")
+    cfg = _resolve(proj / "src", {"LANGSTAGE_CUSTOM_CSS": "rel.css"})
+    assert cfg.custom_css == "rel.css"
