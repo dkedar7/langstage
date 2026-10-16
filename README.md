@@ -376,6 +376,9 @@ The file is served at `/api/custom-css` and injected into the UI. When set
 via `--custom-css`, the path must exist (validated at startup); when set via
 the env var, config file, or Python API, a missing file just logs a warning
 and the default theme is used instead.
+A relative path in `langstage.toml` resolves against that file's directory, so
+the theme applies from any subdirectory of the project; a flag or env value is
+relative to the working directory. `~` is expanded everywhere.
 
 ## Troubleshooting
 
