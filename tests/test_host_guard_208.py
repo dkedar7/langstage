@@ -82,6 +82,16 @@ async def test_allowed_hosts_and_star():
 
 
 @pytest.mark.asyncio
+async def test_wildcard_matches_subdomains_like_codraft():
+    """One langstage.toml serves both stages, so `*.example.org` means the same in each."""
+    app = _guarded(allowed_hosts=["*.example.org"])
+    assert (await _status(app, "docs.example.org:443"))[0] == 200
+    assert (await _status(app, "a.b.example.org"))[0] == 200
+    assert (await _status(app, "example.org"))[0] == 403
+    assert (await _status(app, "evilexample.org"))[0] == 403
+
+
+@pytest.mark.asyncio
 async def test_only_loopback_binds_and_connections_are_checked():
     # A public bind is unchanged (it is documented as needing auth).
     assert (await _status(_guarded(bind_host="0.0.0.0"), "evil.example"))[0] == 200
