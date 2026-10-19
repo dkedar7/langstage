@@ -185,6 +185,85 @@ class CrossSiteRequestGuard:
         await Response(body, status_code=403, media_type="application/json")(scope, receive, send)
 
 
+_LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+
+def _split_hosts(value: str | list[str] | tuple[str, ...] | None) -> list[str]:
+    """``allowed_hosts`` as a list: a TOML array, or a comma-separated string."""
+    raw = [str(v) for v in value] if isinstance(value, (list, tuple)) else (value or "").split(",")
+    return [h.strip().lower() for h in raw if h.strip()]
+
+
+def _hostname(host_header: str) -> str:
+    """The name part of a ``Host`` header, lowercased: port and IPv6 brackets dropped."""
+    h = host_header.strip().lower()
+    if h.startswith("["):
+        return h[1:].split("]", 1)[0]
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def is_loopback_host(host: str) -> bool:
+    """Whether a bind host / socket address is loopback (``localhost``, 127.x, ``::1``)."""
+    h = _hostname(host) if host.startswith("[") else host.strip().lower()
+    return h in _LOOPBACK_NAMES or h.startswith("127.") or h.endswith(".localhost")
+
+
+class HostHeaderGuard:
+    """Refuse requests whose ``Host`` isn't a name this local server answers to (gh #208).
+
+    DNS rebinding: a page at ``http://evil.example:8050`` re-points its DNS at
+    127.0.0.1. To the browser it is still same-origin with itself, so the cross-site
+    guard (#206) lets its requests through, and it can READ the responses too. The
+    ``Host`` header still says ``evil.example``, so on a loopback server any request
+    whose ``Host`` isn't a loopback name (``localhost``, ``127.0.0.1``, ``[::1]``,
+    ``*.localhost``), the bind host, or an ``allowed_hosts`` entry is refused with 403,
+    every method, WebSocket included. ``*`` in ``allowed_hosts`` turns the check off.
+
+    It applies only when the server is bound to a loopback address AND the connection
+    arrived on one (``scope["server"]``); a public bind is unchanged (it is documented
+    as needing auth), and so is an in-process client with no socket. A request with no
+    ``Host`` header passes (HTTP/1.0 tools).
+    """
+
+    def __init__(self, app: ASGIApp, bind_host: str, allowed_hosts: str | list[str] | None = "") -> None:
+        self.app = app
+        entries = _split_hosts(allowed_hosts)
+        self._off = "*" in entries or not is_loopback_host(bind_host or "")
+        self._allowed = {_hostname(e) for e in entries} | {_hostname(bind_host or "")}
+
+    def _host_allowed(self, host: str) -> bool:
+        name = _hostname(host)
+        return name in self._allowed or is_loopback_host(name)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if self._off or scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+        server = scope.get("server") or (None, None)
+        if not (isinstance(server[0], str) and is_loopback_host(server[0])):
+            await self.app(scope, receive, send)
+            return
+        headers = {k.lower(): v for k, v in scope.get("headers", [])}
+        raw = headers.get(b"host")
+        if raw is None or self._host_allowed(raw.decode("latin-1")):
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "websocket":
+            await WebSocketClose(code=1008)(scope, receive, send)
+            return
+        host = raw.decode("latin-1").strip()
+        body = json.dumps({
+            "detail": (
+                f"Host {host!r} is not allowed. This server is bound to a loopback address and "
+                "only answers to localhost names, to protect it from DNS rebinding. If you reach "
+                f"it through a proxy or another name, add {_hostname(host)!r} to [server] "
+                "allowed_hosts in langstage.toml or LANGSTAGE_ALLOWED_HOSTS "
+                "(comma-separated; \"*\" turns the check off)."
+            )
+        })
+        await Response(body, status_code=403, media_type="application/json")(scope, receive, send)
+
+
 def _resolve_cors(origins: str | list[str] | None) -> dict:
     """Compute safe CORS kwargs for ``CORSMiddleware``.
 
@@ -222,6 +301,8 @@ def add_middleware(
     auth_username: str = "admin",
     auth_password: str = "",
     cors_origins: str | list[str] | None = "",
+    bind_host: str = "",
+    allowed_hosts: str | list[str] | None = "",
 ) -> None:
     """Add middleware stack. CORS is always added; basic auth is conditional.
 
@@ -249,3 +330,7 @@ def add_middleware(
     # (LANGSTAGE_CORS_ORIGINS / [server] cors_origins) opts specific sites in.
     # (gh #113, gh #155, gh #141)
     app.add_middleware(CORSMiddleware, **cors)
+
+    # DNS-rebinding guard, outermost: a request to a loopback server whose Host is a
+    # name the user never allowed is refused before CORS, auth or any route. (gh #208)
+    app.add_middleware(HostHeaderGuard, bind_host=bind_host, allowed_hosts=allowed_hosts)

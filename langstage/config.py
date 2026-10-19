@@ -200,6 +200,10 @@ class AppConfig(HostConfig):
     # resolves like every other field, and the server enforces the resolved value
     # (gh #141).
     cors_origins: str = ""
+    # Extra Host names a loopback-bound server answers to (a proxy's public name),
+    # comma-separated; "*" turns the DNS-rebinding check off. Loopback names and the
+    # bind host are always allowed. (gh #208)
+    allowed_hosts: str = ""
 
     _ENV: ClassVar[dict] = {
         "subtitle": ("DEEPAGENT_SUBTITLE", str),
@@ -222,6 +226,7 @@ class AppConfig(HostConfig):
         # deprecated fallback (resolved by _env_pair, same as every other key). (gh #102)
         "task_concurrency": ("DEEPAGENT_TASK_CONCURRENCY", int),
         "cors_origins": ("LANGSTAGE_CORS_ORIGINS", str),
+        "allowed_hosts": ("LANGSTAGE_ALLOWED_HOSTS", str),
     }
     _TOML: ClassVar[dict] = {
         "subtitle": "ui.subtitle",
@@ -239,6 +244,7 @@ class AppConfig(HostConfig):
         "show_files": "ui.show_files",
         "task_concurrency": "tasks.concurrency",
         "cors_origins": "server.cors_origins",
+        "allowed_hosts": "server.allowed_hosts",
     }
 
     # A relative ``[ui] custom_css`` resolves against the langstage.toml that set it,
