@@ -303,7 +303,7 @@ Only a file named `langstage.toml` at or above the directory you run `langstage`
 | Task concurrency | _(env / `langstage.toml` only)_ | `LANGSTAGE_TASK_CONCURRENCY` | `3` |
 | `execute_python` memory limit (MB, default agent) | _(env only)_ | `LANGSTAGE_CELL_MEMORY_LIMIT_MB` | `512` |
 | CORS origins | _(env / `langstage.toml` `[server] cors_origins` only)_ | `LANGSTAGE_CORS_ORIGINS` | _(empty — loopback origins only)_. Comma-separated origins granted credentialed cross-origin access; `*` allows any origin with credentials off |
-| Allowed hosts | _(env / `langstage.toml` `[server] allowed_hosts` only)_ | `LANGSTAGE_ALLOWED_HOSTS` | _(empty — loopback names only)_. Extra `Host` names a loopback-bound server answers to, comma-separated; `*` turns the check off |
+| Allowed hosts | _(env / `langstage.toml` `[server] allowed_hosts` only)_ | `LANGSTAGE_ALLOWED_HOSTS` | _(empty — loopback names only)_. Extra `Host` names a loopback-bound server answers to, comma-separated; `*.example.org` matches its subdomains; `*` turns the check off |
 
 > **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
 

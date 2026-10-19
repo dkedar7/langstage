@@ -217,7 +217,8 @@ class HostHeaderGuard:
     ``Host`` header still says ``evil.example``, so on a loopback server any request
     whose ``Host`` isn't a loopback name (``localhost``, ``127.0.0.1``, ``[::1]``,
     ``*.localhost``), the bind host, or an ``allowed_hosts`` entry is refused with 403,
-    every method, WebSocket included. ``*`` in ``allowed_hosts`` turns the check off.
+    every method, WebSocket included. ``*.example.org`` in ``allowed_hosts`` matches its
+subdomains (as in langstage-codraft); ``*`` turns the check off.
 
     It applies only when the server is bound to a loopback address AND the connection
     arrived on one (``scope["server"]``); a public bind is unchanged (it is documented
@@ -229,11 +230,14 @@ class HostHeaderGuard:
         self.app = app
         entries = _split_hosts(allowed_hosts)
         self._off = "*" in entries or not is_loopback_host(bind_host or "")
-        self._allowed = {_hostname(e) for e in entries} | {_hostname(bind_host or "")}
+        self._allowed = {_hostname(e) for e in entries if not e.startswith("*.")} | {_hostname(bind_host or "")}
+        self._suffixes = tuple(e[1:].rstrip(".") for e in entries if e.startswith("*."))
 
     def _host_allowed(self, host: str) -> bool:
-        name = _hostname(host)
-        return name in self._allowed or is_loopback_host(name)
+        name = _hostname(host).rstrip(".")
+        if name in self._allowed or is_loopback_host(name):
+            return True
+        return bool(self._suffixes) and name.endswith(self._suffixes)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if self._off or scope["type"] not in ("http", "websocket"):

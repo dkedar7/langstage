@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.57 — 2026-10-19
+
+### Fixed
+- **`allowed_hosts` accepts `*.example.org`** to allow every subdomain of a name, as
+  langstage-codraft 0.5.4 does, so one `langstage.toml` behaves the same in both stages.
+  The bare `example.org` still needs its own entry.
+
 ## 0.13.56 — 2026-10-19
 
 ### Security
