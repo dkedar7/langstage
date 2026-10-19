@@ -16,6 +16,8 @@ from langstage_core import load_agent_spec
 from langstage_core.console import safe_print
 from langstage.config import AppConfig
 from langstage.server.main import CHECKPOINT_DB, create_fastapi_app
+from langstage.server.shutdown import GRACEFUL_SHUTDOWN_TIMEOUT
+from langstage.server.shutdown import Server as ShutdownAwareServer
 
 # NOTE: langstage.default_agent and langstage.middleware are imported lazily
 # (inside the methods below) because they pull in `langchain`/`deepagents`, which
@@ -108,6 +110,17 @@ def _frontend_warning() -> str | None:
         "`pip install --upgrade --force-reinstall langstage`, or build it locally with "
         "`cd frontend && npm run build`."
     )
+
+
+def _serve_blocking(app, *, host: str, port: int, log_level: str) -> None:
+    """``uvicorn.run`` through :class:`ShutdownAwareServer`: one Ctrl+C / SIGTERM stops
+    the server even with a browser tab's SSE stream open (gh #211)."""
+    config = uvicorn.Config(app, host=host, port=port, log_level=log_level,
+                            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT)
+    server = ShutdownAwareServer(config)
+    server.run()
+    if not server.started:
+        sys.exit(3)  # uvicorn's STARTUP_FAILURE, as uvicorn.run exits
 
 
 class BackgroundServer:
@@ -389,7 +402,7 @@ class CoworkApp:
 
         log_level = "debug" if self.config.debug else "info"
         if not in_notebook:
-            uvicorn.run(app, host=self.config.host, port=self.config.port, log_level=log_level)
+            _serve_blocking(app, host=self.config.host, port=self.config.port, log_level=log_level)
             return None
 
         return self._serve_in_background(app, url, log_level)
@@ -404,8 +417,9 @@ class CoworkApp:
         ``sys.exit(STARTUP_FAILURE)`` takes the whole kernel down with it).
         """
         config = uvicorn.Config(app, host=self.config.host, port=self.config.port,
-                                log_level=log_level)
-        server = uvicorn.Server(config)
+                                log_level=log_level,
+                                timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT)
+        server = ShutdownAwareServer(config)
 
         def _serve() -> None:
             try:

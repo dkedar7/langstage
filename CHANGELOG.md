@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.13.55 — 2026-10-19
+
+### Security
+- **Agent HTML and Plotly run in an isolated frame** (gh #212). The Canvas and the chat's
+  inline renderer framed agent-produced HTML and Plotly with
+  `sandbox="allow-scripts allow-same-origin"`, which gave the frame the app's own origin.
+  A script in that content (from a fetched page, an email, a tool result) could read,
+  overwrite and delete workspace files through the REST API, past the #206 cross-site
+  guard, and reach the parent page. The frames now use `allow-scripts` only, like the
+  Files viewer: the content runs in an opaque origin, while Plotly and auto-resize still
+  work.
+
+### Fixed
+- **One Ctrl+C or SIGTERM stops the server with the UI open** (gh #211). Uvicorn waits for
+  open connections before it shuts down, and the UI's `/api/stream` never ended, so the
+  server hung on "Waiting for connections to close" until a second Ctrl+C (with
+  tracebacks, skipping the scheduler and task-runner shutdown) or SIGKILL. Open streams
+  now end as soon as shutdown starts, and the lifespan shutdown runs. In a notebook,
+  `BackgroundServer.stop()` stops the server instead of returning after 5 s with it
+  still running. A 5 s graceful-shutdown limit bounds any other long-lived request.
+
 ## 0.13.54 — 2026-10-15
 
 ### Fixed
