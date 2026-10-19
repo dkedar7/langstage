@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.13.56 — 2026-10-19
+
+### Security
+- **The local server refuses requests addressed to a name it doesn't answer to** (gh #208).
+  With DNS rebinding, a page at `http://evil.example:8050` re-points its name at 127.0.0.1.
+  The browser then treats your local server as that site's own origin, so the #206
+  cross-site guard can't tell, and the page can read your files and drive the agent. On a
+  server bound to a loopback address (the default `localhost`), every request, `GET`
+  included, whose `Host` header isn't `localhost`, `127.0.0.1`, `[::1]`, a `*.localhost`
+  name, the bind host or an entry in the new `allowed_hosts` setting now gets `403`. The
+  403 names the host and the setting.
+- **New setting `allowed_hosts`** (`[server] allowed_hosts` in `langstage.toml`, or
+  `LANGSTAGE_ALLOWED_HOSTS`, comma-separated): extra names the server answers to. `*` turns
+  the check off. It's shown in `config` / `--show-config`.
+
+### Changed
+- **Reverse proxies that forward the public host name to a loopback bind now need
+  `allowed_hosts`.** Caddy and Traefik pass the browser's `Host` through by default, so put
+  your public name in `allowed_hosts` (for example
+  `LANGSTAGE_ALLOWED_HOSTS=agent.example.org`). nginx's plain `proxy_pass` sends
+  `127.0.0.1:<port>` as the `Host` and keeps working. Servers bound to a non-loopback
+  address (`--host 0.0.0.0`) are unchanged.
+
 ## 0.13.55 — 2026-10-19
 
 ### Security
