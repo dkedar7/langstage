@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from langstage.server.models import ChatComplete, SessionAck
+from langstage.server.shutdown import shutdown_event, until_shutdown
 from langstage.oneturn import complete_turn
 
 from langstage_core import workspace_root
@@ -114,7 +115,9 @@ def create_chat_router(
                 )
             frames = adapter.sse(session.id)
             try:
-                async for frame in frames:
+                # Ends when the server starts shutting down, so an open tab can't hold
+                # Ctrl+C / SIGTERM open (gh #211).
+                async for frame in until_shutdown(frames, shutdown_event(getattr(request, "app", None))):
                     yield frame
             finally:
                 if file_watch_task:

@@ -175,7 +175,7 @@ function AutoResizeIframe({ html, title }: { html: string; title?: string }) {
       ref={iframeRef}
       srcDoc={srcdoc}
       title={title || "HTML preview"}
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
       className="w-full rounded border-0"
       style={{ height: `${height}px` }}
     />
@@ -224,7 +224,7 @@ Plotly.newPlot('chart',d,l,{responsive:true,displayModeBar:false}).then(function
       ref={iframeRef}
       srcDoc={srcdoc}
       title={title || "Plotly chart"}
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
       className="w-full rounded border-0"
       style={{ height: `${height}px` }}
     />

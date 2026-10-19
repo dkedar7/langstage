@@ -39,7 +39,7 @@ def test_run_delegates_to_blocking_uvicorn_run_in_a_script(monkeypatch, tmp_path
     def fake_uvicorn_run(app, **kwargs):
         called.update(kwargs)
 
-    monkeypatch.setattr("langstage.app.uvicorn.run", fake_uvicorn_run)
+    monkeypatch.setattr("langstage.app._serve_blocking", fake_uvicorn_run)
     cwd = os.getcwd()
     try:
         app = CoworkApp(agent_spec=DEMO_SPEC, workspace=tmp_path, port=_free_port())
@@ -121,7 +121,7 @@ async def test_run_in_a_notebook_does_not_move_the_kernels_cwd(tmp_path):
 
 def test_run_in_a_script_still_enters_the_workspace(monkeypatch, tmp_path):
     # The dedicated-process (CLI / script) path keeps ADR 0006's chdir.
-    monkeypatch.setattr("langstage.app.uvicorn.run", lambda app, **kw: None)
+    monkeypatch.setattr("langstage.app._serve_blocking", lambda app, **kw: None)
     ws = tmp_path / "ws"
     before = os.getcwd()
     try:

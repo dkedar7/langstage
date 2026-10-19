@@ -493,7 +493,7 @@ def _make_run_app(workspace, mock_agent, monkeypatch, host):
     import langstage.app as app_mod
     from langstage.app import CoworkApp
 
-    monkeypatch.setattr(app_mod.uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.setattr(app_mod, "_serve_blocking", lambda *a, **k: None)
     monkeypatch.setattr(app_mod.CoworkApp, "_enter_workspace", lambda self: None)
     return CoworkApp(agent=mock_agent, workspace=workspace, host=host, port=8050,
                      title="T", agent_name="A", show_canvas=False, show_files=False)
