@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.58 — 2026-10-21
+
+### Fixed
+- **Closing a tab logged a traceback and the session was never reclaimed** (gh #216, a
+  regression of #164 in 0.13.55). Every disconnect from `GET /api/stream` logged
+  `Exception in ASGI application` (`aclose(): asynchronous generator is already
+  running`). The session also stayed `connected: true` in `GET /api/sessions` and was
+  never dropped, so sessions piled up again. The #211 shutdown wrapper reads the stream in
+  a helper task and left that read running when the client went away. It now cancels and
+  waits for the read, so a disconnect is silent again, and the session is reaped 60 s
+  later as documented. One Ctrl+C with a tab open still stops the server (#211).
+
 ## 0.13.57 — 2026-10-19
 
 ### Fixed
