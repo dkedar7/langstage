@@ -13,10 +13,10 @@ uvicorn goes on to the lifespan shutdown as usual. The servers also get a short
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from collections.abc import AsyncIterator
 from typing import Any
 
+import anyio
 import uvicorn
 
 STATE_KEY = "langstage_shutdown"
@@ -37,16 +37,21 @@ def shutdown_event(app: Any) -> asyncio.Event:
 
 
 async def until_shutdown(frames: AsyncIterator[Any], stop: asyncio.Event) -> AsyncIterator[Any]:
-    """Yield from ``frames`` until it ends or ``stop`` is set, whichever comes first."""
+    """Yield from ``frames`` until it ends or ``stop`` is set, whichever comes first.
+
+    ``frames`` is read in a helper task so the wait can race ``stop``. However this
+    ends -- the stream ending, ``stop``, or the caller being cancelled when the client
+    disconnects -- that task is cancelled and waited for, so ``frames`` is suspended
+    again and the caller can ``aclose()`` it (gh #216: a pending read left it "already
+    running", so every disconnect logged a traceback and the session was never reaped).
+    """
     stop_wait = asyncio.ensure_future(stop.wait())
+    nxt: asyncio.Future | None = None
     try:
         while True:
             nxt = asyncio.ensure_future(anext(frames))
             done, _ = await asyncio.wait({nxt, stop_wait}, return_when=asyncio.FIRST_COMPLETED)
             if nxt not in done:
-                nxt.cancel()
-                with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
-                    await nxt
                 return
             try:
                 frame = nxt.result()
@@ -55,6 +60,14 @@ async def until_shutdown(frames: AsyncIterator[Any], stop: asyncio.Event) -> Asy
             yield frame
     finally:
         stop_wait.cancel()
+        if nxt is not None and not nxt.done():
+            nxt.cancel()
+            # Shielded: on a disconnect this runs inside the response's cancelled scope,
+            # where an unshielded await would be cancelled before the read unwinds.
+            with anyio.CancelScope(shield=True):
+                await asyncio.wait({nxt})
+        if nxt is not None and nxt.done() and not nxt.cancelled():
+            nxt.exception()  # retrieved, so asyncio doesn't log "never retrieved"
 
 
 class Server(uvicorn.Server):

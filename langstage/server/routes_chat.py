@@ -9,6 +9,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+import anyio
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -124,8 +125,12 @@ def create_chat_router(
                     file_watch_task.cancel()
                 # Close the inner stream now (not at garbage collection) so the
                 # session is marked disconnected, then reclaim it once idle (gh #164).
-                await frames.aclose()
-                _schedule_reap(adapter, session.id)
+                # Reap even if closing fails, so a session can't leak (gh #216).
+                try:
+                    with anyio.CancelScope(shield=True):
+                        await frames.aclose()
+                finally:
+                    _schedule_reap(adapter, session.id)
 
         return StreamingResponse(
             event_generator(),
