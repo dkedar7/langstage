@@ -371,9 +371,9 @@ def test_canvas_tools_run_in_a_create_agent_agent(tmp_workspace: Path):
 
     results = [m for m in out["messages"] if isinstance(m, ToolMessage)]
     assert [m.status for m in results] == ["success", "success"], [m.content for m in results]
-    # The two calls run in parallel, so both must land (in either order).
+    # The two calls run in parallel; both land, in the order the model listed them (gh #218).
     items = load_canvas_from_markdown(tmp_workspace)
-    assert sorted(i.get("type") for i in items) == ["markdown", "section"]
+    assert [i.get("type") for i in items] == ["section", "markdown"]
 
 
 def test_parallel_canvas_writes_keep_every_item(tmp_workspace: Path):
@@ -385,6 +385,77 @@ def test_parallel_canvas_writes_keep_every_item(tmp_workspace: Path):
         list(pool.map(lambda i: tools_mod.add_to_canvas(f"note {i}", item_id=f"n{i}"), range(24)))
     items = load_canvas_from_markdown(tmp_workspace)
     assert sorted(i.get("id") for i in items) == sorted(f"n{i}" for i in range(24))
+
+
+def _run_parallel_canvas_calls(calls, monkeypatch, delays):
+    """Run one AIMessage's canvas ``calls`` through a real ToolNode, with each call's
+    parse slowed by ``delays[item_id]`` so they finish in a chosen order."""
+    import time
+
+    from langchain_core.messages import AIMessage
+    from langgraph.graph import END, START, MessagesState, StateGraph
+    from langgraph.prebuilt import ToolNode
+
+    real_parse = tools_mod.parse_canvas_object
+
+    def slow_parse(obj, *args, **kwargs):
+        time.sleep(delays.get(kwargs.get("item_id"), 0))
+        return real_parse(obj, *args, **kwargs)
+
+    monkeypatch.setattr(tools_mod, "parse_canvas_object", slow_parse)
+    builder = StateGraph(MessagesState)
+    builder.add_node("tools", ToolNode(CanvasMiddleware().tools))
+    builder.add_edge(START, "tools")
+    builder.add_edge("tools", END)
+    return builder.compile().invoke({"messages": [AIMessage(content="", tool_calls=calls)]})
+
+
+REPORT_CALLS = [
+    {"name": "add_canvas_section", "args": {"title": "1. Overview", "item_id": "overview"}, "id": "c1"},
+    {"name": "add_to_canvas", "args": {"content": "Overview text.", "item_id": "overview_text"}, "id": "c2"},
+    {"name": "add_canvas_section", "args": {"title": "2. Findings", "item_id": "findings"}, "id": "c3"},
+    {"name": "add_to_canvas", "args": {"content": "Findings text.", "item_id": "findings_text"}, "id": "c4"},
+]
+REPORT_ORDER = ["overview", "overview_text", "findings", "findings_text"]
+
+
+def test_parallel_canvas_calls_land_in_requested_order(tmp_workspace: Path, monkeypatch):
+    # gh #218: the tool node runs one message's calls concurrently, and items used to
+    # land in completion order. Here they finish last-first, the worst case.
+    delays = {"overview": 0.3, "overview_text": 0.2, "findings": 0.1, "findings_text": 0.0}
+    _run_parallel_canvas_calls(REPORT_CALLS, monkeypatch, delays)
+    assert [i["id"] for i in load_canvas_from_markdown(tmp_workspace)] == REPORT_ORDER
+
+
+def test_parallel_canvas_calls_go_after_existing_items(tmp_workspace: Path, monkeypatch):
+    tools_mod.add_to_canvas("Earlier turn.", item_id="earlier")
+    delays = {"overview": 0.2, "findings_text": 0.1}
+    _run_parallel_canvas_calls(REPORT_CALLS, monkeypatch, delays)
+    assert [i["id"] for i in load_canvas_from_markdown(tmp_workspace)] == ["earlier", *REPORT_ORDER]
+
+
+def test_parallel_update_of_a_new_item_keeps_requested_order(tmp_workspace: Path, monkeypatch):
+    # update_canvas_item adds an item it can't find; that add is ordered too. An item
+    # it does find stays where it was.
+    tools_mod.add_to_canvas("Old chart.", item_id="chart")
+    calls = [
+        {"name": "add_canvas_section", "args": {"title": "Results", "item_id": "results"}, "id": "u1"},
+        {"name": "update_canvas_item", "args": {"item_id": "results_text", "content": "Text."}, "id": "u2"},
+        {"name": "update_canvas_item", "args": {"item_id": "chart", "content": "New chart."}, "id": "u3"},
+    ]
+    _run_parallel_canvas_calls(calls, monkeypatch, {"results": 0.2})
+    items = load_canvas_from_markdown(tmp_workspace)
+    assert [i["id"] for i in items] == ["chart", "results", "results_text"]
+    assert "New chart." in items[0]["data"]
+
+
+def test_canvas_runtime_is_hidden_from_the_model_and_optional(tmp_workspace: Path):
+    for tool in CanvasMiddleware().tools:
+        assert "runtime" not in tool.tool_call_schema.model_json_schema().get("properties", {})
+    # Called directly (no tool node), an item is appended as before.
+    tools_mod.add_to_canvas("one", item_id="a")
+    tools_mod.add_canvas_section("Two", item_id="b")
+    assert [i["id"] for i in load_canvas_from_markdown(tmp_workspace)] == ["a", "b"]
 
 
 def test_middleware_registers_its_tools():

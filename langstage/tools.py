@@ -12,6 +12,11 @@ from contextlib import redirect_stdout, redirect_stderr, contextmanager
 from langchain_core.runnables.config import var_child_runnable_config
 from langchain_core.tools import tool as langchain_tool
 
+try:
+    from langgraph.prebuilt import ToolRuntime
+except ImportError:  # an older langgraph: canvas calls fall back to completion order
+    ToolRuntime = Any  # type: ignore[misc,assignment]
+
 from .config import WORKSPACE_ROOT, VIRTUAL_FS
 from .canvas import parse_canvas_object, load_canvas_from_markdown, export_canvas_to_markdown
 
@@ -865,12 +870,59 @@ def _resolve_source_cell(
 # parallel, so unguarded read-modify-writes lost items. One lock serializes them.
 _CANVAS_LOCK = threading.RLock()
 
+# Those parallel calls finish in any order, so items landed in completion order and a
+# section heading could end up below its own content (gh #218). A call run by a tool
+# node gets a `runtime` (hidden from the model) that names the message that requested
+# it; the item goes in before any sibling the model listed after it, so one message's
+# items keep the order the model asked for. Keyed by the message's tool-call ids, the
+# value maps each placed call's index to its item id. Guarded by _CANVAS_LOCK.
+_CANVAS_BATCHES: "OrderedDict[tuple, Dict[int, Any]]" = OrderedDict()
+_CANVAS_BATCH_LIMIT = 64
+
+
+def _canvas_call_position(runtime: Any) -> Optional[tuple]:
+    """``(tool-call ids of the requesting message, this call's index)``, or None when
+    the call came alone, from outside a tool node, or its message can't be found."""
+    call_id = getattr(runtime, "tool_call_id", None)
+    state = getattr(runtime, "state", None)
+    messages = state.get("messages") if isinstance(state, dict) else getattr(state, "messages", None)
+    if not call_id or not messages:
+        return None
+    for message in reversed(messages):
+        calls = getattr(message, "tool_calls", None) or []
+        ids = tuple(str(call.get("id") or "") for call in calls)
+        if call_id in ids:
+            return (ids, ids.index(call_id)) if len(ids) > 1 else None
+    return None
+
+
+def _place_canvas_item(items: List[Dict[str, Any]], parsed: Dict[str, Any],
+                       workspace_root: Any, runtime: Any) -> None:
+    """Add ``parsed`` to ``items``: at the end, or in its message's requested order.
+    The caller holds _CANVAS_LOCK."""
+    position = _canvas_call_position(runtime)
+    if position is None:
+        items.append(parsed)
+        return
+    ids, index = position
+    key = (str(workspace_root), ids)
+    placed = _CANVAS_BATCHES.get(key)
+    if placed is None:
+        placed = _CANVAS_BATCHES[key] = {}
+        while len(_CANVAS_BATCHES) > _CANVAS_BATCH_LIMIT:
+            _CANVAS_BATCHES.popitem(last=False)
+    later = {item_id for i, item_id in placed.items() if i > index and item_id}
+    at = next((n for n, item in enumerate(items) if item.get("id") in later), len(items))
+    items.insert(at, parsed)
+    placed[index] = parsed.get("id")
+
 
 def add_to_canvas(
     content: Any,
     title: Optional[str] = None,
     item_id: Optional[str] = None,
     source_cell: Optional[int] = None,
+    runtime: ToolRuntime = None,
 ) -> str:
     """Add an item to the canvas for visualization. Canvas is like a note-taking tool where
     you can store charts, dataframes, images, and markdown text for the user to see.
@@ -886,6 +938,8 @@ def add_to_canvas(
                 or remove the item later. Auto-generated if not provided.
         source_cell: Optional explicit cell index that produced this item. If omitted,
                 the most recently executed cell is used automatically.
+        runtime: Injected by the agent's tool node (the model never sees it); keeps
+                items requested together in one message in the order requested.
 
     Returns:
         Confirmation string describing what was added.
@@ -930,7 +984,7 @@ def add_to_canvas(
             if item_id:
                 items = [item for item in items if item.get("id") != item_id]
 
-            items.append(parsed)
+            _place_canvas_item(items, parsed, workspace_root, runtime)
             export_canvas_to_markdown(items, workspace_root)
 
         item_type = parsed.get("type", "item")
@@ -945,6 +999,7 @@ def update_canvas_item(
     content: Any,
     title: Optional[str] = None,
     source_cell: Optional[int] = None,
+    runtime: ToolRuntime = None,
 ) -> str:
     """Update an existing canvas item by its ID. If the item doesn't exist, it will be added.
 
@@ -992,7 +1047,7 @@ def update_canvas_item(
                     replaced = True
                     break
             if not replaced:
-                items.append(parsed)
+                _place_canvas_item(items, parsed, workspace_root, runtime)
 
             export_canvas_to_markdown(items, workspace_root)
         return f"Updated canvas item: {item_id}"
@@ -1000,7 +1055,8 @@ def update_canvas_item(
         return f"Failed to update canvas item: {e}"
 
 
-def add_canvas_section(title: str, level: int = 1, item_id: Optional[str] = None) -> str:
+def add_canvas_section(title: str, level: int = 1, item_id: Optional[str] = None,
+                       runtime: ToolRuntime = None) -> str:
     """Add a section header to the canvas to structure the report.
 
     Sections act as structural dividers — use them to group related items under
@@ -1022,7 +1078,7 @@ def add_canvas_section(title: str, level: int = 1, item_id: Optional[str] = None
     try:
         lvl = max(1, min(int(level), 6))
         payload = {"__canvas_kind__": "section", "text": title, "level": lvl}
-        return add_to_canvas(payload, title=None, item_id=item_id)
+        return add_to_canvas(payload, title=None, item_id=item_id, runtime=runtime)
     except Exception as e:
         return f"Failed to add section: {e}"
 
