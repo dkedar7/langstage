@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.59 — 2026-10-24
+
+### Fixed
+- **Canvas items requested in one message landed in the order they finished** (gh #218).
+  Models usually send several canvas calls in one message (a section heading, then its
+  text), and the tool node runs them concurrently. The canvas lock from #200 stopped lost
+  items, but each item was appended when its call finished, so headings could land below
+  their own content and the report's order changed from run to run. Each canvas tool now
+  receives the tool node's `runtime` (hidden from the model) and puts its item before any
+  sibling the model listed after it. One message's items keep the requested order, after
+  whatever the canvas already held. `add_to_canvas`, `add_canvas_section` and
+  `update_canvas_item` (when it adds a new item) are ordered this way. Called directly,
+  outside a tool node, they append as before.
+
 ## 0.13.58 — 2026-10-21
 
 ### Fixed
