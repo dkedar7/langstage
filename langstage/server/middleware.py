@@ -1,6 +1,7 @@
 """CORS and authentication middleware."""
 
 import base64
+import ipaddress
 import json
 import re
 import secrets
@@ -203,9 +204,21 @@ def _hostname(host_header: str) -> str:
 
 
 def is_loopback_host(host: str) -> bool:
-    """Whether a bind host / socket address is loopback (``localhost``, 127.x, ``::1``)."""
-    h = _hostname(host) if host.startswith("[") else host.strip().lower()
-    return h in _LOOPBACK_NAMES or h.startswith("127.") or h.endswith(".localhost")
+    """Whether a bind host, socket address or Host name is loopback.
+
+    ``localhost``, ``*.localhost`` (browsers resolve it to loopback themselves), or an IP
+    literal in 127.0.0.0/8 or ``::1`` (IPv4-mapped included). A Host header is a name the
+    caller picks, so ``127.attacker.example`` is a DNS name, not loopback (gh #221).
+    """
+    h = (_hostname(host) if host.startswith("[") else host.strip().lower()).rstrip(".")
+    if h in _LOOPBACK_NAMES or h.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return (mapped or ip).is_loopback
 
 
 class HostHeaderGuard:
