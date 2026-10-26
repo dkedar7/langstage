@@ -104,7 +104,7 @@ def test_invalid_env_theme_degrades_to_default_with_note(monkeypatch, capsys):
     assert cfg.theme == "auto"  # degraded to the default, not "purple"
     assert cfg.sources["theme"] == "default"  # not credited to the rejected env var
     err = capsys.readouterr().err
-    assert "ignoring invalid theme 'purple'" in err
+    assert "ignoring invalid theme='purple'" in err
     assert "light, dark, auto" in err  # names the accepted set
 
 
@@ -119,7 +119,7 @@ def test_invalid_toml_theme_degrades_to_default_with_note(
     assert cfg.theme == "auto"
     assert cfg.sources["theme"] == "default"  # not "toml (langstage.toml)"
     err = capsys.readouterr().err
-    assert "ignoring invalid theme 'banana'" in err
+    assert "ignoring invalid theme='banana'" in err
 
 
 def test_invalid_python_api_theme_degrades_to_default(capsys):
@@ -171,7 +171,35 @@ def test_theme_enum_is_case_sensitive_like_the_cli(monkeypatch, capsys):
     monkeypatch.setenv("LANGSTAGE_THEME", "Dark")
     cfg = AppConfig.from_env()
     assert cfg.theme == "auto"
-    assert "ignoring invalid theme 'Dark'" in capsys.readouterr().err
+    assert "ignoring invalid theme='Dark'" in capsys.readouterr().err
+
+
+def test_invalid_env_theme_falls_back_to_the_toml_theme(tmp_path, monkeypatch, capsys):
+    """gh #220: a rejected theme drops one layer, like every other field, not to auto."""
+    (tmp_path / "langstage.toml").write_text('[ui]\ntheme = "dark"\n')
+    (tmp_path / "sub").mkdir()
+    monkeypatch.chdir(tmp_path / "sub")
+    monkeypatch.setenv("LANGSTAGE_THEME", "DARK")
+    cfg = AppConfig.resolve()
+    assert cfg.theme == "dark"
+    assert cfg.sources["theme"] == "toml (langstage.toml)"
+    assert "using 'dark' (toml (langstage.toml)) instead" in capsys.readouterr().err
+    [issue] = [i for i in cfg.config_issues() if i["field"] == "theme"]
+    assert issue["source"] == "env:LANGSTAGE_THEME" and issue["value"] == "DARK"
+    assert issue["used"] == "dark"
+
+
+def test_invalid_project_theme_falls_back_to_the_global_theme(tmp_path, monkeypatch):
+    home, proj = tmp_path / "home", tmp_path / "proj"
+    home.mkdir()
+    proj.mkdir()
+    (home / "config.toml").write_text('[ui]\ntheme = "dark"\n')
+    (proj / "langstage.toml").write_text('[ui]\ntheme = "Light"\n')
+    monkeypatch.setenv("LANGSTAGE_CONFIG_HOME", str(home))
+    monkeypatch.chdir(proj)
+    cfg = AppConfig.resolve()
+    assert cfg.theme == "dark"
+    assert cfg.sources["theme"] == "toml (config.toml)"
 
 
 def test_cli_theme_flag_still_hard_rejects():

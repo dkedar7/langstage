@@ -142,6 +142,19 @@ def _warn_invalid_theme(value: Any) -> None:
     )
 
 
+
+def _theme_valid(value: Any) -> Any:
+    """Core ``_VALIDATORS`` hook for ``theme``: reject anything outside the enum.
+
+    Core validates each layer on its own, so a rejected theme falls back to the valid
+    layer beneath it (``LANGSTAGE_THEME=Dark`` over ``[ui] theme = "dark"`` keeps
+    ``dark``), not to ``auto``, and core's note and ``config_issues()`` report it like
+    any other degraded value (gh #220)."""
+    if value not in _VALID_THEMES:
+        raise ValueError(f"expected one of: {', '.join(_VALID_THEMES)}")
+    return value
+
+
 _SAVE_PROMPT = (
     "Please capture this conversation as a detailed workflow markdown file in "
     "the ./workflows/ directory. Include: a title, description of the goal, "
@@ -251,6 +264,7 @@ class AppConfig(HostConfig):
     # like ``[workspace] root`` and ``[agent] spec``, so the theme survives a run from a
     # subdirectory of the project; ``~`` is expanded in every layer. (gh #209)
     _TOML_PATHS: ClassVar[dict] = {"custom_css": "path"}
+    _VALIDATORS: ClassVar[dict] = {"theme": _theme_valid}
 
     def __post_init__(self) -> None:
         # Core's path normalization hands back a Path; the field stays a str.

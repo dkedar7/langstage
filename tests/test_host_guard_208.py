@@ -104,10 +104,38 @@ async def test_only_loopback_binds_and_connections_are_checked():
 
 
 def test_is_loopback_host():
-    for h in ("localhost", "127.0.0.1", "::1", "[::1]", "127.1.2.3", "x.localhost"):
+    for h in ("localhost", "127.0.0.1", "::1", "[::1]", "127.1.2.3", "x.localhost", "localhost.",
+              "127.0.0.1.", "::ffff:127.0.0.1", "[::ffff:127.0.0.1]"):
         assert is_loopback_host(h), h
-    for h in ("0.0.0.0", "192.168.1.5", "example.org", "", "testserver"):
+    for h in ("0.0.0.0", "192.168.1.5", "example.org", "", "testserver", "::", "::ffff:10.0.0.1"):
         assert not is_loopback_host(h), h
+
+
+# gh #221: a Host header is a DNS name the attacker picks. Only an IP literal is 127.x;
+# a name that merely starts with "127." (or with "localhost") is a name they can rebind.
+_REBINDABLE = ["127.attacker.example:8050", "127.0.0.1.nip.io:8050", "127.0.0.1.evil",
+               "127.attacker.example.", "127.:8050", "localhost.evil:8050", "LOCALHOST.EVIL",
+               "localhost.attacker.example", "evil.example.localhost.attacker.example",
+               "2130706433:8050", "[::ffff:10.0.0.1]:8050"]
+
+
+@pytest.mark.parametrize("host", _REBINDABLE)
+def test_names_that_only_look_loopback_are_not_loopback(host):
+    assert not is_loopback_host(host.rsplit(":", 1)[0] if host.count(":") == 1 else host)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host", _REBINDABLE)
+@pytest.mark.parametrize("method,path", [("GET", "/api/ping"), ("POST", "/api/write")])
+async def test_rebinding_names_that_start_like_loopback_are_refused(host, method, path):
+    assert (await _status(_guarded(), host, method=method, path=path))[0] == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host", ["127.0.0.1.:8050", "localhost.:8050", "[::ffff:127.0.0.1]:8050",
+                                  "127.255.255.254"])
+async def test_loopback_literals_with_trailing_dot_or_mapped_form_pass(host):
+    assert (await _status(_guarded(), host))[0] == 200
 
 
 def test_allowed_hosts_resolves_from_env_and_toml(tmp_path, monkeypatch):

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.13.60 — 2026-10-26
+
+### Security
+- **The DNS-rebinding Host guard accepted any host name starting with `127.`** (gh #221).
+  `127.attacker.example` and `127.0.0.1.nip.io` are DNS names an attacker controls, but the
+  loopback test was a string prefix, so a rebinding page served from one of them could
+  read and write the workspace of a default local server, defeating #208. A Host now
+  counts as loopback only if it is `localhost`, a `*.localhost` name, or an actual IP
+  literal in 127.0.0.0/8 or `::1` (IPv4-mapped `::ffff:127.x` included; a trailing dot is
+  ignored). Every other name gets the 403, the same as `evil.example`. A shorthand IP
+  such as `127.1`, which browsers never send in a Host header, is now refused as well.
+
+### Fixed
+- **An invalid `theme` at one config layer threw away a valid theme beneath it** (gh #220).
+  `LANGSTAGE_THEME=Dark` over `[ui] theme = "dark"`, or a project `theme = "Light"` over a
+  global `theme = "dark"`, reset the theme to `auto`. The theme is now validated per layer,
+  like every other field, so a rejected value falls back to the next valid layer
+  (`dark [toml (langstage.toml)]`). The note and `config --strict` name the value kept.
+  Requires langstage-core 1.0.49 or later.
+
 ## 0.13.59 — 2026-10-24
 
 ### Fixed
