@@ -7,7 +7,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from langstage_core.adapters import SessionAdapter
 from langstage_core.tasks import TaskRunner, set_runner
 
 from langstage.config import AppConfig
@@ -20,6 +19,7 @@ from langstage.server.routes_session import create_session_router
 from langstage.server.routes_chat import create_chat_router
 from langstage.server.routes_cron import create_cron_router
 from langstage.server.routes_tasks import create_tasks_router
+from langstage.server.usage import UsageSessionAdapter
 from langstage.scheduler import CronScheduler, set_scheduler
 from langstage.tasks import SqliteCronStore, SqliteTaskStore
 from langstage.workspace.file_manager import FileManager
@@ -159,8 +159,9 @@ def create_fastapi_app(
     # One session-scoped streaming adapter owns agent execution + the SSE pipe.
     # Since core 1.0 (ADR 0003) it streams every turn through the in-process AG-UI
     # adapter — the only path — emitting the same SSE frames, so the frontend is
-    # unchanged. max_result_len is large so the UI shows full tool output.
-    adapter = SessionAdapter(
+    # unchanged. max_result_len is large so the UI shows full tool output. Each turn
+    # ends with a `usage` frame for the StatusBar token counter (gh #223).
+    adapter = UsageSessionAdapter(
         graph=agent,
         max_result_len=50_000,
         **(stream_parser_config or {}),
