@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.61 — 2026-10-30
+
+### Fixed
+- **The "Token usage" counter in the status bar never appeared** (gh #223). The README
+  advertised a cumulative counter with a per-turn chart, but nothing sent the `usage` frame
+  it is drawn from: core declined to add one (langstage-core#155) because LangChain already
+  reports usage. The web stage now does what #155 suggested. A callback scoped to each turn
+  collects the `usage_metadata` of every model call in it, and the turn's totals follow the
+  turn as one `usage` frame, after an error or a cancel too. It counts any model that
+  reports usage, including ones that don't set `response_metadata["model_name"]`, which
+  langchain's own `get_usage_metadata_callback()` requires. That helper also registers a
+  new global hook on every call, so the stage registers its own once instead. A model that
+  reports no usage (the demo stub) sends no frame and the counter stays hidden.
+- Requires `langstage-core` 1.0.53, so an existing install also picks up its fix for agents
+  with a dataclass `context_schema` (langstage-core#217).
+
 ## 0.13.60 — 2026-10-26
 
 ### Security
