@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.62 — 2026-11-02
+
+### Fixed
+- **`langstage run` refused to restart on the same port for about a minute** (gh #225). After
+  a server had answered any request (an open browser tab is enough), stopping it and running it
+  again failed with "Address already in use" until the old connection left `TIME_WAIT`. The
+  pre-flight busy-port check bound without `SO_REUSEADDR`, unlike uvicorn and langstage-core.
+  It now binds the same way uvicorn will: `SO_REUSEADDR` on Linux/macOS, off on Windows, where
+  it would let two servers share a port. A port with a live server on it is still refused
+  before the banner, with exit 1.
+
 ## 0.13.61 — 2026-10-30
 
 ### Fixed

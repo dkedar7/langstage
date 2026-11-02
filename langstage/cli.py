@@ -51,12 +51,20 @@ def _port_bind_error(host, port):
     """Return why ``host:port`` can't be bound, or None if it's free.
 
     Probed before the server banner so a busy port is a clean one-line error and exit 1
-    rather than a success banner followed by uvicorn's own exit 3 (ADR 0007)."""
+    rather than a success banner followed by uvicorn's own exit 3 (ADR 0007).
+
+    The probe binds the way uvicorn will (gh #225): ``SO_REUSEADDR`` on POSIX, so the
+    previous run's socket in ``TIME_WAIT`` doesn't read as busy for a minute after a
+    restart, while a live listener still fails with ``EADDRINUSE``. On Windows the option
+    would let a second server share a port that is really in use, so it stays off there,
+    as in uvicorn and ``langstage_core.agui``."""
     import socket
 
     try:
         family, type_, proto, _, addr = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)[0]
         with socket.socket(family, type_, proto) as sock:
+            if sys.platform != "win32":
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(addr)
     except OSError as exc:
         return exc.strerror or str(exc)
