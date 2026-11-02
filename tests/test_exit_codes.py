@@ -4,6 +4,7 @@
 a usage error, which collides with "paused", so the CLI remaps usage errors to 64.
 """
 import socket
+import sys
 
 import pytest
 from click.testing import CliRunner
@@ -141,6 +142,62 @@ def test_run_busy_port_is_failure_1_before_banner(monkeypatch):
     assert result.exit_code == 1, result.output
     assert "cannot serve" in result.output
     assert served == []
+
+
+def _time_wait_port():
+    """A port whose only socket is a closed server connection in TIME_WAIT (gh #225).
+
+    The server side closes first, so the TIME_WAIT entry sits on the server's port, the
+    way a stopped ``langstage run`` leaves it after serving one request."""
+    listener = socket.socket()
+    if sys.platform != "win32":
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    client = socket.create_connection(("127.0.0.1", port))
+    conn, _ = listener.accept()
+    listener.close()
+    conn.close()  # active close on the server side -> TIME_WAIT on `port`
+    client.recv(1)  # see the FIN, then close our end too
+    client.close()
+    return port
+
+
+def test_port_probe_ignores_time_wait_from_previous_run():
+    # gh #225: right after a stopped server had served a request, the probe bound
+    # without SO_REUSEADDR and called the port busy for ~60 s on Linux/macOS.
+    port = _time_wait_port()
+    assert cli_mod._port_bind_error("127.0.0.1", port) is None
+
+
+def test_port_probe_still_refuses_a_live_listener():
+    holder = socket.socket()
+    if sys.platform != "win32":
+        holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    holder.bind(("127.0.0.1", 0))
+    holder.listen(1)
+    try:
+        assert cli_mod._port_bind_error("127.0.0.1", holder.getsockname()[1]) is not None
+    finally:
+        holder.close()
+
+
+@pytest.mark.parametrize("platform, reuse", [("linux", True), ("darwin", True), ("win32", False)])
+def test_port_probe_sets_reuseaddr_only_off_windows(monkeypatch, platform, reuse):
+    # On Windows SO_REUSEADDR lets a second socket share a port that is really in use.
+    calls = []
+    real_socket = socket.socket
+
+    class _Spy(real_socket):
+        def setsockopt(self, level, opt, value):
+            calls.append(opt)
+            return super().setsockopt(level, opt, value)
+
+    monkeypatch.setattr(cli_mod.sys, "platform", platform)
+    monkeypatch.setattr(socket, "socket", _Spy)
+    assert cli_mod._port_bind_error("127.0.0.1", 0) is None
+    assert (socket.SO_REUSEADDR in calls) is reuse
 
 
 def test_run_uvicorn_startup_failure_maps_to_1(monkeypatch):
