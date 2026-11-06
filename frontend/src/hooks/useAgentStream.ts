@@ -544,7 +544,11 @@ export function useAgentStream() {
     (decisions: Decision[]) => {
       if (!sessionIdRef.current) return;
 
-      setInterrupt(null);
+      let pending: InterruptEventMsg | null = null;
+      setInterrupt((prev) => {
+        pending = prev;
+        return null;
+      });
       setIsStreaming(true);
 
       fetch("/api/chat/interrupt", {
@@ -554,10 +558,29 @@ export function useAgentStream() {
           session_id: sessionIdRef.current,
           decisions,
         }),
-      }).catch((err) => {
-        console.error("Failed to send interrupt response:", err);
-        setIsStreaming(false);
-      });
+      })
+        .then(async (res) => {
+          if (res.ok) return;
+          // Refused before anything was sent (core #227): the approval is still
+          // pending, so bring it back with the reason.
+          const body = await res.json().catch(() => null);
+          setIsStreaming(false);
+          setInterrupt(pending);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "assistant",
+              content: `Error: ${body?.detail ?? `answer refused (${res.status})`}`,
+              toolCalls: [],
+              timestamp: Date.now(),
+            },
+          ]);
+        })
+        .catch((err) => {
+          console.error("Failed to send interrupt response:", err);
+          setIsStreaming(false);
+        });
     },
     []
   );
