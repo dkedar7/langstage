@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.63 — 2026-11-06
+
+### Fixed
+- **A refused approval answer no longer fails the turn or the task** (langstage-core #227).
+  `/api/chat/interrupt` and `/api/tasks/{id}/resume` now check the decisions against the
+  pending approval with `langstage_core.decision_problems` before resuming. An answer the
+  approval middleware would refuse (a type the tool doesn't allow, an `edit` without
+  `edited_action`, a `respond` without a `message`) gets a 400 with the reason. Nothing is
+  sent, so the session keeps its approval and the task stays in review, and a correct answer
+  still goes through. The chat shows the reason and brings the approval back, and the task
+  review gate shows it under its buttons. Requires langstage-core >= 1.0.58, which also
+  checks every resume that reaches it and recovers a thread an older version left stuck on a
+  refused answer.
+
 ## 0.13.62 — 2026-11-02
 
 ### Fixed

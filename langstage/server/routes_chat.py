@@ -20,6 +20,7 @@ from langstage.oneturn import complete_turn
 
 from langstage_core import workspace_root
 from langstage_core.adapters import SessionAdapter
+from langstage_core.resume import decision_problems
 
 from langstage.workspace.file_manager import FileManager
 
@@ -197,8 +198,16 @@ def create_chat_router(
     @router.post("/chat/interrupt", response_model=SessionAck, response_model_exclude_unset=True)
     async def respond_to_interrupt(body: InterruptRequest):
         """Resume the agent from an interrupt with user decisions."""
-        if adapter.get(body.session_id) is None:
+        session = adapter.get(body.session_id)
+        if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
+        # Refuse an answer the approval middleware would reject (gh core #227): it is
+        # never sent, so the same approval can be answered again.
+        problems = decision_problems(
+            {"decisions": body.decisions}, getattr(session, "interrupt", None)
+        )
+        if problems:
+            raise HTTPException(status_code=400, detail="; ".join(problems))
         adapter.submit_decisions(body.session_id, body.decisions)
         return {"status": "ok", "session_id": body.session_id}
 

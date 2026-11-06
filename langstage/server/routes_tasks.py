@@ -12,7 +12,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from langstage.server.models import OkResponse, Task, TaskEvent
-from langstage_core.tasks import TaskRunner
+from langstage_core.resume import decision_problems
+from langstage_core.tasks import REVIEW_NEEDED, TaskRunner
 from langstage_core.tasks.store import TaskStore
 
 
@@ -96,7 +97,14 @@ def create_tasks_router(runner: TaskRunner, store: TaskStore) -> APIRouter:
     @router.post("/{task_id}/resume", response_model=OkResponse, response_model_exclude_unset=True)
     async def resume_task(task_id: str, body: ResumeBody):
         # The frontend builds the decisions (approve/reject/edit/respond) the
-        # same way the chat InterruptDialog does, then posts them here.
+        # same way the chat InterruptDialog does, then posts them here. An answer the
+        # approval middleware would refuse is rejected here, so the task stays in
+        # review instead of failing (gh core #227).
+        task = await store.get(task_id)
+        if task is not None and task.get("state") == REVIEW_NEEDED:
+            problems = decision_problems({"decisions": body.decisions}, task.get("interrupt"))
+            if problems:
+                raise HTTPException(status_code=400, detail="; ".join(problems))
         if not await runner.resume(task_id, body.decisions):
             raise HTTPException(status_code=400, detail="Task is not awaiting review")
         return {"ok": True}

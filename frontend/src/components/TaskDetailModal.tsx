@@ -86,6 +86,8 @@ export function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
   const [events, setEvents] = useState<Record<string, unknown>[]>([]);
   const [followup, setFollowup] = useState("");
   const [busy, setBusy] = useState(false);
+  // Why the server refused the last review answer (core #227), shown by the gate.
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
@@ -126,7 +128,24 @@ export function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
     }
   };
 
-  const respond = (decisions: Decision[]) => post("resume", { decisions });
+  const respond = async (decisions: Decision[]) => {
+    setResumeError(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisions }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setResumeError(body?.detail ? String(body.detail) : `Resume failed (${res.status})`);
+      }
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
   const sendFollowup = async () => {
     if (!followup.trim()) return;
     const msg = followup.trim();
@@ -204,6 +223,11 @@ export function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
               onRespond={respond}
               disabled={busy}
             />
+            {resumeError && (
+              <div role="alert" className="mt-2 text-xs text-red-500">
+                {resumeError}
+              </div>
+            )}
           </div>
         )}
 
