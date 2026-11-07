@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.64 — 2026-11-07
+
+### Fixed
+- **File routes answer an OS refusal with a 4xx, not a 500** (gh #228).
+  - `mkdir` under an existing file (`notes.txt/sub`) used to 500 on Linux and say "Already
+    exists" (409) on Windows. It now answers 400 `Not a directory: /notes.txt` on both, and
+    `upload` gives the same message.
+  - A name longer than 255 bytes used to 500 from `mkdir`, and on Linux from `tree`, `read`,
+    `preview`, `download` and `delete` too. These now answer 400 `Invalid path, name too
+    long`. On Windows the lookups answer 404, since the file isn't there.
+  - On Windows, `mkdir` with a name like `bad:name` used to 500; it now answers 400.
+  - Any other OS error maps to a status that fits it: 403 for permission denied or a
+    read-only disk, 404, 409, 507 for a full disk, and 500 with a short reason otherwise.
+    No traceback reaches the server log.
+  - The `detail` names the workspace path the client sent. `upload` used to echo the OS
+    message, which held the server's absolute path.
+
 ## 0.13.63 — 2026-11-06
 
 ### Fixed
