@@ -1,5 +1,8 @@
 """REST endpoints: /api/files/*."""
 
+import errno
+import logging
+
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -13,8 +16,54 @@ from langstage.server.models import (
 from langstage.workspace.file_manager import BinaryFileError, FileManager
 
 
+logger = logging.getLogger(__name__)
+
+# Windows error codes for a bad path. Windows reports a name that's too long as
+# ERROR_FILENAME_EXCED_RANGE and a name with characters like ':' or '<' as
+# ERROR_INVALID_NAME (or ERROR_DIRECTORY from mkdir), not ENAMETOOLONG.
+_WIN_NAME_TOO_LONG = 206
+_WIN_INVALID_NAME = (123, 267)  # ERROR_INVALID_NAME, ERROR_DIRECTORY
+
+
 class PathRequest(BaseModel):
     path: str
+
+
+def _shown(path: str, limit: int = 80) -> str:
+    return path if len(path) <= limit else path[:limit] + "…"
+
+
+def _os_error(e: OSError, path: str) -> HTTPException:
+    """A 4xx for an OS error on ``path``, instead of a bare 500 (gh #228).
+
+    The detail names the workspace path the client sent, never the server's
+    absolute path, which the OS puts in ``str(e)``. An error our own code raised
+    (no errno) already has a workspace-relative message, so it's kept.
+    """
+    shown = _shown(path)
+    winerror = getattr(e, "winerror", None)
+    too_long = any(len(part.encode()) > 255 for part in path.replace("\\", "/").split("/"))
+    if e.errno == errno.ENAMETOOLONG or winerror == _WIN_NAME_TOO_LONG:
+        return HTTPException(status_code=400, detail=f"Invalid path, name too long: {shown}")
+    if winerror in _WIN_INVALID_NAME or e.errno == errno.EINVAL:
+        # Windows reports both a bad character and an over-long name this way.
+        reason = "name too long" if too_long else "not a valid file name"
+        return HTTPException(status_code=400, detail=f"Invalid path, {reason}: {shown}")
+    if isinstance(e, NotADirectoryError):
+        detail = str(e) if e.errno is None else f"Not a directory: {shown}"
+        return HTTPException(status_code=400, detail=detail)
+    if isinstance(e, IsADirectoryError):
+        return HTTPException(status_code=400, detail=f"Path is a directory: {shown}")
+    if isinstance(e, FileNotFoundError):
+        return HTTPException(status_code=404, detail=f"Not found: {shown}")
+    if isinstance(e, FileExistsError):
+        return HTTPException(status_code=409, detail=f"Already exists: {shown}")
+    if isinstance(e, PermissionError) or e.errno == errno.EROFS:
+        return HTTPException(status_code=403, detail=f"Permission denied: {shown}")
+    if e.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", None)):
+        return HTTPException(status_code=507, detail="Not enough space in the workspace")
+    logger.warning("File operation on %r failed: %s", path, e)
+    return HTTPException(status_code=500, detail=f"File system error: {e.strerror or e}")
 
 
 def create_files_router(file_manager: FileManager) -> APIRouter:
@@ -40,6 +89,8 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             # Path escapes the workspace — the boundary holds (no traversal), but
             # return a clean 400 instead of letting it fall through to a 500.
             raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise _os_error(e, path)
 
     @r.get(
         "/read",
@@ -67,6 +118,8 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
         except ValueError as e:
             # Path escapes the workspace — boundary holds; return 400, not 500.
             raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise _os_error(e, path)
 
     @r.get("/preview", response_model=FilePreview, response_model_exclude_unset=True)
     async def preview_file(
@@ -82,6 +135,8 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
         except ValueError as e:
             # Path escapes the workspace — boundary holds; return 400, not 500.
             raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise _os_error(e, path)
 
     # Binary passthrough, not JSON: declare the real media type so the schema
     # does not advertise an (empty) application/json body (gh #98).
@@ -108,6 +163,8 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             return FileResponse(str(abs_path), filename=abs_path.name)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise _os_error(e, path)
 
     @r.post("/upload", response_model=FileOpResult, response_model_exclude_unset=True)
     async def upload_file(
@@ -140,6 +197,11 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             content = await file.read()
             result = file_manager.save_upload(dest, content)
             return result
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            # The OS message named the server's absolute path. (gh #228)
+            raise _os_error(e, path)
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -170,6 +232,8 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             raise HTTPException(status_code=409, detail=f"Already exists: {target}")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise _os_error(e, target)
 
     def _delete(target: str):
         try:
@@ -178,6 +242,8 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Not found: {target}")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        except OSError as e:
+            raise _os_error(e, target)
 
     @r.post("/delete", response_model=FileOpResult, response_model_exclude_unset=True)
     async def delete_path(

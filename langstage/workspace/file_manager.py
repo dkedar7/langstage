@@ -317,12 +317,14 @@ class FileManager:
         target = self._resolve_path(path)
         if target.exists():
             raise FileExistsError(f"Path already exists: {path}")
+        self._check_parents_are_dirs(target)
         target.mkdir(parents=True, exist_ok=False)
         return {"path": path, "name": target.name}
 
     def save_upload(self, path: str, content: bytes) -> dict:
         """Write uploaded file content to the workspace."""
         target = self._resolve_path(path)
+        self._check_parents_are_dirs(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
         return {"path": path, "name": target.name, "size": len(content)}
@@ -394,6 +396,27 @@ class FileManager:
         if not resolved.is_relative_to(self.workspace):
             raise ValueError(f"Path escapes workspace: {path}")
         return resolved
+
+    def _check_parents_are_dirs(self, target: Path) -> None:
+        """Raise NotADirectoryError if the nearest existing parent of ``target`` is a file.
+
+        Creating ``notes.txt/sub`` failed with an OS error that named the absolute
+        path: NotADirectoryError on Linux, and on Windows a FileExistsError that the
+        routes reported as "Already exists". Checking first gives one message on every
+        OS, naming the workspace path that's in the way. (gh #228)
+        """
+        for parent in target.parents:
+            if parent == self.workspace or not parent.is_relative_to(self.workspace):
+                return
+            try:
+                if parent.is_dir():
+                    return
+                if parent.exists():
+                    raise NotADirectoryError(f"Not a directory: {self._rel(parent)}")
+            except NotADirectoryError:
+                raise
+            except OSError:
+                return  # e.g. a name too long to stat; the OS call reports it
 
     def _unresolved_link(self, path: str) -> Path | None:
         """The link at ``path`` itself (not followed) if it is a symlink/junction.
