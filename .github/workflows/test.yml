@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     # Same pinned image used to generate the baselines locally, so renders match.
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      image: mcr.microsoft.com/playwright:v1.65.0-noble
     steps:
       - uses: actions/checkout@v4
 
