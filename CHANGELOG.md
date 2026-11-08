@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.65 — 2026-11-08
+
+### Fixed
+- **The Board task view shows the human side of a task** (core #233). A follow-up you send
+  appears as your own message, and your answer at the review gate appears as a short line
+  such as "Approved", "Rejected: <reason>", "Edited <tool>" or the text you responded with.
+  Before, a reopened task showed the agent's replies with nothing visibly prompting them.
+  Needs langstage-core 1.0.60, which records these turns in the task event log; the core
+  floor is raised to `>=1.0.60`.
+
 ## 0.13.64 — 2026-11-07
 
 ### Fixed

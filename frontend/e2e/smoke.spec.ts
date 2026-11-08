@@ -422,6 +422,66 @@ test.describe('langstage', () => {
     await expect(modal.getByText('88ms')).toBeVisible();
   });
 
+  test('a Board task shows follow-ups and review answers as user turns', async ({ page }) => {
+    // core #233: the task log now records the human side; the modal shows it in order.
+    const task = {
+      task_id: 'e2e-task-turns',
+      parent_id: null,
+      title: 'Turns task',
+      prompt: 'please ask me my name',
+      agent_spec: null,
+      state: 'done',
+      thread_id: 't4',
+      created_at: '2026-11-08T00:00:00Z',
+      started_at: '2026-11-08T00:00:01Z',
+      finished_at: '2026-11-08T00:00:09Z',
+      result: 'Done.',
+      artifacts: null,
+      error: null,
+      interrupt: null
+    };
+    const json = (body: unknown) => ({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body)
+    });
+    await page.route(/\/api\/tasks(\?.*)?$/, (route) => route.fulfill(json([task])));
+    await page.route(/\/api\/tasks\/e2e-task-turns$/, (route) => route.fulfill(json(task)));
+    await page.route(/\/api\/tasks\/e2e-task-turns\/events$/, (route) =>
+      route.fulfill(
+        json([
+          { type: 'interrupt', action_requests: [{ action: 'ask_user', args: { question: 'Name?' } }], allowed_decisions: ['respond'] },
+          { type: 'complete', outcome: 'interrupted' },
+          { type: 'resume', decisions: [{ type: 'respond', message: 'Acme Bot' }] },
+          { type: 'content', content: 'Hello, Acme Bot.', role: 'assistant', node: 'agent' },
+          { type: 'complete', outcome: 'complete' },
+          { type: 'user', role: 'user', content: 'second question' },
+          { type: 'content', content: 'Answer two.', role: 'assistant', node: 'agent' },
+          { type: 'complete', outcome: 'complete' },
+          { type: 'resume', decisions: [{ type: 'reject', message: 'not now' }] },
+          { type: 'resume', decisions: [{ type: 'approve' }] },
+          { type: 'resume', decisions: [] }
+        ])
+      )
+    );
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Board/ }).click();
+    await page.getByText('Turns task').click();
+
+    const modal = page.locator('div.fixed.inset-0');
+    const order = ['please ask me my name', 'Acme Bot', 'Hello, Acme Bot.', 'second question',
+      'Answer two.', 'Rejected: not now', 'Approved', 'Answered the review'];
+    for (const t of order) await expect(modal.getByText(t, { exact: true })).toBeVisible();
+    const text = (await modal.innerText()).replace(/\s+/g, ' ');
+    let at = -1;
+    for (const t of order) {
+      const i = text.indexOf(t, at + 1);
+      expect(i, `${t} after position ${at}`).toBeGreaterThan(at);
+      at = i;
+    }
+  });
+
   test('answers a paused Board task that allows respond', async ({ page }) => {
     // gh #198: the review gate offered only Approve/Reject and never showed the
     // question, so a background task that asked one couldn't be answered.

@@ -12,6 +12,28 @@ interface TaskDetailModalProps {
 
 const TERMINAL = new Set(["done", "failed", "cancelled"]);
 
+/** One line saying what the human answered at the review gate (core #233). */
+function summarizeDecisions(raw: unknown): string {
+  const list = Array.isArray(raw) ? (raw as Partial<Decision>[]) : [];
+  const parts = list.map((d) => {
+    const msg = typeof d?.message === "string" ? d.message.trim() : "";
+    switch (d?.type) {
+      case "approve":
+        return "Approved";
+      case "reject":
+        return msg ? `Rejected: ${msg}` : "Rejected";
+      case "edit":
+        return d.edited_action?.name ? `Edited ${d.edited_action.name}` : "Edited";
+      case "respond":
+        return msg || "Responded";
+      default:
+        return "";
+    }
+  });
+  const text = parts.filter(Boolean).join("; ");
+  return text || "Answered the review";
+}
+
 /** Reduce a task's raw event transcript into chat messages (a compact version
  *  of the live chat reducer) so we can render it with the same MessageBubble. */
 function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
@@ -62,6 +84,18 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
           break;
         }
       }
+    } else if (type === "user") {
+      // A follow-up the human sent on this task (core #233).
+      const text = ((e.content as string) || "").trim();
+      if (text) msgs.push({ id: `u${counter++}`, role: "user", content: text, toolCalls: [] });
+    } else if (type === "resume") {
+      // The human's answer to the review gate (core #233).
+      msgs.push({
+        id: `u${counter++}`,
+        role: "user",
+        content: summarizeDecisions(e.decisions),
+        toolCalls: [],
+      });
     } else if (type === "extraction") {
       // Same pairing as the live chat: by id, not "the last card" (extraction.ts).
       const name = e.tool_name as string;
