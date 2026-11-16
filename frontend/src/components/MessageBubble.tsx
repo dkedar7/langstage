@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Markdown } from "./Markdown";
 import { Sparkles, User } from "lucide-react";
 import type { ChatMessage } from "../types";
 import { ToolCallCard } from "./ToolCallCard";
@@ -123,9 +122,7 @@ export function MessageBubble({ message, agentName = "Agent", iconUrl, showLabel
               <p className="whitespace-pre-wrap">{message.content}</p>
             ) : (
               <div className="markdown-content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.content}
-                </ReactMarkdown>
+                <Markdown streaming={!!message.isStreaming}>{message.content}</Markdown>
               </div>
             )}
           </div>

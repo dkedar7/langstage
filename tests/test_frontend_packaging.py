@@ -177,3 +177,9 @@ def test_uv_build_wheel_bundles_the_spa(tmp_path):
     assert any(
         n.startswith("langstage/static/assets/") and n.endswith(".js") for n in names
     ), [n for n in names if "static" in n]
+    # Math rendering is bundled, not fetched from a CDN (gh #233): KaTeX's stylesheet
+    # chunk and its fonts ship in the wheel, as woff2 only.
+    assets = [n.rsplit("/", 1)[-1] for n in names if n.startswith("langstage/static/assets/")]
+    assert any(n.startswith("mathKit-") and n.endswith(".css") for n in assets), assets
+    assert any(n.startswith("KaTeX_Main-Regular-") and n.endswith(".woff2") for n in assets), assets
+    assert not [n for n in assets if n.startswith("KaTeX_") and not n.endswith(".woff2")]

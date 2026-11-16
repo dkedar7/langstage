@@ -52,6 +52,7 @@ langstage-agui --agent my_agent.py:graph
 - **Tool call visualization** — inline display of arguments, results, duration, and status
 - **Reasoning** — a reasoning model's chain-of-thought streams into a collapsed "Thinking" block above its answer
 - **Rich inline content** — HTML, Plotly charts, images, DataFrames, PDFs, and JSON rendered directly in the chat
+- **Math** — TeX in a reply or a Canvas note renders as math: `\( … \)` inline, `\[ … \]` and `$$ … $$` as display. A single `$` is left alone, so "$5 and $10" stays money, and a formula that isn't valid TeX shows as written. KaTeX is bundled (no CDN) and loads with the first formula.
 - **Canvas panel** — persistent report surface for charts, tables, diagrams, images, and narrative markdown. Opt-in via `CanvasMiddleware`; auto-detected by the UI.
 - **File browser** — workspace file tree with syntax-highlighted viewer and live file change detection
 - **Plan** — sidebar todo list with progress bar, synced with agent `write_todos` calls (the **Plan** tab)
