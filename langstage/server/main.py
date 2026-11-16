@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from langstage_core.tasks import TaskRunner, set_runner
 
 from langstage.config import AppConfig
+from langstage.conversations import Conversations
 from langstage.server.middleware import add_middleware
 from langstage.server.models import HealthResponse
 from langstage.server.routes_config import create_config_router
@@ -17,6 +18,7 @@ from langstage.server.routes_files import create_files_router
 from langstage.server.routes_canvas import create_canvas_router
 from langstage.server.routes_session import create_session_router
 from langstage.server.routes_chat import create_chat_router
+from langstage.server.routes_conversations import create_conversations_router
 from langstage.server.routes_cron import create_cron_router
 from langstage.server.routes_tasks import create_tasks_router
 from langstage.server.usage import UsageSessionAdapter
@@ -96,6 +98,9 @@ def create_fastapi_app(
                 app.state._ckpt_prior = agent.checkpointer
                 agent.checkpointer = saver
                 app.state._ckpt_cm = ckpt_cm
+                # History reads the database through its own connection, so its
+                # one-time scan never holds the lock turns write under (gh #232).
+                conversations.scan_reader = lambda: AsyncSqliteSaver.from_conn_string(str(ckpt_db))
             except Exception:  # noqa: BLE001 - keep the in-memory saver on failure
                 import logging
                 logging.getLogger(__name__).warning(
@@ -104,12 +109,17 @@ def create_fastapi_app(
                 )
         await runner.start()
         scheduler.start()
+        # Index past conversations in the background, now that the checkpointer the
+        # server will use is in place (gh #232).
+        conversations.start()
 
         try:
             yield
         finally:
             # Mirrors the old @app.on_event("shutdown") semantics: these run
             # unconditionally on shutdown, not just on a clean exit.
+            await conversations.stop()  # before the checkpointer it reads is closed
+            conversations.scan_reader = None
             scheduler.shutdown()
             await runner.shutdown()
             await task_store.close()
@@ -173,6 +183,12 @@ def create_fastapi_app(
     app.include_router(create_canvas_router(canvas_manager))
     app.include_router(create_session_router(adapter))
     app.include_router(create_chat_router(adapter, file_manager=file_manager))
+
+    # Past conversations, read from the agent's checkpointer (gh #232). The adapter
+    # reports each turn so the list re-reads only the thread that changed.
+    conversations = Conversations(agent, adapter, max_result_len=50_000)
+    adapter.turn_listener = conversations.touch
+    app.include_router(create_conversations_router(conversations))
 
     # Durable task board: a SQLite-backed store + the shared TaskRunner worker
     # pool. The runner owns async task execution (queued → ongoing → done);
@@ -244,6 +260,7 @@ def create_fastapi_app(
 
     # Expose for testing
     app.state.session_adapter = adapter
+    app.state.conversations = conversations
     app.state.scheduler = scheduler
     app.state.task_runner = runner
     app.state.task_store = task_store

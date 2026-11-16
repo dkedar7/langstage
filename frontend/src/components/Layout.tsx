@@ -12,6 +12,7 @@ import type {
   CanvasItem,
   CronJob,
   Task,
+  ViewedConversation,
   FileEntry,
   FilePreview,
   ConnectionStatus,
@@ -100,6 +101,10 @@ interface LayoutProps {
   onCancelTask: (id: string) => void;
   onRetryTask: (id: string) => void;
   onNewSession: () => void;
+  sessionId: string | null;
+  viewing: ViewedConversation | null;
+  onOpenConversation: (threadId: string) => Promise<string | null>;
+  onContinueViewed: () => Promise<string | null>;
 }
 
 export function Layout(props: LayoutProps) {
@@ -147,6 +152,10 @@ export function Layout(props: LayoutProps) {
             tokenUsage={props.tokenUsage}
             usageHistory={props.usageHistory}
             onNewSession={props.onNewSession}
+            sessionId={props.sessionId}
+            viewingThreadId={props.viewing?.threadId ?? null}
+            hasMessages={props.messages.length > 0}
+            onOpenConversation={props.onOpenConversation}
           />
           <div className="w-px h-4 bg-[var(--color-border)]" />
           <ThemeToggle initialTheme={props.config.theme} />
@@ -173,6 +182,9 @@ export function Layout(props: LayoutProps) {
               isStreaming={props.isStreaming}
               welcomeMessage={props.config.welcome_message}
               agentName={props.config.agent_name}
+              viewing={props.viewing}
+              onContinueViewed={props.onContinueViewed}
+              onLeaveViewed={props.onNewSession}
               iconUrl={props.config.icon_url}
               saveWorkflowPrompt={props.config.save_workflow_prompt}
               runWorkflowPrompt={props.config.run_workflow_prompt}

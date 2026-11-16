@@ -18,8 +18,14 @@ import type {
   InterruptEventMsg,
   Decision,
   ConnectionStatus,
+  ConversationDetail,
+  ViewedConversation,
 } from "../types";
 import { extractionTargetId, findExtractionTarget } from "../extraction";
+import { errorDetail, transcriptToMessages } from "../conversations";
+
+/** How often a conversation shown read-only is re-read while it is busy elsewhere. */
+const VIEW_REFRESH_MS = 2500;
 
 const STORAGE_KEY = "langstage-session";
 
@@ -81,6 +87,12 @@ export function useAgentStream() {
 
   // Session ID for backend thread continuity
   const sessionIdRef = useRef<string | null>(initial?.sessionId ?? null);
+  // The same id as state, for the History menu to mark the current conversation.
+  const [sessionId, setSessionId] = useState<string | null>(initial?.sessionId ?? null);
+  // A past conversation shown read-only because it is busy elsewhere (gh #232).
+  const [viewing, setViewing] = useState<ViewedConversation | null>(null);
+  const viewingRef = useRef<ViewedConversation | null>(null);
+  viewingRef.current = viewing;
 
   // Reconnect key — changing this re-runs the SSE useEffect
   const [reconnectKey, setReconnectKey] = useState(0);
@@ -114,7 +126,9 @@ export function useAgentStream() {
     persistTimerRef.current = setTimeout(() => {
       savePersistedState({
         sessionId: sessionIdRef.current,
-        messages,
+        // A read-only copy of another conversation is not this session's transcript:
+        // persisting it would show those messages over a fresh thread after a reload.
+        messages: viewingRef.current ? [] : messages,
         todos,
         tokenUsage,
         usageHistory,
@@ -125,7 +139,7 @@ export function useAgentStream() {
     return () => {
       if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     };
-  }, [messages, todos, tokenUsage, usageHistory, isStreaming]);
+  }, [messages, todos, tokenUsage, usageHistory, isStreaming, viewing]);
 
   const flushContentBuffer = useCallback(() => {
     const buffered = contentBufferRef.current;
@@ -216,12 +230,56 @@ export function useAgentStream() {
     flushContentBuffer();
   }, [flushReasoningBuffer, flushContentBuffer]);
 
+  // POST one user message to the session's thread.
+  const postChat = useCallback((content: string, cwd?: string) => {
+    fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionIdRef.current, content, cwd }),
+    })
+      .then(async (res) => {
+        if (res.ok) return;
+        // Refused (e.g. the session is gone): say so instead of spinning forever.
+        const reason = await errorDetail(res);
+        setIsStreaming(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "assistant",
+            content: `Error: the message was not sent (${reason})`,
+            toolCalls: [],
+            timestamp: Date.now(),
+          },
+        ]);
+      })
+      .catch((err) => {
+        console.error("Failed to send message:", err);
+        setIsStreaming(false);
+      });
+  }, []);
+
+  // A message sent before the stream has announced its session (right after page
+  // load, after New, or just after reopening a conversation) waits here until it
+  // has. It used to be dropped without a word, or posted to a session the server
+  // did not have yet.
+  const pendingSendRef = useRef<{ content: string; cwd?: string } | null>(null);
+  const streamReadyRef = useRef(false);
+
   const dispatch = useCallback(
     (event: AgentEvent) => {
       switch (event.type) {
-        case "session_init":
+        case "session_init": {
           sessionIdRef.current = event.session_id;
+          setSessionId(event.session_id);
+          streamReadyRef.current = true;
+          const pending = pendingSendRef.current;
+          if (pending) {
+            pendingSendRef.current = null;
+            postChat(pending.content, pending.cwd);
+          }
           break;
+        }
 
         case "tool_start":
           // Flush content before tool events
@@ -454,7 +512,7 @@ export function useAgentStream() {
           break;
       }
     },
-    [flushContentBuffer]
+    [flushContentBuffer, postChat]
   );
 
   // --- SSE Connection ---
@@ -510,7 +568,7 @@ export function useAgentStream() {
   // --- Actions via fetch POST ---
   const sendMessage = useCallback(
     (content: string, meta?: { cwd?: string }) => {
-      if (!sessionIdRef.current) return;
+      if (viewingRef.current || pendingSendRef.current) return;
 
       setMessages((prev) => [
         ...prev,
@@ -524,20 +582,10 @@ export function useAgentStream() {
       ]);
       setIsStreaming(true);
 
-      fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionIdRef.current,
-          content,
-          cwd: meta?.cwd,
-        }),
-      }).catch((err) => {
-        console.error("Failed to send message:", err);
-        setIsStreaming(false);
-      });
+      if (streamReadyRef.current) postChat(content, meta?.cwd);
+      else pendingSendRef.current = { content, cwd: meta?.cwd };
     },
-    []
+    [postChat]
   );
 
   const respondToInterrupt = useCallback(
@@ -603,10 +651,13 @@ export function useAgentStream() {
     // isStreaming will be set to false when the "cancelled" event arrives via SSE
   }, [flushBuffers]);
 
-  const resetSession = useCallback(() => {
-    // Clean up backend session
+  // Leave the current session and connect a different one: `nextSessionId` to
+  // continue an existing thread, or null for a fresh one. The old session is idle
+  // here (New and History are both disabled while a turn streams), so dropping it
+  // only frees its server-side state; its thread stays in the checkpointer.
+  const switchSession = useCallback((nextSessionId: string | null) => {
     const oldSessionId = sessionIdRef.current;
-    if (oldSessionId) {
+    if (oldSessionId && oldSessionId !== nextSessionId) {
       fetch(`/api/session/${encodeURIComponent(oldSessionId)}`, {
         method: "DELETE",
       }).catch(() => {});
@@ -622,7 +673,8 @@ export function useAgentStream() {
     localStorage.removeItem(STORAGE_KEY);
 
     // Reset all state
-    sessionIdRef.current = null;
+    sessionIdRef.current = nextSessionId;
+    setSessionId(nextSessionId);
     setMessages([]);
     setTodos([]);
     setTokenUsage({ input: 0, output: 0, total: 0 });
@@ -631,12 +683,98 @@ export function useAgentStream() {
     setIsStreaming(false);
     setInterrupt(null);
     setFileChanges([]);
+    setViewing(null);
+    pendingSendRef.current = null;
+    streamReadyRef.current = false;
     contentBufferRef.current = "";
     reasoningBufferRef.current = "";
+    lastEndedToolRef.current = null;
 
-    // Reconnect with a fresh session
+    // Reconnect: with the given session id, or a fresh session
     setReconnectKey((k) => k + 1);
   }, []);
+
+  const resetSession = useCallback(() => switchSession(null), [switchSession]);
+
+  // Reopen a past conversation (gh #232). The server hands it over only when it is
+  // free; while a turn is running in it or another window is attached, it is shown
+  // read-only instead, so two windows never share (and split) one event stream.
+  // Resolves to null, or to the reason it could not be opened.
+  const openConversation = useCallback(
+    async (threadId: string): Promise<string | null> => {
+      if (isStreamingRef.current) return "Stop the current turn first.";
+      const path = `/api/conversations/${encodeURIComponent(threadId)}`;
+      try {
+        let res = await fetch(`${path}/open`, { method: "POST" });
+        const busy = res.status === 409;
+        if (busy) res = await fetch(path);
+        if (!res.ok) return await errorDetail(res);
+        const detail: ConversationDetail = await res.json();
+        if (isStreamingRef.current) return "Stop the current turn first.";
+
+        if (busy) {
+          switchSession(null);
+          setMessages(transcriptToMessages(detail));
+          setViewing({
+            threadId,
+            title: detail.title,
+            running: detail.running,
+            connected: detail.connected,
+          });
+          return null;
+        }
+
+        switchSession(threadId);
+        setMessages(transcriptToMessages(detail));
+        // The saved state has no timings or token counts; count turns from it.
+        turnCounterRef.current = detail.messages.filter((m) => m.role === "user").length;
+        // An approval the conversation was waiting on can be answered again.
+        setInterrupt(detail.interrupt ?? null);
+        return null;
+      } catch {
+        return "Could not reach the server.";
+      }
+    },
+    [switchSession]
+  );
+
+  const continueViewed = useCallback(async (): Promise<string | null> => {
+    const current = viewingRef.current;
+    return current ? openConversation(current.threadId) : null;
+  }, [openConversation]);
+
+  // Keep a read-only conversation current while it is busy elsewhere.
+  const viewedThreadId = viewing && !viewing.gone ? viewing.threadId : null;
+  useEffect(() => {
+    if (!viewedThreadId) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(viewedThreadId)}`);
+        if (cancelled || viewingRef.current?.threadId !== viewedThreadId) return;
+        if (res.status === 404) {
+          setViewing((v) => (v && v.threadId === viewedThreadId ? { ...v, gone: true } : v));
+          return;
+        }
+        if (!res.ok) return;
+        const detail: ConversationDetail = await res.json();
+        if (cancelled || viewingRef.current?.threadId !== viewedThreadId) return;
+        setMessages(transcriptToMessages(detail));
+        setViewing((v) =>
+          v && v.threadId === viewedThreadId
+            ? { ...v, title: detail.title, running: detail.running, connected: detail.connected }
+            : v
+        );
+      } catch {
+        // Offline for a moment: the next tick tries again.
+      }
+    };
+    const timer = setInterval(refresh, VIEW_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [viewedThreadId]);
 
   return {
     messages,
@@ -651,5 +789,9 @@ export function useAgentStream() {
     respondToInterrupt,
     cancelStream,
     resetSession,
+    sessionId,
+    viewing,
+    openConversation,
+    continueViewed,
   };
 }

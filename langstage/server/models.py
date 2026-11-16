@@ -174,6 +174,50 @@ class SessionInfo(_Schema):
     connected: bool
 
 
+# ── conversations ────────────────────────────────────────────────────────────
+
+
+class ConversationSummary(_Schema):
+    """One past chat conversation (gh #232). ``thread_id`` is the session id to pass
+    to ``GET /api/stream`` to continue it."""
+
+    thread_id: str
+    title: str
+    updated_at: str | None = None
+    message_count: int = 0
+    # Waiting on a human approval.
+    paused: bool = False
+    # A turn is in flight / a browser is attached to it right now.
+    running: bool = False
+    connected: bool = False
+
+
+class ConversationList(_Schema):
+    """``GET /api/conversations``. ``available`` is false, with ``reason``, when the
+    checkpointer can't list threads."""
+
+    available: bool
+    reason: str | None = None
+    can_delete: bool = False
+    # False for an in-memory checkpointer: the list lasts until the server stops.
+    durable: bool = False
+    # The first scan of a large database is still running; ask again for the rest.
+    indexing: bool = False
+    total: int = 0
+    conversations: list[ConversationSummary] = []
+
+
+class ConversationDetail(ConversationSummary):
+    """A conversation with its transcript: user and assistant entries in order, an
+    assistant entry carrying ``content``, optional ``reasoning`` and ``tool_calls``
+    (``{id, name, args, status, result}``, ``status`` one of ``success`` / ``error``
+    / ``pending``). ``interrupt`` is the approval the thread is paused on, in the
+    chat stream's ``interrupt`` frame shape."""
+
+    interrupt: dict[str, Any] | None = None
+    messages: list[dict[str, Any]] = []
+
+
 # ── tasks ────────────────────────────────────────────────────────────────────
 
 

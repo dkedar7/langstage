@@ -535,3 +535,25 @@ def served_checkpointer(agent) -> tuple[bool, str]:
         return True, f"SQLite at <workspace>/{where}, attached by LangStage (durable)"
     return False, ("in-memory, attached by LangStage (the SQLite saver is unavailable; "
                    "state is lost on restart)")
+
+
+def served_history(agent) -> tuple[bool, str]:
+    """``(available, detail)`` for the History list ``run`` will serve ``agent`` with.
+
+    History reads the checkpointer through ``alist`` / ``adelete_thread``. The savers
+    LangStage attaches have both; a graph's own saver may not (gh #232).
+    """
+    from langstage.conversations import history_support
+
+    own = getattr(agent, "checkpointer", None)
+    ours = getattr(agent, "_langstage_auto_checkpointer", False) is True
+    if own is None or isinstance(own, bool) or ours:
+        durable, _ = served_checkpointer(agent)
+        return True, ("past conversations are listed from the checkpointer" if durable
+                      else "past conversations are listed until the server stops (in-memory checkpointer)")
+    can_list, can_delete, detail = history_support(own)
+    if not can_list:
+        return False, f"hidden: your checkpointer {detail}"
+    if not can_delete:
+        return True, f"listed, but delete is off: your checkpointer {detail}"
+    return True, "past conversations are listed from your checkpointer"

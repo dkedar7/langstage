@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, Square, Loader2, Sparkles } from "lucide-react";
+import { ArrowUp, Eye, Square, Loader2, Sparkles } from "lucide-react";
 import { Markdown } from "./Markdown";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, ViewedConversation } from "../types";
 import { MessageBubble } from "./MessageBubble";
 import { useSlashCommands } from "../hooks/useSlashCommands";
 import { SlashCommandMenu } from "./SlashCommandMenu";
@@ -26,6 +26,18 @@ interface ChatPanelProps {
   createWorkflowPrompt?: string;
   onSend: (content: string) => void;
   onCancel: () => void;
+  /** A past conversation shown read-only because it is busy elsewhere (gh #232). */
+  viewing?: ViewedConversation | null;
+  onContinueViewed?: () => Promise<string | null>;
+  onLeaveViewed?: () => void;
+}
+
+/** Why a conversation is read-only, and what the reader can do about it. */
+function viewingStatus(viewing: ViewedConversation): string {
+  if (viewing.gone) return "This conversation was deleted.";
+  if (viewing.running) return "A turn is running in this conversation. This copy refreshes as it goes.";
+  if (viewing.connected) return "This conversation is open in another window. This copy refreshes as it changes.";
+  return "This conversation is free now.";
 }
 
 export function ChatPanel({
@@ -39,8 +51,26 @@ export function ChatPanel({
   createWorkflowPrompt,
   onSend,
   onCancel,
+  viewing = null,
+  onContinueViewed,
+  onLeaveViewed,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const [continuing, setContinuing] = useState(false);
+  const [continueProblem, setContinueProblem] = useState<string | null>(null);
+  const viewedBusy = !!viewing && (viewing.running || viewing.connected);
+
+  const handleContinue = async () => {
+    if (!onContinueViewed) return;
+    setContinuing(true);
+    setContinueProblem(await onContinueViewed());
+    setContinuing(false);
+  };
+
+  // A new read-only conversation starts with a clean slate.
+  useEffect(() => {
+    setContinueProblem(null);
+  }, [viewing?.threadId]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isNearBottomRef = useRef(true);
@@ -70,7 +100,7 @@ export function ChatPanel({
 
   const handleSubmit = () => {
     const trimmed = input.trim();
-    if (!trimmed || isStreaming) return;
+    if (!trimmed || isStreaming || viewing) return;
     const expanded = slashCommands.tryExecute(trimmed);
     sendAndReset(expanded ?? trimmed);
   };
@@ -191,6 +221,42 @@ export function ChatPanel({
         </div>
       </div>
 
+      {/* Read-only notice: the conversation is busy in another window */}
+      {viewing && (
+        <div
+          data-print-hide
+          role="status"
+          className="border-t border-[var(--color-border)] bg-[var(--color-accent-soft)]"
+        >
+          <div className="max-w-4xl mx-auto px-5 py-2 flex items-center gap-3 text-xs text-[var(--color-text-secondary)]">
+            <Eye size={14} className="flex-shrink-0" />
+            <span className="flex-1 min-w-0">
+              <span className="font-medium text-[var(--color-text)]">Read-only.</span>{" "}
+              {viewingStatus(viewing)}
+              {continueProblem && (
+                <span className="text-[var(--color-error)]"> Couldn't continue: {continueProblem}</span>
+              )}
+            </span>
+            {!viewing.gone && (
+              <button
+                onClick={handleContinue}
+                disabled={viewedBusy || continuing}
+                title={viewedBusy ? "Available when the conversation is free" : "Continue this conversation in this window"}
+                className="flex-shrink-0 px-2.5 py-1 rounded-md bg-[var(--color-text)] text-[var(--color-surface)] hover:opacity-80 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Continue here
+              </button>
+            )}
+            <button
+              onClick={onLeaveViewed}
+              className="flex-shrink-0 px-2.5 py-1 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface-3)] cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Input area */}
       <div data-print-hide className="border-t border-[var(--color-border)]">
         <div className="max-w-4xl mx-auto px-5 py-3 relative">
@@ -210,7 +276,8 @@ export function ChatPanel({
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Send a message..."
+              placeholder={viewing ? "Read-only: continue the conversation here to reply" : "Send a message..."}
+              disabled={!!viewing}
               rows={1}
               className="flex-1 resize-none bg-transparent text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none leading-relaxed"
             />

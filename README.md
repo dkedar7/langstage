@@ -57,6 +57,7 @@ langstage-agui --agent my_agent.py:graph
 - **File browser** — workspace file tree with syntax-highlighted viewer and live file change detection
 - **Plan** — sidebar todo list with progress bar, synced with agent `write_todos` calls (the **Plan** tab)
 - **Async task board** — delegate tasks to background copies of the agent and track them on a Kanban board (`queued → ongoing → review → done`); click a task to live-tail its stream, answer human-in-the-loop pauses (approve, reject, edit or respond, whichever the interrupt allows), and send follow-ups. The agent can also spawn its own async sub-tasks. See [Task board](#task-board).
+- **History** — reopen, continue or delete past conversations from any browser. They are read from the agent's checkpointer, so they are there after **New**, after a restart, and on a second machine. See [History](#history).
 - **Human-in-the-loop** — interrupt dialog for reviewing and approving agent actions, or typing an answer when the agent asks a question
 - **Slash commands** — `/save-workflow`, `/create-workflow`, and `/run-workflow` with autocomplete
 - **Print / export** — print conversations via browser Print dialog with optimized CSS
@@ -188,6 +189,7 @@ Without `--agent`, `check` and `chat` use the same agent `run` serves: the one c
 ```
 [ ok ] loads
 [ ok ] checkpointer: SQLite at <workspace>/.langstage/checkpoints.db, attached by LangStage (durable)
+[ ok ] history: past conversations are listed from the checkpointer
 [warn] no CanvasMiddleware - Canvas hidden (attach it to enable)
 [ ok ] write_todos present - Plan tab will populate
 [warn] async task tools not found - add `from langstage import LANGSTAGE_TOOLS` ...
@@ -229,6 +231,25 @@ so a CI gate reads them the same way here as in the other LangStage surfaces:
 | `1` | failure | no agent configured, an agent that won't load, a failed `check` / `check --live`, `config --strict` with issues, `chat` turn error, `run` can't start (including a busy port) |
 | `2` | paused on a human-in-the-loop interrupt | `chat` ends waiting for an approval or answer |
 | `64` | usage error | an unknown option or command, an invalid `--port` / `--theme`, `--demo` with `--agent` |
+
+## History
+
+Every chat is checkpointed under its session id, so it outlives the page that started it. **History**, next to **New** in the header, lists those conversations newest first, titled by their first message. Click one to bring back its messages, tool calls and reasoning, and your next message continues it on the same thread. **New** starts a fresh conversation and leaves the current one in History.
+
+- **From any browser.** The list comes from the server, not from the browser's storage, so a second browser or machine sees the same conversations.
+- **One window at a time.** A conversation that is open in another window, or has a turn running, opens **read-only**: you see a copy that refreshes as it changes, and **Continue here** becomes available once it is free. This keeps two windows from sharing, and splitting, one event stream.
+- **Paused on an approval.** A conversation that was waiting for you to approve an action shows the approval again when you reopen it, and answering resumes the turn.
+- **Delete is permanent.** The trash icon removes the conversation from the checkpointer after a confirmation. A conversation with a turn running can't be deleted until the turn is stopped.
+- **What isn't restored.** Per-turn timings, token counts and the Plan tab's todo list live in the browser while a conversation is open; a reopened conversation starts those from zero.
+- **Tasks and schedules are not listed.** Their runs are on the Board.
+
+**Your own checkpointer.** History needs a checkpointer that can list threads (`alist`) and, for delete, remove one (`adelete_thread`). LangGraph's SQLite, Postgres and in-memory savers can. If yours can't list, the History button is hidden and **New** warns that the conversation can't be reopened; if it can't delete, the trash icon is hidden. `langstage check` says which applies. With an in-memory checkpointer the list lasts until the server stops.
+
+**Large databases.** The server reads the checkpoint database once at startup, in the background, to find the conversations; the newest appear first. On a 150 MB database (300 threads) that takes about 20 seconds, during which turns run normally. After that the list is served from memory. LangStage's own SQLite checkpointer is read through a second connection; a checkpointer you supply is read through itself, so with a large database of your own a turn started during that first read may wait for it.
+
+**Access.** Anyone who can reach the server can read and delete every past conversation, exactly as they can browse the workspace files. Keep the default `localhost` bind, or set `--auth-password`.
+
+REST: `GET /api/conversations` (`limit`, `offset`), `GET /api/conversations/{id}` (the transcript), `POST /api/conversations/{id}/open` (take it over before attaching `GET /api/stream?session_id={id}`; 409 while it is busy) and `DELETE /api/conversations/{id}`. A conversation started over REST with `POST /api/chat/complete` is listed like any other.
 
 ## Task board
 
@@ -306,7 +327,7 @@ Only a file named `langstage.toml` at or above the directory you run `langstage`
 | CORS origins | _(env / `langstage.toml` `[server] cors_origins` only)_ | `LANGSTAGE_CORS_ORIGINS` | _(empty — loopback origins only)_. Comma-separated origins granted credentialed cross-origin access; `*` allows any origin with credentials off |
 | Allowed hosts | _(env / `langstage.toml` `[server] allowed_hosts` only)_ | `LANGSTAGE_ALLOWED_HOSTS` | _(empty — loopback names only)_. Extra `Host` names a loopback-bound server answers to, comma-separated; `*.example.org` matches its subdomains; `*` turns the check off |
 
-> **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
+> **Exposing the server to the network?** The default `localhost` bind is reachable only from the same machine. If you bind a non-loopback host (`--host 0.0.0.0`, or a concrete LAN address) to reach it from elsewhere, **set `--auth-password`** (or `LANGSTAGE_AUTH_PASSWORD`) — otherwise the *entire* REST surface (chat, every past conversation, the workspace file browser with read/write/delete/upload, and the task board) is reachable, unauthenticated, by anyone on the network. LangStage prints a startup warning in that case but still starts; the safest alternative is to keep the `localhost` bind and reach it over an SSH tunnel.
 
 > **Requests for other host names are refused (DNS rebinding).** When the server is bound to a loopback address (the default `localhost`), it answers only to `localhost`, `127.0.0.1`, `[::1]`, `*.localhost` and the bind host; any other `Host` header gets `403`, for every method. That stops a site that re-points its own name at 127.0.0.1 from reading your workspace. Behind a reverse proxy that forwards the public host name (Caddy and Traefik do by default), add that name to `allowed_hosts`. nginx's plain `proxy_pass` sends `127.0.0.1:<port>` and needs nothing. Non-loopback binds are unchanged.
 
@@ -415,6 +436,7 @@ Browser  <--SSE / REST-->  FastAPI  <--SessionAdapter (AG-UI bridge, langstage-c
                                /api/files/tree
                                /api/files/read?path=...   (also: preview, download, upload, mkdir, delete)
                                /api/canvas/items
+                               /api/conversations   (past chats, from the checkpointer)
                                /api/cron        (schedules)
                                /api/tasks       (async task board)
 ```
@@ -442,6 +464,8 @@ it at an existing directory, to drop the upload inside under its own filename in
 `/api/stream` is the SSE event stream keyed by `session_id`. A session with no open stream
 and no running turn is dropped 60 seconds after its stream closes; reconnecting with the
 same `session_id` picks the conversation back up from the checkpointer.
+`GET /api/conversations` lists the session ids that have a conversation behind them (see
+[History](#history)).
 
 ## Development
 

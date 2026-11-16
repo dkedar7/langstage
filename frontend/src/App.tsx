@@ -73,6 +73,10 @@ export default function App() {
     respondToInterrupt,
     cancelStream,
     resetSession,
+    sessionId,
+    viewing,
+    openConversation,
+    continueViewed,
   } = useAgentStream();
 
   const {
@@ -157,6 +161,10 @@ export default function App() {
       onCancelTask={cancelTask}
       onRetryTask={retryTask}
       onNewSession={resetSession}
+      sessionId={sessionId}
+      viewing={viewing}
+      onOpenConversation={openConversation}
+      onContinueViewed={continueViewed}
     />
   );
 }

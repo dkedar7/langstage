@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Loader2, Printer, RotateCcw, Zap } from "lucide-react";
 import type { ConnectionStatus, TokenUsage, TurnUsage } from "../types";
 import { TokenUsageChart } from "./TokenUsageChart";
+import { HistoryMenu } from "./HistoryMenu";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -15,6 +16,20 @@ interface StatusBarProps {
   tokenUsage: TokenUsage;
   usageHistory: TurnUsage[];
   onNewSession: () => void;
+  sessionId: string | null;
+  viewingThreadId: string | null;
+  hasMessages: boolean;
+  onOpenConversation: (threadId: string) => Promise<string | null>;
+}
+
+/** What New asks before it starts over, by what happens to the current chat. */
+export function newSessionPrompt(history: { available: boolean; durable: boolean } | null): string {
+  if (!history?.available) {
+    return "Start a new conversation? This clears the current one from this page, and it can't be reopened here.";
+  }
+  return history.durable
+    ? "Start a new conversation? The current one stays in History."
+    : "Start a new conversation? The current one stays in History until the server stops.";
 }
 
 export function StatusBar({
@@ -23,8 +38,21 @@ export function StatusBar({
   tokenUsage,
   usageHistory,
   onNewSession,
+  sessionId,
+  viewingThreadId,
+  hasMessages,
+  onOpenConversation,
 }: StatusBarProps) {
   const [showChart, setShowChart] = useState(false);
+  // Whether past conversations can be listed, as the History menu learned it.
+  const [history, setHistory] = useState<{ available: boolean; durable: boolean } | null>(null);
+  const handleAvailability = useCallback(
+    (state: { available: boolean; durable: boolean }) =>
+      setHistory((prev) =>
+        prev && prev.available === state.available && prev.durable === state.durable ? prev : state
+      ),
+    []
+  );
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Close on click outside or Escape
@@ -48,15 +76,24 @@ export function StatusBar({
 
   return (
     <div className="flex items-center gap-2.5 text-[11px]">
+      <HistoryMenu
+        currentSessionId={viewingThreadId ? null : sessionId}
+        viewingThreadId={viewingThreadId}
+        isStreaming={isStreaming}
+        onOpen={onOpenConversation}
+        onCurrentDeleted={onNewSession}
+        onAvailability={handleAvailability}
+      />
       <button
         onClick={() => {
-          if (window.confirm("Start a new session? This will clear all messages and cannot be undone.")) {
+          // Nothing to lose on an empty chat or a read-only copy: just start over.
+          if (!hasMessages || viewingThreadId || window.confirm(newSessionPrompt(history))) {
             onNewSession();
           }
         }}
         disabled={isStreaming}
         className="flex items-center gap-1 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-        title="New session"
+        title="New conversation"
       >
         <RotateCcw size={10} />
         New
