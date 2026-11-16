@@ -118,6 +118,31 @@ html, body, #root {
   letter-spacing: 0.025em;
 }
 
+/* Math (gh #233). KaTeX's own stylesheet loads with the first formula. */
+.markdown-content .katex-display {
+  margin: 0.6em 0;
+  padding: 2px 0;
+  /* A wide formula scrolls inside its bubble instead of pushing the layout. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* Selecting a reply copies each formula's TeX source (.math-src), not glyphs + MathML. */
+.markdown-content .math-wrap .katex { user-select: none; -webkit-user-select: none; }
+.markdown-content .math-src {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: pre;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Display math is a block of its own, typeset or not (and copies onto its own line). */
+.markdown-content .math-wrap-display { display: block; }
+/* A formula shown as source: still streaming, KaTeX not loaded, or not valid TeX. */
+.markdown-content .math-raw { white-space: pre-wrap; }
+
 /* Allotment sash styling */
 .sash {
   background: var(--color-border) !important;
@@ -131,7 +156,9 @@ html, body, #root {
   [data-print-hide] { display: none !important; }
   /* Flatten layout so all messages flow naturally */
   html, body, #root, #root > * { height: auto !important; overflow: visible !important; }
-  #root * { position: static !important; overflow: visible !important; height: auto !important; }
+  /* KaTeX positions and sizes its glyph boxes itself: flattening them scrambles formulas. */
+  #root *:not(.katex *) { position: static !important; overflow: visible !important; height: auto !important; }
+  .math-src { display: none !important; }
   /* Restore flex for message spacing */
   .space-y-5 { display: block !important; }
   .space-y-5 > * { margin-bottom: 1.25rem; page-break-inside: avoid; }

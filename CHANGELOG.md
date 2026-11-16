@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.13.66 — 2026-11-16
+
+### Added
+- **Math renders as math** (gh #233). TeX in an agent's reply, in the Board's task view
+  and in Canvas markdown is typeset with KaTeX: `\( … \)` inline, `\[ … \]` and
+  `$$ … $$` as display. Before, the chat showed `\( 17 + 25 \)` as `( 17 + 25 )`: plain
+  text with the delimiters rewritten.
+  - A single `$` is never math, so "$5 and $10" stays money. Code spans and code blocks
+    are never touched.
+  - Text that only looks like a delimiter is left as written, backslashes included:
+    `\[1\]` and `\[citation needed\]`, paths such as `C:\[temp\]`, an unmatched `\(`.
+  - A formula that isn't valid TeX shows as its source instead of breaking the reply.
+    While a reply streams, a half-received formula shows as source and is typeset when
+    its closing delimiter arrives.
+  - Agent-written TeX can't make links, images or attributes (`\href`, `\url`,
+    `\includegraphics` and the `\html…` commands are refused), can't paint over the page
+    with an oversized box, and can't hang the tab with a self-expanding macro.
+  - Selecting and copying a reply gives each formula's TeX source. Printing keeps the
+    formulas' layout.
+  - KaTeX is bundled in the wheel with its fonts (no CDN, works offline) and is
+    downloaded by the browser only when a message first contains math. The wheel grows
+    by about 0.3 MB.
+
 ## 0.13.65 — 2026-11-08
 
 ### Fixed

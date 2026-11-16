@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Square, Loader2, Sparkles } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Markdown } from "./Markdown";
 import type { ChatMessage } from "../types";
 import { MessageBubble } from "./MessageBubble";
 import { useSlashCommands } from "../hooks/useSlashCommands";
@@ -137,9 +136,7 @@ export function ChatPanel({
               )}
               {welcomeMessage ? (
                 <div className="text-sm text-[var(--color-text-secondary)] markdown-content text-center max-w-md">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {welcomeMessage}
-                  </ReactMarkdown>
+                  <Markdown>{welcomeMessage}</Markdown>
                 </div>
               ) : (
                 <div className="text-center">

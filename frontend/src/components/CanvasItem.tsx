@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { X, ChevronDown } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Markdown } from "./Markdown";
 import type { CanvasItem as CanvasItemType } from "../types";
 
 interface CanvasItemProps {
@@ -98,9 +97,9 @@ function CanvasContent({ item }: { item: CanvasItemType }) {
     case "markdown":
       return (
         <div className="markdown-content text-sm">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <Markdown>
             {typeof item.data === "string" ? item.data : JSON.stringify(item.data)}
-          </ReactMarkdown>
+          </Markdown>
         </div>
       );
 
