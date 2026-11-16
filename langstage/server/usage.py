@@ -9,7 +9,7 @@ turn's totals go out as one ``usage`` frame when it ends.
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextvars import ContextVar
 from typing import Any
 
@@ -62,11 +62,28 @@ def usage_frame(usages: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 class UsageSessionAdapter(SessionAdapter):
-    """A SessionAdapter that follows each turn with a ``usage`` frame."""
+    """A SessionAdapter that follows each turn with a ``usage`` frame.
+
+    ``turn_listener``, when set, is called with the session id as a turn starts and
+    again as it ends, whatever its outcome. The History list uses it to know which
+    thread changed (gh #232).
+    """
+
+    turn_listener: Callable[[str], None] | None = None
+
+    def _notify_turn(self, session: Session) -> None:
+        listener = self.turn_listener
+        if listener is None:
+            return
+        try:
+            listener(session.id)
+        except Exception:  # noqa: BLE001 - a listener must never break a turn
+            pass
 
     async def _produce(self, session: Session, **kwargs: Any) -> None:
         handler = TurnUsageHandler()
         token = _turn_usage.set(handler)
+        self._notify_turn(session)
         try:
             await super()._produce(session, **kwargs)
         finally:
@@ -75,3 +92,4 @@ class UsageSessionAdapter(SessionAdapter):
             frame = usage_frame(handler.usages)
             if frame is not None:
                 session.push(frame)
+            self._notify_turn(session)

@@ -467,6 +467,13 @@ def check(agent_spec, demo, live, as_json):
         else f"{warn} checkpointer: {ckpt_detail} - supply a durable one to keep "
              "conversations and interrupts across restarts")
 
+    # History - the past-conversations list reads the same checkpointer (gh #232).
+    from langstage.app import served_history
+
+    history_ok, history_detail = served_history(agent)
+    report["checks"]["history"] = {"ok": history_ok, "detail": history_detail}
+    say(f"{ok if history_ok else warn} history: {history_detail}")
+
     # Canvas
     has_canvas = agent_uses_canvas_middleware(agent)
     report["checks"]["canvas"] = {

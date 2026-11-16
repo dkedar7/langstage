@@ -288,3 +288,59 @@ export interface TurnUsage {
 }
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
+
+// Past conversations (GET /api/conversations, gh #232)
+export interface ConversationSummary {
+  thread_id: string;
+  title: string;
+  updated_at: string | null;
+  message_count: number;
+  /** Waiting on a human approval. */
+  paused: boolean;
+  /** A turn is in flight in it right now. */
+  running: boolean;
+  /** A browser window is attached to it right now. */
+  connected: boolean;
+}
+
+export interface ConversationList {
+  available: boolean;
+  reason?: string | null;
+  can_delete: boolean;
+  /** False for an in-memory checkpointer: the list lasts until the server stops. */
+  durable: boolean;
+  /** The first scan of a large database is still running; ask again for the rest. */
+  indexing: boolean;
+  total: number;
+  conversations: ConversationSummary[];
+}
+
+export interface TranscriptToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  status: "success" | "error" | "pending";
+  result?: string;
+}
+
+export interface TranscriptEntry {
+  role: "user" | "assistant";
+  content: string;
+  reasoning?: string;
+  tool_calls?: TranscriptToolCall[];
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  interrupt: InterruptEventMsg | null;
+  messages: TranscriptEntry[];
+}
+
+/** A conversation shown read-only because it is busy somewhere else. */
+export interface ViewedConversation {
+  threadId: string;
+  title: string;
+  running: boolean;
+  connected: boolean;
+  /** Deleted (from another window) while it was being viewed. */
+  gone?: boolean;
+}

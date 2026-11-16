@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.13.67 — 2026-11-16
+
+### Added
+- **History: reopen, continue and delete past conversations** (gh #232). Chats were always
+  saved in the checkpointer, but the UI could reach only the one whose id was in the
+  browser's storage, and **New** said the conversation "cannot be undone".
+  - **History** in the header lists past conversations, newest first, titled by their
+    first message. Opening one brings back its messages, tool calls and reasoning, and the
+    next message continues it on the same thread. It works from any browser and after a
+    restart, because the list comes from the server.
+  - **New** now says the current conversation stays in History, and asks nothing when the
+    chat is empty.
+  - A conversation that is open in another window, or has a turn running, opens
+    read-only and refreshes itself; **Continue here** is offered once it is free. Two
+    windows on one conversation used to split its stream between them.
+  - A conversation paused on an approval shows the approval again when reopened.
+  - Delete removes the conversation from the checkpointer for good, after a confirmation.
+    It is refused while a turn is running.
+  - REST: `GET /api/conversations`, `GET /api/conversations/{id}`,
+    `POST /api/conversations/{id}/open` and `DELETE /api/conversations/{id}`. Task and
+    schedule threads are not conversations and answer 404 here. `--auth-password` covers
+    these routes like every other.
+  - The server finds the conversations by reading the checkpoint database once at
+    startup, in the background and through its own connection, so running turns are not
+    held up. After that the list is served from memory.
+  - A checkpointer that can't list threads hides History; one that can't delete them
+    hides the delete button. `langstage check` has a new `history` line that says which.
+  - Not restored on reopen: per-turn timings, token counts and the Plan tab's list.
+
+### Fixed
+- **A message typed the moment the page loads is no longer dropped.** A message sent
+  before the event stream had connected (right after a page load or **New**) vanished
+  from the box without being sent. It now shows at once and is sent as soon as the stream
+  is up. A message the server refuses now ends with an error line instead of a spinner
+  that never stops.
 ## 0.13.66 — 2026-11-16
 
 ### Added
