@@ -70,15 +70,22 @@ def create_conversations_router(conversations: Conversations) -> APIRouter:
         return detail
 
     @router.post("/{thread_id}/open", response_model=ConversationDetail, response_model_exclude_unset=True)
-    async def open_conversation(thread_id: str):
+    async def open_conversation(
+        thread_id: str,
+        takeover: bool = Query(
+            False, description="Make the window that has the conversation open let go of it"
+        ),
+    ):
         """Take a conversation over before attaching ``GET /api/stream`` to it.
 
         409 while a turn is running in it or another window is attached; read it
-        with ``GET`` instead and try again when it is free.
+        with ``GET`` instead and try again when it is free. With ``takeover=true`` a
+        window that merely has it open is told to let go (its stream ends with a
+        ``superseded`` frame); a running turn is still a 409.
         """
         _check_id(thread_id)
         try:
-            detail = await conversations.open(thread_id)
+            detail = await conversations.open(thread_id, takeover=takeover)
         except ConversationBusy as exc:
             raise _busy(exc) from None
         except HistoryUnsupported as exc:

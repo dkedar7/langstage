@@ -7,10 +7,12 @@ Each turn calls a ``lookup`` tool and then replies ``reply <n> to: <what was typ
 where ``<n>`` counts the user messages in the thread. A reopened conversation that
 really continues on its old thread therefore answers with the next number.
 
-Two words in a message change the turn:
+The tool call and the reply are two steps, so a turn's frames arrive in two parts:
+the tool card first, the reply after. Two words in a message change the second step:
 
 - ``slow``: the reply takes a few seconds, long enough for a second browser to find
-  the conversation while its turn is still running;
+  the conversation while its turn is still running, or for a page to be reloaded
+  between the tool card and the reply;
 - ``approval``: the turn pauses on a human approval before it replies.
 """
 from __future__ import annotations
@@ -31,6 +33,16 @@ def _typed(content) -> str:
     return rest if sep and head.startswith("[") else text
 
 
+def _lookup(state: MessagesState) -> dict:
+    humans = [m for m in state["messages"] if m.type == "human"]
+    typed = _typed(humans[-1].content)
+    call_id = f"call-{len(humans)}"
+    return {"messages": [
+        AIMessage(content="", tool_calls=[{"name": "lookup", "args": {"q": typed}, "id": call_id}]),
+        ToolMessage(content=f"ANSWER for {typed}", tool_call_id=call_id, name="lookup"),
+    ]}
+
+
 async def _respond(state: MessagesState) -> dict:
     humans = [m for m in state["messages"] if m.type == "human"]
     n = len(humans)
@@ -45,17 +57,14 @@ async def _respond(state: MessagesState) -> dict:
         suffix = f" ({decisions[0]['type']})" if decisions else " (answered)"
     if "slow" in typed:
         await asyncio.sleep(SLOW_SECONDS)
-    call_id = f"call-{n}"
-    return {"messages": [
-        AIMessage(content="", tool_calls=[{"name": "lookup", "args": {"q": typed}, "id": call_id}]),
-        ToolMessage(content=f"ANSWER for {typed}", tool_call_id=call_id, name="lookup"),
-        AIMessage(content=f"reply {n}{suffix} to: {typed}"),
-    ]}
+    return {"messages": [AIMessage(content=f"reply {n}{suffix} to: {typed}")]}
 
 
 _builder = StateGraph(MessagesState)
+_builder.add_node("lookup", _lookup)
 _builder.add_node("respond", _respond)
-_builder.add_edge(START, "respond")
+_builder.add_edge(START, "lookup")
+_builder.add_edge("lookup", "respond")
 _builder.add_edge("respond", END)
 
 graph = _builder.compile()

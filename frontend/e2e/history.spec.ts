@@ -97,6 +97,16 @@ async function send(page: Page, text: string) {
 }
 
 const historyButton = (page: Page) => page.getByRole('button', { name: 'History', exact: true });
+const readOnlyNotice = (page: Page) => page.getByRole('status').filter({ hasText: 'Read-only.' });
+const continueHere = (page: Page) => page.getByRole('button', { name: 'Continue here' });
+
+/** Wait until the page has saved its conversation (it does so shortly after a turn). */
+async function saved(page: Page, messages: number) {
+  await page.waitForFunction((n) => {
+    const state = JSON.parse(localStorage.getItem('langstage-session') ?? '{}');
+    return (state.messages ?? []).length >= n;
+  }, messages);
+}
 const historyList = (page: Page) => page.getByRole('dialog', { name: 'Past conversations' });
 const row = (page: Page, title: string) => historyList(page).getByRole('listitem').filter({ hasText: title });
 
@@ -157,18 +167,29 @@ test.describe('history', () => {
     await expect(row(page, 'use a tool MANGO')).toContainText('4 messages');
     await page.keyboard.press('Escape');
 
-    // Restart the server, then come back from a browser with no local state at all.
+    // Restart the server. The window that has the conversation open reconnects to
+    // it, on the same thread: the agent counts three user messages.
     await stopServer();
     await startServer();
+    await send(page, 'after the restart');
+    await expect(page.getByText('reply 3 to: after the restart')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Error: the message was not sent/)).toHaveCount(0);
+
+    // A browser with no local state at all finds it in History. It is open in the
+    // first window, so it opens read-only here until this window takes it over.
     const context = await browser.newContext({ baseURL: BASE });
     const other = await context.newPage();
     await other.goto('/');
     await expect(other.getByText('What can I help you with?')).toBeVisible();
     await historyButton(other).click();
     await row(other, 'use a tool MANGO').getByRole('button').first().click();
-    await expect(other.getByText('reply 2 to: and then?')).toBeVisible();
-    await send(other, 'after the restart');
-    await expect(other.getByText('reply 3 to: after the restart')).toBeVisible({ timeout: 30_000 });
+    await expect(other.getByText('reply 3 to: after the restart')).toBeVisible();
+    await expect(readOnlyNotice(other)).toContainText('open in another window');
+    await continueHere(other).click();
+    await expect(readOnlyNotice(other)).toBeHidden();
+    await expect(readOnlyNotice(page)).toContainText('open in another window', { timeout: 15_000 });
+    await send(other, 'from another browser');
+    await expect(other.getByText('reply 4 to: from another browser')).toBeVisible({ timeout: 30_000 });
     await context.close();
   });
 
@@ -205,7 +226,7 @@ test.describe('history', () => {
     await expect(page.getByText(/Error: the message was not sent/)).toHaveCount(0);
   });
 
-  test('a second browser reads a live conversation, then takes it over once it is free', async ({ browser }) => {
+  test('a second browser reads a live conversation, then takes it over once the turn is done', async ({ browser }) => {
     const contextA = await browser.newContext({ baseURL: BASE });
     const a = await contextA.newPage();
     await a.goto('/');
@@ -230,17 +251,122 @@ test.describe('history', () => {
     await expect(a.getByText('reply 1 to: slow question')).toHaveCount(1);
     await expect(b.getByText('reply 1 to: slow question')).toBeVisible({ timeout: 15_000 });
     await expect(notice).toContainText('open in another window', { timeout: 15_000 });
-    await expect(b.getByRole('button', { name: 'Continue here' })).toBeDisabled();
 
-    // A goes away; B can continue it, on the same thread.
-    await contextA.close();
-    await expect(b.getByRole('button', { name: 'Continue here' })).toBeEnabled({ timeout: 20_000 });
-    await b.getByRole('button', { name: 'Continue here' }).click();
+    // No turn is running now, so B may take the conversation over. A, still open,
+    // becomes the read-only copy: the two never read the stream at the same time.
+    await expect(continueHere(b)).toBeEnabled();
+    await continueHere(b).click();
     await expect(notice).toBeHidden();
+    await expect(readOnlyNotice(a)).toContainText('open in another window', { timeout: 15_000 });
     await send(b, 'follow up');
     await expect(b.getByText('reply 2 to: follow up')).toBeVisible({ timeout: 30_000 });
     await expect(b.getByText('reply 1 to: slow question')).toHaveCount(1);
+    await expect(a.getByText('reply 2 to: follow up')).toBeVisible({ timeout: 15_000 });
+    await contextA.close();
     await contextB.close();
+  });
+
+  test('a second tab of the same browser is read-only, and a reply is never split between tabs (gh #236)', async ({ browser }) => {
+    // Two tabs of one browser share localStorage, so the second tab restores the
+    // first tab's session id. It used to attach to the same event stream, and the
+    // two tabs then got alternate frames of every reply.
+    const context = await browser.newContext({ baseURL: BASE });
+    const a = await context.newPage();
+    await a.goto('/');
+    await send(a, 'tab one hello');
+    await expect(a.getByText('reply 1 to: tab one hello')).toBeVisible({ timeout: 30_000 });
+    await saved(a, 2);
+
+    const b = await context.newPage();
+    await b.goto('/');
+    await expect(readOnlyNotice(b)).toContainText('open in another window', { timeout: 15_000 });
+    await expect(b.getByText('reply 1 to: tab one hello')).toBeVisible();
+    await expect(b.getByPlaceholder(/Read-only/)).toBeDisabled();
+
+    // A turn in the first tab reaches it whole: the tool card finishes, the reply
+    // arrives once, and the tab is ready for the next message.
+    await send(a, 'slow second question');
+    await expect(readOnlyNotice(b)).toContainText('A turn is running', { timeout: 15_000 });
+    await expect(continueHere(b)).toBeDisabled();
+    await expect(a.getByText('reply 2 to: slow second question')).toBeVisible({ timeout: 30_000 });
+    await expect(a.getByText('reply 2 to: slow second question')).toHaveCount(1);
+    await expect(a.getByText(/is working/)).toHaveCount(0);
+    await expect(a.getByPlaceholder('Send a message...')).toBeEnabled();
+    await expect(a.getByText('ANSWER for slow second question')).toHaveCount(0); // collapsed, not stuck open
+    // The read-only tab caught up from the server, with nothing of the stream.
+    await expect(b.getByText('reply 2 to: slow second question')).toBeVisible({ timeout: 15_000 });
+    await expect(b.getByText('reply 2 to: slow second question')).toHaveCount(1);
+
+    // The second tab takes the conversation; the first becomes the read-only one.
+    await expect(continueHere(b)).toBeEnabled({ timeout: 15_000 });
+    await continueHere(b).click();
+    await expect(readOnlyNotice(b)).toBeHidden();
+    await expect(readOnlyNotice(a)).toContainText('open in another window', { timeout: 15_000 });
+    await send(b, 'from the second tab');
+    await expect(b.getByText('reply 3 to: from the second tab')).toBeVisible({ timeout: 30_000 });
+    await expect(b.getByText('reply 3 to: from the second tab')).toHaveCount(1);
+    await expect(a.getByText('reply 3 to: from the second tab')).toBeVisible({ timeout: 15_000 });
+
+    // Reloading the read-only tab doesn't take the stream back.
+    await saved(b, 6);
+    await a.reload();
+    await expect(readOnlyNotice(a)).toContainText('open in another window', { timeout: 15_000 });
+    await send(b, 'still here');
+    await expect(b.getByText('reply 4 to: still here')).toBeVisible({ timeout: 30_000 });
+    await expect(b.getByText('reply 4 to: still here')).toHaveCount(1);
+    await context.close();
+  });
+
+  test('reloading the page, idle or in the middle of a turn, keeps the conversation whole (gh #236)', async ({ browser }) => {
+    const context = await browser.newContext({ baseURL: BASE });
+    const page = await context.newPage();
+    await page.goto('/');
+    await send(page, 'before the reload');
+    await expect(page.getByText('reply 1 to: before the reload')).toBeVisible({ timeout: 30_000 });
+    await saved(page, 2);
+
+    // Idle: the reloaded page is the same window coming back, not a second one.
+    await page.reload();
+    await expect(page.getByText('reply 1 to: before the reload')).toBeVisible();
+    await expect(page.getByText('Connected', { exact: true })).toBeVisible();
+    await expect(readOnlyNotice(page)).toHaveCount(0);
+
+    // Mid-turn: the reply is still seconds away. The page saves between turns only,
+    // so the reloaded page starts from the first exchange and has to catch up.
+    await send(page, 'slow reload question');
+    await expect(page.getByText('slow reload question', { exact: true })).toBeVisible();
+    await page.waitForTimeout(1500);
+    await page.reload();
+    await expect(readOnlyNotice(page)).toHaveCount(0);
+    // What was typed is back, and the turn shows as running, with Stop.
+    await expect(page.getByText('slow reload question', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/is working/)).toBeVisible();
+    await expect(page.getByTitle('Stop')).toBeVisible();
+    await expect(page.getByText('reply 2 to: slow reload question')).toBeVisible({ timeout: 30_000 });
+    // The whole turn is there, once.
+    await expect(page.getByText(/is working/)).toHaveCount(0);
+    await expect(page.getByText('slow reload question', { exact: true })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: /^lookup/ })).toHaveCount(2);
+    await expect(page.getByText('reply 2 to: slow reload question')).toHaveCount(1);
+    await expect(page.getByText('reply 1 to: before the reload')).toHaveCount(1);
+
+    // Right after a reply, before the page has saved it: still there after a reload.
+    await send(page, 'quick question');
+    await expect(page.getByText('reply 3 to: quick question')).toBeVisible({ timeout: 30_000 });
+    await page.reload();
+    await expect(page.getByText('reply 3 to: quick question')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('reply 3 to: quick question')).toHaveCount(1);
+
+    // Paused on an approval: the approval is back after a reload, and answering it
+    // resumes the turn on the same thread.
+    await send(page, 'this needs approval too');
+    await expect(page.getByRole('button', { name: 'Approve' })).toBeVisible({ timeout: 30_000 });
+    await page.reload();
+    await expect(readOnlyNotice(page)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByText('reply 4 (approve) to: this needs approval too')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('reply 4 (approve) to: this needs approval too')).toHaveCount(1);
+    await context.close();
   });
 
   test('a conversation waiting on an approval can be reopened and answered', async ({ browser }) => {

@@ -18,7 +18,8 @@ export type AgentEvent =
   | FileChangedEvent
   | CancelledEvent
   | SessionInitEvent
-  | UserMessageEvent;
+  | UserMessageEvent
+  | SupersededEvent;
 
 export interface ContentEvent {
   type: "content";
@@ -129,6 +130,16 @@ export interface SessionInitEvent {
 export interface UserMessageEvent {
   type: "user_message";
   content: string;
+}
+
+/**
+ * The last frame of a stream that another connection has replaced (gh #236):
+ * the same window attaching again ("reconnected") or another window continuing
+ * the conversation ("taken_over"). The stream ends after it.
+ */
+export interface SupersededEvent {
+  type: "superseded";
+  reason: string;
 }
 
 // Client → Server messages
