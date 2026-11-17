@@ -19,6 +19,7 @@ from langstage.server.routes_canvas import create_canvas_router
 from langstage.server.routes_session import create_session_router
 from langstage.server.routes_chat import create_chat_router
 from langstage.server.routes_conversations import create_conversations_router
+from langstage.server.stream_consumers import StreamConsumers
 from langstage.server.routes_cron import create_cron_router
 from langstage.server.routes_tasks import create_tasks_router
 from langstage.server.usage import UsageSessionAdapter
@@ -182,11 +183,14 @@ def create_fastapi_app(
     app.include_router(create_files_router(file_manager))
     app.include_router(create_canvas_router(canvas_manager))
     app.include_router(create_session_router(adapter))
-    app.include_router(create_chat_router(adapter, file_manager=file_manager))
+    # One reader per session's event stream (gh #236), shared by the stream route and
+    # History's "Continue here".
+    consumers = StreamConsumers()
+    app.include_router(create_chat_router(adapter, file_manager=file_manager, consumers=consumers))
 
     # Past conversations, read from the agent's checkpointer (gh #232). The adapter
     # reports each turn so the list re-reads only the thread that changed.
-    conversations = Conversations(agent, adapter, max_result_len=50_000)
+    conversations = Conversations(agent, adapter, max_result_len=50_000, consumers=consumers)
     adapter.turn_listener = conversations.touch
     app.include_router(create_conversations_router(conversations))
 
@@ -260,6 +264,7 @@ def create_fastapi_app(
 
     # Expose for testing
     app.state.session_adapter = adapter
+    app.state.stream_consumers = consumers
     app.state.conversations = conversations
     app.state.scheduler = scheduler
     app.state.task_runner = runner

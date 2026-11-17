@@ -237,7 +237,8 @@ so a CI gate reads them the same way here as in the other LangStage surfaces:
 Every chat is checkpointed under its session id, so it outlives the page that started it. **History**, next to **New** in the header, lists those conversations newest first, titled by their first message. Click one to bring back its messages, tool calls and reasoning, and your next message continues it on the same thread. **New** starts a fresh conversation and leaves the current one in History.
 
 - **From any browser.** The list comes from the server, not from the browser's storage, so a second browser or machine sees the same conversations.
-- **One window at a time.** A conversation that is open in another window, or has a turn running, opens **read-only**: you see a copy that refreshes as it changes, and **Continue here** becomes available once it is free. This keeps two windows from sharing, and splitting, one event stream.
+- **One window at a time.** One window reads a conversation's event stream, so a reply is never split between two. A conversation that is open in another window, or has a turn running, opens **read-only**: you see a copy that refreshes as it changes. A second tab of the same browser counts as another window. **Continue here** moves the conversation to the window you click it in, once no turn is running, and the window that had it becomes the read-only copy.
+- **A reload is the same window.** Reloading the page, or a dropped connection coming back, carries on with the conversation. The page catches up from the server on load: a turn that was running shows as running and is complete when it ends, and an approval it was paused on is shown again.
 - **Paused on an approval.** A conversation that was waiting for you to approve an action shows the approval again when you reopen it, and answering resumes the turn.
 - **Delete is permanent.** The trash icon removes the conversation from the checkpointer after a confirmation. A conversation with a turn running can't be deleted until the turn is stopped.
 - **What isn't restored.** Per-turn timings, token counts and the Plan tab's todo list live in the browser while a conversation is open; a reopened conversation starts those from zero.
@@ -249,7 +250,7 @@ Every chat is checkpointed under its session id, so it outlives the page that st
 
 **Access.** Anyone who can reach the server can read and delete every past conversation, exactly as they can browse the workspace files. Keep the default `localhost` bind, or set `--auth-password`.
 
-REST: `GET /api/conversations` (`limit`, `offset`), `GET /api/conversations/{id}` (the transcript), `POST /api/conversations/{id}/open` (take it over before attaching `GET /api/stream?session_id={id}`; 409 while it is busy) and `DELETE /api/conversations/{id}`. A conversation started over REST with `POST /api/chat/complete` is listed like any other.
+REST: `GET /api/conversations` (`limit`, `offset`), `GET /api/conversations/{id}` (the transcript), `POST /api/conversations/{id}/open` (take it over before attaching `GET /api/stream?session_id={id}`; 409 while it is busy; with `?takeover=true` a window that has it open is made to let go, and only a running turn is a 409) and `DELETE /api/conversations/{id}`. A conversation started over REST with `POST /api/chat/complete` is listed like any other.
 
 ## Task board
 
@@ -461,7 +462,12 @@ spells out): `POST /api/files/upload` takes `path` as a **query** parameter (not
 field), and `path` is the **full destination path** — `upload?path=P` stores the file at
 `P`, so it round-trips with `read`/`download`/`delete?path=P` (end `path` with `/`, or point
 it at an existing directory, to drop the upload inside under its own filename instead);
-`/api/stream` is the SSE event stream keyed by `session_id`. A session with no open stream
+`/api/stream` is the SSE event stream keyed by `session_id`. One connection reads a session
+at a time: a second one gets `409`, because two readers would split a turn's frames
+between them. Pass `client=<an id of yours>` to name the reader; a connection with the
+`client` of the current reader replaces it (your own reconnect), and a connection that is
+replaced gets a last `superseded` frame. `POST /api/chat/complete` with the `session_id`
+of a session that has an open stream is `409` for the same reason. A session with no open stream
 and no running turn is dropped 60 seconds after its stream closes; reconnecting with the
 same `session_id` picks the conversation back up from the checkpointer.
 `GET /api/conversations` lists the session ids that have a conversation behind them (see

@@ -6,16 +6,18 @@ queue, cancellation, and SSE plumbing that used to live in cowork's own
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 
 import anyio
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from langstage.server.models import ChatComplete, SessionAck
 from langstage.server.shutdown import shutdown_event, until_shutdown
+from langstage.server.stream_consumers import StreamConsumers, superseded_frame
 from langstage.oneturn import complete_turn
 
 from langstage_core import workspace_root
@@ -88,39 +90,112 @@ def context_parts(cwd: str | None = None) -> list[str]:
     return parts
 
 
+#: What the stream answers a second reader with (gh #236).
+STREAM_BUSY = "this conversation is open in another window"
+
+
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event)}\n\n"
+
+
+def _worth_handing_on(frame: str) -> bool:
+    """Whether a frame an outgoing reader never wrote belongs to its successor: an
+    event does, a keepalive comment or the reader's own ``session_init`` does not."""
+    return frame.startswith("data:") and '"type": "session_init"' not in frame
+
+
 def create_chat_router(
     adapter: SessionAdapter,
     file_manager: FileManager | None = None,
+    consumers: StreamConsumers | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["chat"])
+    # Who is reading each session's queue. Shared with the conversations routes, so
+    # "Continue here" can take a conversation over from the window that has it.
+    consumers = consumers if consumers is not None else StreamConsumers()
+
+    def _running(session) -> bool:
+        task = session.current_task
+        return task is not None and not task.done()
 
     # Server-sent events, not JSON — say so in the schema (gh #98).
     @router.get(
         "/stream",
         response_class=StreamingResponse,
-        responses={200: {"content": {"text/event-stream": {}}}},
+        responses={
+            200: {"content": {"text/event-stream": {}}},
+            409: {"description": "Another window is reading this session's stream"},
+        },
     )
-    async def sse_stream(request: Request, session_id: str | None = None):
+    async def sse_stream(
+        request: Request,
+        session_id: str | None = None,
+        client: str | None = Query(None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    ):
         """SSE endpoint: the client opens this as an EventSource.
 
         Agent events and out-of-band file-change events are multiplexed onto
         one stream via the session's queue.
+
+        One connection reads a session at a time. A second one gets **409**, and the
+        first is left alone: two readers would split a turn's frames between them
+        (gh #236). ``client`` names the window: a connection with the ``client`` of the
+        current reader is that window coming back (a reload, a reconnect), so
+        it replaces its own earlier connection. A reader that is replaced gets a last
+        ``superseded`` frame and its stream ends.
         """
         session = adapter.get_or_create(session_id)
+        if consumers.refuses(session.id, client):
+            raise HTTPException(
+                status_code=409,
+                detail={"message": STREAM_BUSY, "running": _running(session), "connected": True},
+            )
 
         async def event_generator():
+            # The check above gave the status code; this one is binding. Two connections
+            # that both passed it can't both read: the loser's stream just ends.
+            consumer = await consumers.claim(session.id, client)
+            if consumer is None:
+                return
             # File watcher pushes file_changed events into the same session queue.
             file_watch_task = None
             if file_manager:
                 file_watch_task = asyncio.create_task(
                     _push_file_changes(adapter, session.id, file_manager)
                 )
+            # Frames the reader before this one took off the queue but never wrote.
+            consumer.inherited[:] = [f for f in consumer.inherited if _worth_handing_on(f)]
             frames = adapter.sse(session.id)
+            # Ends when the server starts shutting down, so an open tab can't hold
+            # Ctrl+C / SIGTERM open (gh #211), or when another reader takes over.
+            reader = until_shutdown(
+                frames,
+                shutdown_event(getattr(request, "app", None)),
+                consumer.evicted,
+                unsent=consumer.unsent,
+            )
             try:
-                # Ends when the server starts shutting down, so an open tab can't hold
-                # Ctrl+C / SIGTERM open (gh #211).
-                async for frame in until_shutdown(frames, shutdown_event(getattr(request, "app", None))):
+                first = True
+                while not consumer.evicted.is_set():
+                    consumer.parked.clear()
+                    try:
+                        frame = await anext(reader)
+                    except StopAsyncIteration:
+                        break
+                    finally:
+                        consumer.parked.set()
+                    if consumer.evicted.is_set():
+                        # Read as the takeover landed: it is the next reader's frame.
+                        consumer.unsent.append(frame)
+                        break
                     yield frame
+                    if first:
+                        # Right after session_init, before anything newer.
+                        first = False
+                        while consumer.inherited and not consumer.evicted.is_set():
+                            yield consumer.inherited.pop(0)
+                if consumer.evicted.is_set():
+                    yield _sse(superseded_frame(consumer.reason))
             finally:
                 if file_watch_task:
                     file_watch_task.cancel()
@@ -129,9 +204,16 @@ def create_chat_router(
                 # Reap even if closing fails, so a session can't leak (gh #216).
                 try:
                     with anyio.CancelScope(shield=True):
+                        await reader.aclose()
                         await frames.aclose()
                 finally:
-                    _schedule_reap(adapter, session.id)
+                    # Whatever this reader took but never wrote goes to the next one.
+                    consumers.release(consumer)
+                    # Closing marks the session disconnected; a successor that has
+                    # already attached says otherwise.
+                    if consumers.attached(session.id):
+                        session.sse_connected = True
+                    _schedule_reap(adapter, session.id, consumers)
 
         return StreamingResponse(
             event_generator(),
@@ -172,12 +254,25 @@ def create_chat_router(
         errors is surfaced as HTTP 500; one that pauses for human review returns 200
         with the assembled-so-far reply plus ``outcome`` + ``interrupt``.
         """
-        result = await complete_turn(
-            adapter,
-            body.content,
-            session_id=body.session_id,
-            context_parts=context_parts(body.cwd),
-        )
+        # The buffered turn reads the session's queue itself, so it can't share a
+        # session with an open stream: the two would split the frames (gh #236).
+        hold = consumers.hold(body.session_id) if body.session_id else None
+        if body.session_id and hold is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This session has an open event stream; send the message with "
+                "POST /api/chat, or omit session_id for a separate one-turn session.",
+            )
+        try:
+            result = await complete_turn(
+                adapter,
+                body.content,
+                session_id=body.session_id,
+                context_parts=context_parts(body.cwd),
+            )
+        finally:
+            if hold is not None:
+                consumers.release(hold)
         if result.outcome == "error":
             raise HTTPException(
                 status_code=500, detail=result.error or "agent turn failed"
@@ -229,13 +324,17 @@ SESSION_REAP_GRACE_S = 60.0
 _reap_tasks: set[asyncio.Task] = set()
 
 
-def _schedule_reap(adapter: SessionAdapter, session_id: str) -> None:
-    task = asyncio.get_running_loop().create_task(_reap_when_idle(adapter, session_id))
+def _schedule_reap(
+    adapter: SessionAdapter, session_id: str, consumers: StreamConsumers | None = None
+) -> None:
+    task = asyncio.get_running_loop().create_task(_reap_when_idle(adapter, session_id, consumers))
     _reap_tasks.add(task)
     task.add_done_callback(_reap_tasks.discard)
 
 
-async def _reap_when_idle(adapter: SessionAdapter, session_id: str) -> None:
+async def _reap_when_idle(
+    adapter: SessionAdapter, session_id: str, consumers: StreamConsumers | None = None
+) -> None:
     """Drop a session once it has no stream and no running turn.
 
     Every ``GET /api/stream`` with a new or absent ``session_id`` creates a session,
@@ -250,6 +349,8 @@ async def _reap_when_idle(adapter: SessionAdapter, session_id: str) -> None:
         session = adapter.get(session_id)
         if session is None or session.sse_connected:
             return
+        if consumers is not None and consumers.attached(session_id):
+            return
         task = session.current_task
         if task is not None and not task.done():
             # A turn is still running (e.g. a HITL-free long run): wait for it, then
@@ -258,6 +359,8 @@ async def _reap_when_idle(adapter: SessionAdapter, session_id: str) -> None:
             continue
         adapter.delete_session(session_id)
         release_notebook_state(session_id)
+        if consumers is not None:
+            consumers.forget(session_id)
         return
 
 

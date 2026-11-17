@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.13.68 — 2026-11-17
+
+### Fixed
+- **A second tab no longer splits a conversation's replies with the first** (gh #236).
+  History's "one window at a time" rule was only checked when a conversation was opened
+  from the History menu. A second tab of the same browser restores the same session id
+  and attached straight to the same event stream, and so did a second `curl` on
+  `GET /api/stream`. Each frame of a reply then went to one of the two: half the words
+  in each tab, the tool card spinning in one, the Stop button stuck in the other.
+  - **One connection reads a session's stream.** A second one gets **409** and the first
+    is left alone. In the UI the second tab shows the conversation read-only, the same
+    view History uses for a busy conversation.
+  - **A reload is not a second window.** The page names itself to the server
+    (`GET /api/stream?client=...`), so a reload or a reconnect takes the place of its own
+    earlier connection instead of being refused. A frame the old connection had taken
+    but not yet written goes to the new one, so the server neither drops nor repeats one.
+  - **Continue here takes the conversation over.** In a read-only window it is now
+    available as soon as no turn is running, not only once the other window has gone
+    (`POST /api/conversations/{id}/open?takeover=true`). The window that had the
+    conversation gets a final `superseded` frame and becomes the read-only copy. This is
+    also the way past a window whose connection died without the server noticing. A
+    running turn is still never moved.
+  - **A reloaded page catches up with the server.** The page saves its conversation
+    between turns only, so a reload in the middle of a turn used to come back without
+    the message being answered and with only the tail of the reply. On load it now reads
+    the conversation from the server: the message is back at once, the turn shows as
+    running, with Stop, and the transcript is re-read when the turn ends. The same
+    covers a reload just after a reply arrived, and one while a turn is paused on an
+    approval, which is shown again.
+  - **A dropped connection reconnects to the same conversation.** The browser's own
+    retry reused the address the page first connected with, which for a page that began
+    with a fresh chat had no session id. After a server restart or a network drop that
+    page was silently given a new, empty thread: a running turn never finished on
+    screen, and the next message started from nothing. The page now reconnects itself,
+    with its session id, and a message typed while it is reconnecting waits for the
+    stream instead of failing.
+  - `POST /api/chat/complete` with the `session_id` of a session that has an open stream
+    is refused with 409: the buffered turn reads the same queue.
+  - A read-only window no longer overwrites the saved state the browser's tabs share, so
+    the window that has the conversation still finds it after a reload.
+
 ## 0.13.67 — 2026-11-16
 
 ### Added

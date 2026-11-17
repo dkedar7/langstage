@@ -29,6 +29,41 @@ const VIEW_REFRESH_MS = 2500;
 
 const STORAGE_KEY = "langstage-session";
 
+/**
+ * Names this window to the server (gh #236). One connection reads a session's
+ * event stream at a time; with this id the server can tell this window coming back
+ * (a reload, a reconnect after the connection dropped) from a second window, which
+ * it refuses.
+ * sessionStorage survives a reload and is not shared with other tabs.
+ */
+const CLIENT_KEY = "langstage-client";
+
+function newClientId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function windowClientId(): string {
+  try {
+    const saved = sessionStorage.getItem(CLIENT_KEY);
+    if (saved && /^[A-Za-z0-9_-]{1,64}$/.test(saved)) return saved;
+    const id = newClientId();
+    sessionStorage.setItem(CLIENT_KEY, id);
+    return id;
+  } catch {
+    return newClientId(); // no sessionStorage: a reload then counts as a new window
+  }
+}
+
+const CLIENT_ID = windowClientId();
+
+/** How long to wait before reconnecting a stream that dropped. */
+const STREAM_RETRY_MS = 1500;
+
+/** Frames that only a running turn sends. */
+const TURN_FRAMES = new Set(["content", "reasoning", "tool_start", "tool_end"]);
+
 interface PersistedState {
   sessionId: string | null;
   messages: ChatMessage[];
@@ -121,14 +156,16 @@ export function useAgentStream() {
   useEffect(() => {
     // Don't persist while streaming — wait until stream completes
     if (isStreaming) return;
+    // A read-only copy of another conversation is not this window's to save. The
+    // saved state is shared by every tab of the browser, and the window that has the
+    // conversation open still needs its own there for a reload (gh #236).
+    if (viewing) return;
 
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
       savePersistedState({
         sessionId: sessionIdRef.current,
-        // A read-only copy of another conversation is not this session's transcript:
-        // persisting it would show those messages over a fresh thread after a reload.
-        messages: viewingRef.current ? [] : messages,
+        messages,
         todos,
         tokenUsage,
         usageHistory,
@@ -266,6 +303,37 @@ export function useAgentStream() {
   const pendingSendRef = useRef<{ content: string; cwd?: string } | null>(null);
   const streamReadyRef = useRef(false);
 
+  // Whether a turn is in progress on this window's stream: one it started, or one
+  // it found running after a reload. `isStreaming` says the same a render later;
+  // frames arrive faster than that.
+  const turnActiveRef = useRef(false);
+  // The stream was re-attached while a turn was running (a reload, or a reconnect
+  // after the connection dropped): frames written to the old connection may never
+  // have been shown, so the transcript is re-read when the turn ends (gh #236).
+  const resyncRef = useRef(false);
+  // What to do when the server ends or refuses this window's stream; set below,
+  // once the session helpers it needs exist. False when there is nothing to do
+  // but try again.
+  const onStreamLostRef = useRef<(why: "refused" | "superseded") => boolean>(() => false);
+  const refusedRetriesRef = useRef(0);
+
+  const resyncTranscript = useCallback(async () => {
+    const id = sessionIdRef.current;
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`);
+      if (!res.ok) return; // e.g. a checkpointer History can't read: keep what we have
+      const detail: ConversationDetail = await res.json();
+      // Only if nothing has moved on while this was in flight.
+      if (sessionIdRef.current !== id || viewingRef.current || turnActiveRef.current) return;
+      setMessages(transcriptToMessages(detail));
+      turnCounterRef.current = detail.messages.filter((m) => m.role === "user").length;
+      if (detail.interrupt) setInterrupt(detail.interrupt);
+    } catch {
+      // Offline: the partial transcript stays.
+    }
+  }, []);
+
   const dispatch = useCallback(
     (event: AgentEvent) => {
       switch (event.type) {
@@ -273,6 +341,7 @@ export function useAgentStream() {
           sessionIdRef.current = event.session_id;
           setSessionId(event.session_id);
           streamReadyRef.current = true;
+          refusedRetriesRef.current = 0;
           const pending = pendingSendRef.current;
           if (pending) {
             pendingSendRef.current = null;
@@ -398,12 +467,18 @@ export function useAgentStream() {
         }
 
         case "interrupt":
+          turnActiveRef.current = false;
           setIsStreaming(false);
           setInterrupt(event as InterruptEventMsg);
           break;
 
         case "complete": {
+          turnActiveRef.current = false;
           setIsStreaming(false);
+          if (resyncRef.current) {
+            resyncRef.current = false;
+            void resyncTranscript();
+          }
           const now = Date.now();
           setMessages((prev) => {
             if (prev.length === 0) return prev;
@@ -426,6 +501,8 @@ export function useAgentStream() {
         }
 
         case "error":
+          turnActiveRef.current = false;
+          resyncRef.current = false;
           setIsStreaming(false);
           setMessages((prev) => [
             ...prev,
@@ -460,6 +537,8 @@ export function useAgentStream() {
           break;
 
         case "cancelled": {
+          turnActiveRef.current = false;
+          resyncRef.current = false;
           setIsStreaming(false);
           const now = Date.now();
           // Mark all streaming messages as done with duration
@@ -508,25 +587,41 @@ export function useAgentStream() {
             ...prev,
             { turn: turnCounterRef.current, input: 0, output: 0, total: 0 },
           ]);
+          turnActiveRef.current = true;
           setIsStreaming(true);
           break;
       }
     },
-    [flushContentBuffer, postChat]
+    [flushContentBuffer, postChat, resyncTranscript]
   );
 
   // --- SSE Connection ---
   useEffect(() => {
-    let url = `/api/stream`;
-    if (sessionIdRef.current) {
-      url += `?session_id=${encodeURIComponent(sessionIdRef.current)}`;
-    }
-    const es = new EventSource(url);
+    const params = new URLSearchParams({ client: CLIENT_ID });
+    if (sessionIdRef.current) params.set("session_id", sessionIdRef.current);
+    const es = new EventSource(`/api/stream?${params}`);
+
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     es.onopen = () => setConnectionStatus("connected");
     es.onerror = () => {
-      // EventSource auto-reconnects; mark status while it's retrying
       setConnectionStatus("disconnected");
+      // A refusal (the server answered, but not with a stream) is not retried by
+      // EventSource: another window is reading this session's stream (gh #236).
+      const refused = es.readyState === EventSource.CLOSED;
+      // Reconnect by hand instead of letting EventSource retry. Its retry reuses the
+      // URL it was created with, and a page that started fresh was created without a
+      // session id: the server then gave it a brand-new session, the rest of a
+      // running turn never arrived, and later messages went to an empty thread.
+      es.close();
+      // Until the stream is back, a message waits for it instead of being posted to
+      // a session the server may no longer have (after a restart).
+      streamReadyRef.current = false;
+      if (refused && onStreamLostRef.current("refused")) return;
+      // A frame written to the connection that dropped is gone, so re-read the
+      // transcript when the turn ends.
+      if (turnActiveRef.current) resyncRef.current = true;
+      retryTimer = setTimeout(() => setReconnectKey((k) => k + 1), STREAM_RETRY_MS);
     };
 
     const scheduleFlush = () => {
@@ -540,6 +635,22 @@ export function useAgentStream() {
 
     es.onmessage = (e) => {
       const event: AgentEvent = JSON.parse(e.data);
+
+      if (event.type === "superseded") {
+        // Another connection reads this session now. Close for good: reconnecting
+        // would take the stream straight back.
+        es.close();
+        onStreamLostRef.current("superseded");
+        return;
+      }
+      if (TURN_FRAMES.has(event.type) && !turnActiveRef.current) {
+        // A turn this window did not start: the page was reloaded while it ran.
+        // Show it as running, and re-read the transcript when it ends, because the
+        // frames before the reload went to the old page.
+        turnActiveRef.current = true;
+        resyncRef.current = true;
+        setIsStreaming(true);
+      }
 
       if (event.type === "content") {
         if (reasoningBufferRef.current) flushReasoningBuffer();
@@ -561,9 +672,55 @@ export function useAgentStream() {
       // Clear the handle too, or a reconnect's scheduleFlush would see it still
       // set and never schedule again.
       rafRef.current = null;
+      if (retryTimer) clearTimeout(retryTimer);
       es.close();
     };
   }, [dispatch, flushBuffers, flushContentBuffer, flushReasoningBuffer, reconnectKey]);
+
+  // A reloaded page shows what it last saved, and it saves only between turns (and
+  // half a second after one ends). The server may know more: the message that was
+  // being answered when the page was reloaded, the reply that arrived just before,
+  // an approval the turn is waiting on. Once, on load, catch up with it (gh #236).
+  useEffect(() => {
+    const id = initial?.sessionId;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(id)}`);
+        if (!res.ok) return; // nothing saved yet, or History can't read this checkpointer
+        const detail: ConversationDetail = await res.json();
+        // Not if the window has moved on, or the conversation turned out to be open
+        // in another window (it is then shown read-only instead).
+        if (cancelled || sessionIdRef.current !== id || viewingRef.current) return;
+        if (turnActiveRef.current) {
+          // A turn is already arriving: leave the screen alone until it ends.
+          resyncRef.current = true;
+          return;
+        }
+        const turns = (list: { role: string }[]) => list.filter((m) => m.role === "user").length;
+        if (turns(detail.messages) > turns(initial?.messages ?? [])) {
+          setMessages(transcriptToMessages(detail));
+          turnCounterRef.current = turns(detail.messages);
+        }
+        if (detail.running) {
+          // The turn the page was reloaded in is still going: show it as running
+          // (with Stop), and re-read the transcript when it ends.
+          turnActiveRef.current = true;
+          resyncRef.current = true;
+          setIsStreaming(true);
+        } else if (detail.interrupt) {
+          setInterrupt(detail.interrupt);
+        }
+      } catch {
+        // Offline: what was saved in the browser stays.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Once, for the session restored on load.
+  }, []);
 
   // --- Actions via fetch POST ---
   const sendMessage = useCallback(
@@ -580,6 +737,7 @@ export function useAgentStream() {
         ...prev,
         { turn, input: 0, output: 0, total: 0 },
       ]);
+      turnActiveRef.current = true;
       setIsStreaming(true);
 
       if (streamReadyRef.current) postChat(content, meta?.cwd);
@@ -597,6 +755,7 @@ export function useAgentStream() {
         pending = prev;
         return null;
       });
+      turnActiveRef.current = true;
       setIsStreaming(true);
 
       fetch("/api/chat/interrupt", {
@@ -612,6 +771,7 @@ export function useAgentStream() {
           // Refused before anything was sent (core #227): the approval is still
           // pending, so bring it back with the reason.
           const body = await res.json().catch(() => null);
+          turnActiveRef.current = false;
           setIsStreaming(false);
           setInterrupt(pending);
           setMessages((prev) => [
@@ -655,9 +815,12 @@ export function useAgentStream() {
   // continue an existing thread, or null for a fresh one. The old session is idle
   // here (New and History are both disabled while a turn streams), so dropping it
   // only frees its server-side state; its thread stays in the checkpointer.
-  const switchSession = useCallback((nextSessionId: string | null) => {
+  //
+  // `keepOld` is for a session another window has: that window is still using the
+  // server-side session and the saved state, so neither is touched (gh #236).
+  const switchSession = useCallback((nextSessionId: string | null, keepOld = false) => {
     const oldSessionId = sessionIdRef.current;
-    if (oldSessionId && oldSessionId !== nextSessionId) {
+    if (!keepOld && oldSessionId && oldSessionId !== nextSessionId) {
       fetch(`/api/session/${encodeURIComponent(oldSessionId)}`, {
         method: "DELETE",
       }).catch(() => {});
@@ -670,7 +833,7 @@ export function useAgentStream() {
     }
 
     // Clear persisted state
-    localStorage.removeItem(STORAGE_KEY);
+    if (!keepOld) localStorage.removeItem(STORAGE_KEY);
 
     // Reset all state
     sessionIdRef.current = nextSessionId;
@@ -686,6 +849,8 @@ export function useAgentStream() {
     setViewing(null);
     pendingSendRef.current = null;
     streamReadyRef.current = false;
+    turnActiveRef.current = false;
+    resyncRef.current = false;
     contentBufferRef.current = "";
     reasoningBufferRef.current = "";
     lastEndedToolRef.current = null;
@@ -700,12 +865,15 @@ export function useAgentStream() {
   // free; while a turn is running in it or another window is attached, it is shown
   // read-only instead, so two windows never share (and split) one event stream.
   // Resolves to null, or to the reason it could not be opened.
+  //
+  // With `takeover` ("Continue here" in a read-only window) a window that merely has
+  // the conversation open is told to let go; a running turn is still a refusal.
   const openConversation = useCallback(
-    async (threadId: string): Promise<string | null> => {
+    async (threadId: string, takeover = false): Promise<string | null> => {
       if (isStreamingRef.current) return "Stop the current turn first.";
       const path = `/api/conversations/${encodeURIComponent(threadId)}`;
       try {
-        let res = await fetch(`${path}/open`, { method: "POST" });
+        let res = await fetch(`${path}/open${takeover ? "?takeover=true" : ""}`, { method: "POST" });
         const busy = res.status === 409;
         if (busy) res = await fetch(path);
         if (!res.ok) return await errorDetail(res);
@@ -740,8 +908,59 @@ export function useAgentStream() {
 
   const continueViewed = useCallback(async (): Promise<string | null> => {
     const current = viewingRef.current;
-    return current ? openConversation(current.threadId) : null;
+    return current ? openConversation(current.threadId, true) : null;
   }, [openConversation]);
+
+  // This window's stream was refused, or ended because another connection took it:
+  // the conversation is open in another window (gh #236). Show it read-only here,
+  // the way History does for a busy conversation, and leave the other window's
+  // session and saved state alone.
+  const viewElsewhere = useCallback(
+    async (threadId: string) => {
+      let detail: ConversationDetail | null = null;
+      try {
+        const res = await fetch(`/api/conversations/${encodeURIComponent(threadId)}`);
+        if (res.ok) detail = await res.json();
+        // No transcript to show (nothing saved yet, or History can't read this
+        // checkpointer): start a fresh conversation instead. Anything else is a
+        // server problem: keep trying to connect.
+        else if (res.status !== 404 && res.status !== 501) throw new Error("unavailable");
+      } catch {
+        if (sessionIdRef.current === threadId && !viewingRef.current) {
+          setTimeout(() => setReconnectKey((k) => k + 1), STREAM_RETRY_MS);
+        }
+        return;
+      }
+      if (sessionIdRef.current !== threadId || viewingRef.current) return; // moved on meanwhile
+      switchSession(null, true);
+      if (!detail) return;
+      setMessages(transcriptToMessages(detail));
+      setViewing({
+        threadId,
+        title: detail.title,
+        running: detail.running,
+        connected: detail.connected,
+      });
+    },
+    [switchSession]
+  );
+
+  onStreamLostRef.current = (why) => {
+    const threadId = sessionIdRef.current;
+    // Not a conversation another window could have (a fresh session, or the idle
+    // one behind a read-only view): an ordinary failure, to be retried.
+    if (!threadId || viewingRef.current) return false;
+    if (why === "refused" && refusedRetriesRef.current < 1) {
+      // Once more first: without sessionStorage a reload looks like a second
+      // window until the server has seen the old page's connection close.
+      refusedRetriesRef.current += 1;
+      setTimeout(() => setReconnectKey((k) => k + 1), 500);
+      return true;
+    }
+    refusedRetriesRef.current = 0;
+    void viewElsewhere(threadId);
+    return true;
+  };
 
   // Keep a read-only conversation current while it is busy elsewhere.
   const viewedThreadId = viewing && !viewing.gone ? viewing.threadId : null;

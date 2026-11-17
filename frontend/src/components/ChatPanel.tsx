@@ -36,7 +36,8 @@ interface ChatPanelProps {
 function viewingStatus(viewing: ViewedConversation): string {
   if (viewing.gone) return "This conversation was deleted.";
   if (viewing.running) return "A turn is running in this conversation. This copy refreshes as it goes.";
-  if (viewing.connected) return "This conversation is open in another window. This copy refreshes as it changes.";
+  if (viewing.connected)
+    return "This conversation is open in another window. This copy refreshes as it changes; Continue here moves it to this window.";
   return "This conversation is free now.";
 }
 
@@ -58,7 +59,9 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [continuing, setContinuing] = useState(false);
   const [continueProblem, setContinueProblem] = useState<string | null>(null);
-  const viewedBusy = !!viewing && (viewing.running || viewing.connected);
+  // A running turn can't be moved to another window whole. A window that merely has
+  // the conversation open can be told to let go (gh #236).
+  const viewedRunning = !!viewing && viewing.running;
 
   const handleContinue = async () => {
     if (!onContinueViewed) return;
@@ -240,8 +243,14 @@ export function ChatPanel({
             {!viewing.gone && (
               <button
                 onClick={handleContinue}
-                disabled={viewedBusy || continuing}
-                title={viewedBusy ? "Available when the conversation is free" : "Continue this conversation in this window"}
+                disabled={viewedRunning || continuing}
+                title={
+                  viewedRunning
+                    ? "Available when the turn has finished"
+                    : viewing.connected
+                      ? "Continue this conversation in this window; the other window becomes read-only"
+                      : "Continue this conversation in this window"
+                }
                 className="flex-shrink-0 px-2.5 py-1 rounded-md bg-[var(--color-text)] text-[var(--color-surface)] hover:opacity-80 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
               >
                 Continue here

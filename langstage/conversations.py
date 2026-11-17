@@ -242,9 +242,13 @@ def history_support(saver: Any) -> tuple[bool, bool, str]:
 class Conversations:
     """The index of chat threads behind ``/api/conversations``."""
 
-    def __init__(self, agent: Any, adapter: Any, *, max_result_len: int = 50_000) -> None:
+    def __init__(
+        self, agent: Any, adapter: Any, *, max_result_len: int = 50_000, consumers: Any = None
+    ) -> None:
         self._agent = agent
         self._adapter = adapter
+        #: The server's ``StreamConsumers``: who is reading each session's stream.
+        self._consumers = consumers
         self._max_result_len = max_result_len
         self._rows: dict[str, dict[str, Any]] = {}
         self._stale: set[str] = set()
@@ -392,7 +396,10 @@ class Conversations:
         if session is None:
             return False, False
         task = session.current_task
-        return task is not None and not task.done(), bool(session.sse_connected)
+        connected = bool(session.sse_connected)
+        if self._consumers is not None:
+            connected = connected or self._consumers.attached(thread_id)
+        return task is not None and not task.done(), connected
 
     # ── the API ──────────────────────────────────────────────────────
 
@@ -452,27 +459,48 @@ class Conversations:
             "messages": transcript(state.values.get("messages"), max_result_len=self._max_result_len),
         }
 
-    async def open(self, thread_id: str) -> dict[str, Any] | None:
+    async def open(self, thread_id: str, *, takeover: bool = False) -> dict[str, Any] | None:
         """Take the conversation over for a browser that is about to attach to it.
 
         Refused while a turn is running or another window is attached: one session
         feeds one event stream, so a second consumer would split the frames between
         the two windows. Frames left queued by a turn nobody watched to the end are
         dropped, because the transcript returned here already holds what they said.
+
+        With ``takeover``, a window that is attached is made to let go first (its
+        stream ends with a ``superseded`` frame), so the caller can attach. A running
+        turn is still a refusal: its frames can't be moved to another window whole.
         """
         detail = await self.get(thread_id)
         if detail is None:
             return None
-        if detail["running"] or detail["connected"]:
+        if detail["running"] or (detail["connected"] and not takeover):
             raise ConversationBusy(
                 "a turn is running in this conversation" if detail["running"]
                 else "this conversation is open in another window",
                 running=detail["running"], connected=detail["connected"],
             )
+        if detail["connected"]:
+            released = self._consumers is not None and await self._consumers.take_over(thread_id)
+            running = self._live(thread_id)[0]
+            if not released or running:
+                # No registry to ask, the reader would not stop, or a turn started
+                # while it was stopping.
+                raise ConversationBusy(
+                    "a turn is running in this conversation" if running
+                    else "this conversation is open in another window",
+                    running=running, connected=True,
+                )
+            detail = await self.get(thread_id)
+            if detail is None:
+                return None
+            detail["connected"] = False  # the window that had it has just let go
         session = self._adapter.get(thread_id)
         if session is not None:
             while not session.event_queue.empty():
                 session.event_queue.get_nowait()
+        if self._consumers is not None:
+            self._consumers.forget(thread_id)  # frames a reader took but never wrote
         return detail
 
     async def delete(self, thread_id: str) -> bool:
@@ -495,6 +523,8 @@ class Conversations:
         except NotImplementedError as exc:
             raise HistoryUnsupported(f"{type(saver).__name__} can't delete threads") from exc
         self._adapter.delete_session(thread_id)
+        if self._consumers is not None:
+            self._consumers.forget(thread_id)
         self._rows.pop(thread_id, None)
         self._stale.discard(thread_id)
         return True

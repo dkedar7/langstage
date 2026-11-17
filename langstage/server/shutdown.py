@@ -36,30 +36,45 @@ def shutdown_event(app: Any) -> asyncio.Event:
     return event
 
 
-async def until_shutdown(frames: AsyncIterator[Any], stop: asyncio.Event) -> AsyncIterator[Any]:
-    """Yield from ``frames`` until it ends or ``stop`` is set, whichever comes first.
+async def until_shutdown(
+    frames: AsyncIterator[Any], *stops: asyncio.Event, unsent: list[Any] | None = None
+) -> AsyncIterator[Any]:
+    """Yield from ``frames`` until it ends or one of ``stops`` is set, whichever comes first.
 
-    ``frames`` is read in a helper task so the wait can race ``stop``. However this
-    ends -- the stream ending, ``stop``, or the caller being cancelled when the client
-    disconnects -- that task is cancelled and waited for, so ``frames`` is suspended
-    again and the caller can ``aclose()`` it (gh #216: a pending read left it "already
-    running", so every disconnect logged a traceback and the session was never reaped).
+    ``frames`` is read in a helper task so the wait can race the stop events. However
+    this ends -- the stream ending, a stop, or the caller being cancelled when the
+    client disconnects -- that task is cancelled and waited for, so ``frames`` is
+    suspended again and the caller can ``aclose()`` it (gh #216: a pending read left it
+    "already running", so every disconnect logged a traceback and the session was never
+    reaped).
+
+    Once a stop is set no further frame is read: a read that is already in flight
+    either yields its frame or is cancelled before it took one, and the next one never
+    starts. That is what lets another reader take the stream over without a frame
+    going to both, or to neither (gh #236). A frame that was read but never yielded,
+    because the caller was cancelled at that moment, is appended to ``unsent`` for the
+    same reason.
     """
-    stop_wait = asyncio.ensure_future(stop.wait())
+    stop_waits = [asyncio.ensure_future(stop.wait()) for stop in stops]
     nxt: asyncio.Future | None = None
     try:
         while True:
+            if any(stop.is_set() for stop in stops):
+                return
             nxt = asyncio.ensure_future(anext(frames))
-            done, _ = await asyncio.wait({nxt, stop_wait}, return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait({nxt, *stop_waits}, return_when=asyncio.FIRST_COMPLETED)
             if nxt not in done:
                 return
             try:
                 frame = nxt.result()
             except StopAsyncIteration:
                 return
+            finally:
+                nxt = None  # its result is taken: nothing of it is left to hand on
             yield frame
     finally:
-        stop_wait.cancel()
+        for stop_wait in stop_waits:
+            stop_wait.cancel()
         if nxt is not None and not nxt.done():
             nxt.cancel()
             # Shielded: on a disconnect this runs inside the response's cancelled scope,
@@ -67,7 +82,9 @@ async def until_shutdown(frames: AsyncIterator[Any], stop: asyncio.Event) -> Asy
             with anyio.CancelScope(shield=True):
                 await asyncio.wait({nxt})
         if nxt is not None and nxt.done() and not nxt.cancelled():
-            nxt.exception()  # retrieved, so asyncio doesn't log "never retrieved"
+            # Retrieved either way, so asyncio doesn't log "never retrieved".
+            if nxt.exception() is None and unsent is not None:
+                unsent.append(nxt.result())
 
 
 class Server(uvicorn.Server):
