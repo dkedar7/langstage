@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.69 — 2026-11-19
+
+### Fixed
+- **A tool call that reuses an earlier turn's id gets its own card** (gh #239). A tool
+  call id is only unique within one model response; the keyless demo agent sends
+  `demo_lookup_1` every time, and fake models and some OpenAI-compatible servers number
+  ids per response. The chat matched cards by id across the whole conversation, so the
+  second "use a tool" got no card and its result was written into the first turn's card,
+  next to the first turn's arguments.
+  - The chat and the Board task view now match a `tool_start` or `tool_end` to a card
+    in the current turn only. A resumed turn still completes the card it paused in
+    (#200): answering an approval doesn't start a new turn, and only a card that is
+    still running is re-announced.
+  - **History had the same bug on the server.** Reopening such a conversation showed
+    the last result under every call with that id. Each result now answers the latest
+    earlier call with its id that has no result yet.
+
 ## 0.13.68 — 2026-11-17
 
 ### Fixed

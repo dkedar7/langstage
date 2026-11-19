@@ -163,6 +163,29 @@ def summarize(messages: Any) -> dict[str, Any] | None:
     return {"title": title_of(first), "message_count": count}
 
 
+def _pair_results(messages: Any) -> dict[tuple[int, int], Any]:
+    """Each ``ToolMessage`` keyed by the call it answers: ``(message index, call index)``.
+
+    A tool call id is only unique within one model response; the keyless demo
+    agent, fake models and some OpenAI-compatible servers reuse ids across turns.
+    A result therefore answers the latest unanswered call with its id that came
+    before it, not every call with that id (gh #239).
+    """
+    open_calls: dict[Any, list[tuple[int, int]]] = {}
+    paired: dict[tuple[int, int], Any] = {}
+    for position, message in enumerate(messages):
+        kind = _kind(message)
+        if kind == "ai":
+            for index, call in enumerate(_field(message, "tool_calls") or []):
+                if isinstance(call, dict) and call.get("id") is not None:
+                    open_calls.setdefault(call.get("id"), []).append((position, index))
+        elif kind == "tool":
+            waiting = open_calls.get(_field(message, "tool_call_id"))
+            if waiting:
+                paired[waiting.pop()] = message
+    return paired
+
+
 def transcript(messages: Any, *, max_result_len: int = 50_000) -> list[dict[str, Any]]:
     """A thread's messages as the chat shows them.
 
@@ -174,11 +197,9 @@ def transcript(messages: Any, *, max_result_len: int = 50_000) -> list[dict[str,
     """
     if not isinstance(messages, (list, tuple)):
         return []
-    results = {
-        _field(m, "tool_call_id"): m for m in messages if _kind(m) == "tool"
-    }
+    results = _pair_results(messages)
     out: list[dict[str, Any]] = []
-    for message in messages:
+    for position, message in enumerate(messages):
         kind = _kind(message)
         if kind == "human":
             out.append({"role": "user", "content": typed_text(_text(message))})
@@ -197,7 +218,7 @@ def transcript(messages: Any, *, max_result_len: int = 50_000) -> list[dict[str,
                     "args": args if isinstance(args, dict) else {"_raw": args},
                     "status": "pending",
                 }
-                result = results.get(call.get("id"))
+                result = results.get((position, index))
                 if result is not None:
                     body = _field(result, "content")
                     body = body if isinstance(body, str) else (_text(result) or str(body))

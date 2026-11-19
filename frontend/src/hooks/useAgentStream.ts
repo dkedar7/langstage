@@ -22,6 +22,7 @@ import type {
   ViewedConversation,
 } from "../types";
 import { extractionTargetId, findExtractionTarget } from "../extraction";
+import { findAnnouncedCall, findEndedCall } from "../toolCards";
 import { errorDetail, transcriptToMessages } from "../conversations";
 
 /** How often a conversation shown read-only is re-read while it is busy elsewhere. */
@@ -356,8 +357,9 @@ export function useAgentStream() {
 
           setMessages((prev) => {
             // A resumed turn re-announces the call it paused in (same id): keep the
-            // one card, so its result completes it instead of leaving a spinner.
-            if (prev.some((m) => m.toolCalls.some((t) => t.id === event.id))) return prev;
+            // one card, so its result completes it instead of leaving a spinner. Only
+            // a running card in this turn counts: ids repeat across turns (gh #239).
+            if (findAnnouncedCall(prev, event.id)) return prev;
             const last = prev[prev.length - 1];
             const tc: ToolCall = {
               id: event.id,
@@ -394,23 +396,20 @@ export function useAgentStream() {
           // Remembered so the extraction frame that follows can find its call.
           lastEndedToolRef.current = { id: event.id, name: event.name };
           setMessages((prev) => {
+            // This turn's call with that id, never an earlier turn's finished card.
+            const hit = findEndedCall(prev, event.id);
+            if (!hit) return prev;
+            const [i, tcIdx] = hit;
             const updated = [...prev];
-            for (let i = updated.length - 1; i >= 0; i--) {
-              const msg = updated[i];
-              const tcIdx = msg.toolCalls.findIndex((tc) => tc.id === event.id);
-              if (tcIdx >= 0) {
-                const newTcs = [...msg.toolCalls];
-                newTcs[tcIdx] = {
-                  ...newTcs[tcIdx],
-                  status: event.status,
-                  result: event.result,
-                  errorMessage: event.error_message,
-                  durationMs: event.duration_ms,
-                };
-                updated[i] = { ...msg, toolCalls: newTcs };
-                break;
-              }
-            }
+            const newTcs = [...updated[i].toolCalls];
+            newTcs[tcIdx] = {
+              ...newTcs[tcIdx],
+              status: event.status,
+              result: event.result,
+              errorMessage: event.error_message,
+              durationMs: event.duration_ms,
+            };
+            updated[i] = { ...updated[i], toolCalls: newTcs };
             return updated;
           });
           break;
