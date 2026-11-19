@@ -351,20 +351,30 @@ test.describe('langstage', () => {
     // After an approval the resumed turn re-announces the call it paused in, with
     // the same id. The UI used to add a second card and leave the first spinning.
     const args = { order_id: 'NW-1041', amount: 189 };
-    await page.route('**/api/stream*', (route) =>
-      route.fulfill({
+    // Frames on the first connection only: the page reconnects when the stream
+    // ends, and a real server never repeats frames (gh #236). A repeat would be a
+    // new call now that cards are matched per turn (gh #239).
+    let served = false;
+    await page.route('**/api/stream*', (route) => {
+      const first = !served;
+      served = true;
+      return route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
         body: sse([
           { type: 'session_init', session_id: 'e2e-resumed-call' },
-          { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
-          { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
-          { type: 'tool_end', id: 'call_r', name: 'issue_refund', result: 'Refund RF-2001 issued', status: 'success', error_message: null, duration_ms: 88 },
-          { type: 'content', content: 'Refund issued.', role: 'assistant', node: 'agent' },
-          { type: 'complete', outcome: 'complete' }
+          ...(first
+            ? [
+                { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
+                { type: 'tool_start', id: 'call_r', name: 'issue_refund', args, node: 'tools' },
+                { type: 'tool_end', id: 'call_r', name: 'issue_refund', result: 'Refund RF-2001 issued', status: 'success', error_message: null, duration_ms: 88 },
+                { type: 'content', content: 'Refund issued.', role: 'assistant', node: 'agent' },
+                { type: 'complete', outcome: 'complete' }
+              ]
+            : [])
         ])
-      })
-    );
+      });
+    });
     await page.goto('/');
 
     await expect(page.getByText('Refund issued.', { exact: true })).toBeVisible();

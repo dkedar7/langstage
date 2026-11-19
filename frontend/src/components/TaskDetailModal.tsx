@@ -4,6 +4,7 @@ import type { ChatMessage, Task, ToolCall, Decision, InterruptEventMsg } from ".
 import { MessageBubble } from "./MessageBubble";
 import { InterruptPanel } from "./InterruptDialog";
 import { extractionTargetId, findExtractionTarget } from "../extraction";
+import { findAnnouncedCall, findEndedCall } from "../toolCards";
 
 interface TaskDetailModalProps {
   taskId: string;
@@ -50,6 +51,9 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
   };
 
   let lastEnded: { id: string; name: string } | null = null;
+  // Where the current turn starts: after the latest follow-up. An answer to the
+  // review gate is shown as a user bubble but continues the same turn.
+  let turnStart = 0;
   for (const e of events) {
     const type = e.type as string;
     if (type === "content") {
@@ -63,7 +67,8 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
       m.reasoning = (m.reasoning ?? "") + ((e.content as string) || "");
     } else if (type === "tool_start") {
       // A resumed task re-announces the call it paused in (same id): keep one card.
-      if (msgs.some((x) => x.toolCalls.some((t) => t.id === e.id))) continue;
+      // Only a running card since the last follow-up counts (gh #239).
+      if (findAnnouncedCall(msgs, e.id as string, turnStart)) continue;
       const m = lastAssistant() || pushAssistant();
       const tc: ToolCall = {
         id: e.id as string,
@@ -74,20 +79,21 @@ function reduceEvents(events: Record<string, unknown>[]): ChatMessage[] {
       m.toolCalls.push(tc);
     } else if (type === "tool_end") {
       lastEnded = { id: e.id as string, name: e.name as string };
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        const tc = msgs[i].toolCalls.find((t) => t.id === e.id);
-        if (tc) {
-          tc.status = (e.status as ToolCall["status"]) || "success";
-          tc.result = e.result as string | undefined;
-          tc.errorMessage = (e.error_message as string | null) ?? null;
-          tc.durationMs = (e.duration_ms as number | null) ?? null;
-          break;
-        }
+      const hit = findEndedCall(msgs, e.id as string, turnStart);
+      if (hit) {
+        const tc = msgs[hit[0]].toolCalls[hit[1]];
+        tc.status = (e.status as ToolCall["status"]) || "success";
+        tc.result = e.result as string | undefined;
+        tc.errorMessage = (e.error_message as string | null) ?? null;
+        tc.durationMs = (e.duration_ms as number | null) ?? null;
       }
     } else if (type === "user") {
       // A follow-up the human sent on this task (core #233).
       const text = ((e.content as string) || "").trim();
-      if (text) msgs.push({ id: `u${counter++}`, role: "user", content: text, toolCalls: [] });
+      if (text) {
+        msgs.push({ id: `u${counter++}`, role: "user", content: text, toolCalls: [] });
+        turnStart = msgs.length;
+      }
     } else if (type === "resume") {
       // The human's answer to the review gate (core #233).
       msgs.push({
