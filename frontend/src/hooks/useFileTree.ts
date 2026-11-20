@@ -138,6 +138,37 @@ export function useFileTree(fileChanges: { event: string; path: string }[]) {
     [workspacePath, loadRoot]
   );
 
+  /**
+   * Upload a file dropped on the chat into the folder the Files tab shows, never
+   * replacing an existing file (`unique=true` numbers a copy instead). Resolves to the
+   * path written; rejects with the server's reason. (gh #238)
+   */
+  const uploadForChat = useCallback(
+    async (file: File): Promise<string> => {
+      const form = new FormData();
+      form.append("file", file);
+      const dir = workspacePath.endsWith("/") ? workspacePath : `${workspacePath}/`;
+      const res = await fetch(
+        `/api/files/upload?path=${encodeURIComponent(dir)}&unique=true`,
+        { method: "POST", body: form }
+      );
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          if (typeof body?.detail === "string") detail = body.detail;
+        } catch {
+          // not JSON; keep the status
+        }
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      loadRoot();
+      return data.path as string;
+    },
+    [workspacePath, loadRoot]
+  );
+
   const createFolder = useCallback(
     async (name: string) => {
       const folderPath =
@@ -185,6 +216,7 @@ export function useFileTree(fileChanges: { event: string; path: string }[]) {
     openFile,
     enterDir,
     uploadFile,
+    uploadForChat,
     createFolder,
     deletePath,
     setSelectedFile,

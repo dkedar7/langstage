@@ -6,6 +6,8 @@ import io
 import mimetypes
 import os
 import shutil
+import time
+from collections import deque
 from pathlib import Path
 from typing import AsyncGenerator
 from urllib.parse import quote
@@ -62,6 +64,16 @@ SKIP_DIRS = {
     "build",
     ".egg-info",
 }
+
+
+# Bounds for FileManager.search (gh #238): a huge workspace can't hang a request.
+SEARCH_DEFAULT_LIMIT = 50
+SEARCH_MAX_LIMIT = 200
+SEARCH_MAX_ENTRIES = 50_000
+SEARCH_TIME_BUDGET = 1.0  # seconds
+
+# How many numbered copies save_upload(unique=True) tries before giving up.
+_MAX_UNIQUE_TRIES = 1000
 
 
 class BinaryFileError(ValueError):
@@ -321,13 +333,112 @@ class FileManager:
         target.mkdir(parents=True, exist_ok=False)
         return {"path": path, "name": target.name}
 
-    def save_upload(self, path: str, content: bytes) -> dict:
-        """Write uploaded file content to the workspace."""
+    def save_upload(self, path: str, content: bytes, unique: bool = False) -> dict:
+        """Write uploaded file content to the workspace.
+
+        By default an existing file at ``path`` is replaced, as the file browser has
+        always done. With ``unique=True`` an existing file is never touched: the
+        upload gets the first free name of ``name (1).ext``, ``name (2).ext``, …, and
+        the returned ``path`` is the one actually written (gh #238, a file dropped on
+        the chat).
+        """
         target = self._resolve_path(path)
         self._check_parents_are_dirs(target)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
-        return {"path": path, "name": target.name, "size": len(content)}
+        if not unique:
+            target.write_bytes(content)
+            return {"path": path, "name": target.name, "size": len(content)}
+        stem, suffix = _split_name(target.name)
+        for n in range(_MAX_UNIQUE_TRIES):
+            candidate = target if n == 0 else target.with_name(f"{stem} ({n}){suffix}")
+            try:
+                # "x" creates exclusively, so a file that appears between the check
+                # and the write is never overwritten.
+                with open(candidate, "xb") as fh:
+                    fh.write(content)
+            except FileExistsError:
+                continue
+            return {"path": self._rel(candidate), "name": candidate.name, "size": len(content)}
+        raise FileExistsError(f"Already exists: {path} (and {_MAX_UNIQUE_TRIES - 1} numbered copies)")
+
+    def search(
+        self,
+        query: str,
+        limit: int = SEARCH_DEFAULT_LIMIT,
+        *,
+        max_entries: int = SEARCH_MAX_ENTRIES,
+        time_budget: float = SEARCH_TIME_BUDGET,
+    ) -> dict:
+        """Workspace paths matching ``query``, for the chat's ``@`` mentions (gh #238).
+
+        Matching is case-insensitive. Every whitespace-separated word of the query
+        must appear in the relative path. A match in the file name ranks above a
+        match only in a folder name, a name that starts with the query ranks above
+        one that only contains it, and shorter paths come first. An empty query
+        lists what's nearest the root.
+
+        The walk skips what the file tree skips (dot entries such as ``.git`` and
+        ``.langstage``, and ``SKIP_DIRS`` such as ``node_modules``), never leaves the
+        workspace (#148's containment rule, applied to every entry), never visits a
+        directory twice (symlink loops), and stops after ``max_entries`` entries or
+        ``time_budget`` seconds. ``truncated`` then says the list may be incomplete.
+
+        Paths are workspace-relative with forward slashes and no leading ``/``
+        (``data/sales.csv``): what the agent's working directory resolves.
+        """
+        words = [w for w in query.lower().replace("\\", "/").split() if w]
+        deadline = time.monotonic() + time_budget
+        matches: list[tuple[tuple, dict]] = []
+        seen_dirs: set[Path] = {self.workspace}
+        queue: deque[Path] = deque([self.workspace])
+        visited = 0
+        truncated = False
+
+        while queue:
+            current = queue.popleft()
+            try:
+                with os.scandir(current) as it:
+                    items = sorted(it, key=lambda e: e.name.lower())
+            except OSError:
+                continue
+            for item in items:
+                visited += 1
+                if visited > max_entries or time.monotonic() > deadline:
+                    truncated = True
+                    queue.clear()
+                    break
+                name = item.name
+                if name.startswith("."):
+                    continue
+                try:
+                    is_dir = item.is_dir()
+                except OSError:
+                    continue
+                if is_dir and name in SKIP_DIRS:
+                    continue
+                path = Path(item.path)
+                try:
+                    real = path.resolve()
+                except (OSError, RuntimeError):  # unresolvable, e.g. a symlink loop
+                    continue
+                if not real.is_relative_to(self.workspace):
+                    continue  # a link out of the workspace (gh #148)
+                if is_dir:
+                    if real in seen_dirs:
+                        continue
+                    seen_dirs.add(real)
+                    queue.append(path)
+                rel = path.relative_to(self.workspace).as_posix()
+                rank = _search_rank(rel, name, words)
+                if rank is not None:
+                    matches.append((rank, {"path": rel, "name": name, "is_dir": is_dir}))
+            if not words and len(matches) >= limit:
+                break  # breadth-first: nothing deeper ranks above what's listed
+
+        matches.sort(key=lambda m: m[0])
+        if len(matches) > limit:
+            matches = matches[:limit]
+        return {"query": query, "results": [m[1] for m in matches], "truncated": truncated}
 
     def delete_path(self, path: str) -> dict:
         """Delete a file or directory (recursively).
@@ -446,6 +557,31 @@ class FileManager:
             return path.resolve().is_relative_to(self.workspace)
         except (OSError, RuntimeError):  # unresolvable (e.g. a symlink loop)
             return False
+
+
+def _split_name(name: str) -> tuple[str, str]:
+    """``("notes", ".md")`` for numbering copies; a dotfile or extensionless name stays whole."""
+    stem, dot, ext = name.rpartition(".")
+    if not stem or not dot:
+        return name, ""
+    return stem, "." + ext
+
+
+def _search_rank(rel: str, name: str, words: list[str]) -> tuple | None:
+    """Sort key for a search hit (lower is better), or None when it doesn't match."""
+    rel_l, name_l = rel.lower(), name.lower()
+    if not all(w in rel_l for w in words):
+        return None
+    if not words:
+        return (0, rel.count("/"), len(rel), rel_l)
+    first = words[-1]  # the word being typed decides the ranking
+    if name_l.startswith(first):
+        tier = 0
+    elif first in name_l:
+        tier = 1
+    else:
+        tier = 2
+    return (tier, len(rel), rel_l)
 
 
 def _is_junction(path: Path) -> bool:

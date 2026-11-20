@@ -55,6 +55,7 @@ langstage-agui --agent my_agent.py:graph
 - **Math** — TeX in a reply or a Canvas note renders as math: `\( … \)` inline, `\[ … \]` and `$$ … $$` as display. A single `$` is left alone, so "$5 and $10" stays money, and a formula that isn't valid TeX shows as written. KaTeX is bundled (no CDN) and loads with the first formula.
 - **Canvas panel** — persistent report surface for charts, tables, diagrams, images, and narrative markdown. Opt-in via `CanvasMiddleware`; auto-detected by the UI.
 - **File browser** — workspace file tree with syntax-highlighted viewer and live file change detection
+- **File mentions** — type `@` in the chat to pick a workspace file, use **Mention in chat** in the file browser, or drop a file on the chat to upload and mention it. See [Mention files in the chat](#mention-files-in-the-chat).
 - **Plan** — sidebar todo list with progress bar, synced with agent `write_todos` calls (the **Plan** tab)
 - **Async task board** — delegate tasks to background copies of the agent and track them on a Kanban board (`queued → ongoing → review → done`); click a task to live-tail its stream, answer human-in-the-loop pauses (approve, reject, edit or respond, whichever the interrupt allows), and send follow-ups. The agent can also spawn its own async sub-tasks. See [Task board](#task-board).
 - **History** — reopen, continue or delete past conversations from any browser. They are read from the agent's checkpointer, so they are there after **New**, after a restart, and on a second machine. See [History](#history).
@@ -231,6 +232,18 @@ so a CI gate reads them the same way here as in the other LangStage surfaces:
 | `1` | failure | no agent configured, an agent that won't load, a failed `check` / `check --live`, `config --strict` with issues, `chat` turn error, `run` can't start (including a busy port) |
 | `2` | paused on a human-in-the-loop interrupt | `chat` ends waiting for an approval or answer |
 | `64` | usage error | an unknown option or command, an invalid `--port` / `--theme`, `--demo` with `--agent` |
+
+## Mention files in the chat
+
+Type `@` in the chat input to pick a file or folder from the workspace. The list narrows as you type (`@sal` finds `data/sales.csv`, and `@q3 draft` finds `reports/q3/draft.md`). Arrow keys choose, **Enter** or **Tab** inserts, **Escape** closes. In the file browser, the `@` button on a file row, or **Mention in chat** in the right-click menu, inserts that path at the chat cursor.
+
+**Drop a file on the chat** to upload it into the folder the Files tab shows and mention it. The message isn't sent until you press Enter. An existing file is never replaced; the upload is saved as `name (1).ext` instead.
+
+**What the agent sees.** A mention is plain text: the workspace-relative path in backticks, such as `` `data/sales.csv` ``. The file's contents are not added to the message. Your agent runs with the workspace root as its working directory, so the path opens as written, with no agent changes. Paths are relative to the workspace root even when the Files tab has a subfolder open.
+
+The picker leaves out dot folders such as `.git` and `.langstage`, and the folders the file tree hides (`node_modules`, `.venv`, …). Mentions and dropping are off when the Files tab is hidden (`--no-show-files`) and in a read-only conversation.
+
+REST: `GET /api/files/search?q=sal&limit=50` returns `{"query", "results": [{"path", "name", "is_dir"}], "truncated"}`. The walk is bounded (50,000 entries or one second), never leaves the workspace, and sets `truncated` when it stops early. `POST /api/files/upload?path=dir/&unique=true` stores a copy under a new name instead of replacing a file and returns the path it wrote.
 
 ## History
 

@@ -257,6 +257,19 @@ export interface FileEntry {
   children?: FileEntry[] | null;
 }
 
+/** One `GET /api/files/search` result (gh #238). `path` is workspace-relative, no leading "/". */
+export interface FileSearchHit {
+  path: string;
+  name: string;
+  is_dir: boolean;
+}
+
+/** Ask the chat input to insert mentions of these paths (the file browser's "Mention in chat"). */
+export interface MentionRequest {
+  paths: string[];
+  seq: number;
+}
+
 export interface FilePreview {
   path: string;
   name: string;

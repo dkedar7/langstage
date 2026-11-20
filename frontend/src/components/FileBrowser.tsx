@@ -11,6 +11,7 @@ import {
   Upload,
   Home,
   Trash2,
+  AtSign,
 } from "lucide-react";
 import type { FileEntry } from "../types";
 
@@ -25,6 +26,8 @@ interface FileBrowserProps {
   onUpload: (file: File) => void;
   onCreateFolder: (name: string) => void;
   onDelete: (path: string) => void;
+  /** Insert a mention of this path in the chat input (gh #238). */
+  onMention?: (path: string) => void;
 }
 
 const CODE_EXTENSIONS = new Set([
@@ -63,6 +66,7 @@ interface TreeNodeProps {
   onOpenFile: (path: string) => void;
   onEnterDir: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, path: string, name: string) => void;
+  onMention?: (path: string) => void;
 }
 
 function TreeNode({
@@ -73,6 +77,7 @@ function TreeNode({
   onOpenFile,
   onEnterDir,
   onContextMenu,
+  onMention,
 }: TreeNodeProps) {
   const isExpanded = expandedDirs.has(entry.path);
 
@@ -109,6 +114,7 @@ function TreeNode({
                 onOpenFile={onOpenFile}
                 onEnterDir={onEnterDir}
                 onContextMenu={onContextMenu}
+                onMention={onMention}
               />
             ))}
           </div>
@@ -119,20 +125,34 @@ function TreeNode({
 
   const FileIcon = getFileIcon(entry.name);
   return (
-    <button
-      onClick={() => onOpenFile(entry.path)}
-      onContextMenu={(e) => onContextMenu(e, entry.path, entry.name)}
-      className="flex items-center gap-1.5 w-full px-2 py-1 text-sm hover:bg-[var(--color-surface-3)] rounded transition-colors"
-      style={{ paddingLeft: `${depth * 16 + 22}px` }}
-    >
-      <FileIcon size={14} className="text-[var(--color-text-secondary)] flex-shrink-0" />
-      <span className="truncate text-[var(--color-text)]">{entry.name}</span>
-      {entry.size != null && (
-        <span className="ml-auto text-xs text-[var(--color-text-muted)] flex-shrink-0">
-          {formatSize(entry.size)}
-        </span>
+    <div className="group relative">
+      <button
+        onClick={() => onOpenFile(entry.path)}
+        onContextMenu={(e) => onContextMenu(e, entry.path, entry.name)}
+        className="flex items-center gap-1.5 w-full px-2 py-1 text-sm hover:bg-[var(--color-surface-3)] rounded transition-colors"
+        style={{ paddingLeft: `${depth * 16 + 22}px` }}
+      >
+        <FileIcon size={14} className="text-[var(--color-text-secondary)] flex-shrink-0" />
+        <span className="truncate text-[var(--color-text)]">{entry.name}</span>
+        {entry.size != null && (
+          <span
+            className={`ml-auto text-xs text-[var(--color-text-muted)] flex-shrink-0 ${onMention ? "group-hover:invisible group-focus-within:invisible" : ""}`}
+          >
+            {formatSize(entry.size)}
+          </span>
+        )}
+      </button>
+      {onMention && (
+        <button
+          onClick={() => onMention(entry.path)}
+          title="Mention in chat"
+          aria-label={`Mention ${entry.name} in chat`}
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-[var(--color-card)] transition-opacity"
+        >
+          <AtSign size={13} className="text-[var(--color-text-secondary)]" />
+        </button>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -147,6 +167,7 @@ export function FileBrowser({
   onUpload,
   onCreateFolder,
   onDelete,
+  onMention,
 }: FileBrowserProps) {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -183,6 +204,12 @@ export function FileBrowser({
     if (window.confirm(`Delete "${contextMenu.name}"?`)) {
       onDelete(contextMenu.path);
     }
+    setContextMenu(null);
+  };
+
+  const handleMention = () => {
+    if (!contextMenu || !onMention) return;
+    onMention(contextMenu.path);
     setContextMenu(null);
   };
 
@@ -317,6 +344,7 @@ export function FileBrowser({
               onOpenFile={onOpenFile}
               onEnterDir={onEnterDir}
               onContextMenu={handleContextMenu}
+              onMention={onMention}
             />
           ))
         )}
@@ -329,6 +357,15 @@ export function FileBrowser({
           className="fixed z-50 bg-[var(--color-card)] border border-[var(--color-border)] rounded-md shadow-md py-1 min-w-[140px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
+          {onMention && (
+            <button
+              onClick={handleMention}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-3)] transition-colors"
+            >
+              <AtSign size={13} />
+              Mention in chat
+            </button>
+          )}
           <button
             onClick={handleDelete}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-[var(--color-error)] hover:bg-[var(--color-surface-3)] transition-colors"

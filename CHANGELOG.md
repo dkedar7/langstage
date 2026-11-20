@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.14.0 — 2026-11-19
+
+### Added
+- **Mention workspace files in the chat** (gh #238). Pointing the agent at a file meant
+  typing its path from memory, and a typo cost a model turn.
+  - **`@` in the chat input** opens a picker of workspace files and folders, filtered as
+    you type (`@sal` finds `data/sales.csv`). Arrow keys choose, Enter or Tab inserts,
+    and Escape closes it. An `@` inside a word, like an email address, opens nothing.
+  - **What the agent gets.** A mention is plain text: the path relative to the workspace
+    root, in backticks, such as `` `data/sales.csv` ``. Nothing changes on the wire, and
+    no file contents are added. The agent's working directory is the workspace root, so
+    the path resolves there with no agent changes. Paths are relative to the root even
+    when the Files tab has a subfolder open.
+  - **Mention in chat** in the file browser: an `@` button on a file row's hover, and an
+    item in the right-click menu for files and folders. It inserts the path at the chat
+    cursor.
+  - **Drop a file on the chat** to upload it into the folder the Files tab shows and
+    mention it at the cursor. The message isn't sent until you press Enter. A file with
+    the same name is never replaced: the upload becomes `name (1).ext`. Folders can't be
+    dropped.
+  - Mentions and dropping are off when the Files tab is hidden (`show_files = false`) and
+    in a read-only conversation.
+  - **`GET /api/files/search?q=&limit=`** returns matching workspace paths for the
+    picker, best match first, without a leading `/`. Every word of `q` must appear in
+    the path. It skips dot folders (`.git`, `.langstage`) and the folders the file tree
+    hides (`node_modules`, `.venv`, …), never lists anything outside the workspace
+    (symlinks and junctions included), visits each folder once, and stops after 50,000
+    entries or one second, with `truncated: true`. `limit` is 1 to 200 (default 50).
+  - **`POST /api/files/upload?unique=true`** numbers a copy instead of replacing an
+    existing file, and returns the path it wrote. Without it, an upload still replaces a
+    file of the same name.
+
 ## 0.13.69 — 2026-11-19
 
 ### Fixed
