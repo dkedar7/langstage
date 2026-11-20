@@ -165,6 +165,23 @@ class FileOpResult(_Schema):
     name: str
 
 
+class FileSearchHit(_Schema):
+    path: str  # workspace-relative, forward slashes, no leading "/"
+    name: str
+    is_dir: bool
+
+
+class FileSearchResult(_Schema):
+    """``/api/files/search`` — workspace paths for the chat's ``@`` mentions (gh #238).
+
+    ``truncated`` is true when the walk hit its entry or time limit, so a match may
+    be missing; type more of the name to narrow it."""
+
+    query: str
+    results: list[FileSearchHit]
+    truncated: bool
+
+
 # ── sessions ─────────────────────────────────────────────────────────────────
 
 

@@ -15,6 +15,7 @@ import type {
   ViewedConversation,
   FileEntry,
   FilePreview,
+  MentionRequest,
   ConnectionStatus,
   AppConfig,
 } from "../types";
@@ -86,6 +87,8 @@ interface LayoutProps {
   onCloseFile: () => void;
   onEnterDir: (path: string) => void;
   onUpload: (file: File) => void;
+  /** Upload a file dropped on the chat; resolves to the path written (gh #238). */
+  onUploadForChat: (file: File) => Promise<string>;
   onCreateFolder: (name: string) => void;
   onDeletePath: (path: string) => void;
   canvasItems: CanvasItem[];
@@ -110,6 +113,9 @@ interface LayoutProps {
 export function Layout(props: LayoutProps) {
   const [activeTab, setActiveTab] = useState<RightTab>("tasks");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mentionRequest, setMentionRequest] = useState<MentionRequest | null>(null);
+  const mentionInChat = (path: string) =>
+    setMentionRequest((prev) => ({ paths: [path], seq: (prev?.seq ?? 0) + 1 }));
 
   const showCanvas = props.config.show_canvas;
   const showFiles = props.config.show_files;
@@ -191,6 +197,9 @@ export function Layout(props: LayoutProps) {
               createWorkflowPrompt={props.config.create_workflow_prompt}
               onSend={props.onSend}
               onCancel={props.onCancel}
+              filesEnabled={showFiles}
+              onUploadFile={props.onUploadForChat}
+              mentionRequest={mentionRequest}
             />
           </Allotment.Pane>
 
@@ -270,6 +279,7 @@ export function Layout(props: LayoutProps) {
                       onUpload={props.onUpload}
                       onCreateFolder={props.onCreateFolder}
                       onDelete={props.onDeletePath}
+                      onMention={mentionInChat}
                     />
                   )
                 )}

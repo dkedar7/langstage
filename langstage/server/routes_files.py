@@ -11,9 +11,15 @@ from langstage.server.models import (
     FileContent,
     FileOpResult,
     FilePreview,
+    FileSearchResult,
     FileTree,
 )
-from langstage.workspace.file_manager import BinaryFileError, FileManager
+from langstage.workspace.file_manager import (
+    SEARCH_DEFAULT_LIMIT,
+    SEARCH_MAX_LIMIT,
+    BinaryFileError,
+    FileManager,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -91,6 +97,24 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(e))
         except OSError as e:
             raise _os_error(e, path)
+
+    # A plain `def`: FastAPI runs it in a worker thread, so a walk of a big workspace
+    # never blocks the event loop (and the stream with it).
+    @r.get("/search", response_model=FileSearchResult)
+    def search_files(
+        q: str = Query("", max_length=200, description="Words that must all appear in the path (case-insensitive). Empty lists what's nearest the root."),
+        limit: int = Query(SEARCH_DEFAULT_LIMIT, ge=1, le=SEARCH_MAX_LIMIT, description="Most results to return."),
+    ):
+        """Find workspace files and folders by path, for ``@`` mentions in the chat (gh #238).
+
+        Returns workspace-relative paths (``data/sales.csv``), best match first: a match
+        in the file name before one only in a folder name, then shorter paths. Dot
+        entries (``.git``, ``.langstage``) and the folders the file tree hides
+        (``node_modules``, ``.venv``, …) are skipped, and nothing outside the workspace
+        is listed, symlinks included. The walk is bounded in entries and time;
+        ``truncated`` says when it stopped early.
+        """
+        return file_manager.search(q, limit=limit)
 
     @r.get(
         "/read",
@@ -179,6 +203,14 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             ),
         ),
         file: UploadFile = File(...),
+        unique: bool = Query(
+            False,
+            description=(
+                "Never replace an existing file: store the upload as `name (1).ext`, "
+                "`name (2).ext`, … instead. The response's `path` is the one written. "
+                "Off by default, when an upload replaces a file of the same name."
+            ),
+        ),
     ):
         """Upload a file to the workspace.
 
@@ -195,7 +227,7 @@ def create_files_router(file_manager: FileManager) -> APIRouter:
             drop_into_dir = path.endswith("/") or file_manager.get_absolute_path(path).is_dir()
             dest = (path.rstrip("/") + "/" + file.filename) if drop_into_dir else path
             content = await file.read()
-            result = file_manager.save_upload(dest, content)
+            result = file_manager.save_upload(dest, content, unique=unique)
             return result
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))

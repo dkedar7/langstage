@@ -88,6 +88,7 @@ export default function App() {
     openFile,
     enterDir,
     uploadFile,
+    uploadForChat,
     createFolder,
     deletePath,
     setSelectedFile,
@@ -146,6 +147,7 @@ export default function App() {
       onCloseFile={() => setSelectedFile(null)}
       onEnterDir={enterDir}
       onUpload={uploadFile}
+      onUploadForChat={uploadForChat}
       onCreateFolder={createFolder}
       onDeletePath={deletePath}
       canvasItems={canvasItems}
