@@ -16,6 +16,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { ToolCall, TodoItem } from "../types";
+import { argsPreview } from "../toolCards";
 
 interface ToolCallCardProps {
   toolCall: ToolCall;
@@ -56,19 +57,12 @@ function normalizeTodos(data: unknown): TodoItem[] {
   });
 }
 
-function firstArgPreview(args: Record<string, unknown>): string | null {
-  const keys = Object.keys(args);
-  if (keys.length === 0) return null;
-  const val = args[keys[0]];
-  if (val == null) return null;
-  const str = typeof val === "string" ? val : JSON.stringify(val);
-  return str.length > 100 ? str.slice(0, 100) + "…" : str;
-}
 
 export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
   const Icon = TOOL_ICONS[toolCall.name] || Wrench;
   const extraction = toolCall.extraction;
+  const preview = argsPreview(toolCall.args);
 
   const statusIndicator =
     toolCall.status === "running" ? (
@@ -102,9 +96,12 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
         <span className="font-medium text-[var(--color-text-secondary)]">
           {toolCall.name}
         </span>
-        {firstArgPreview(toolCall.args) && (
-          <code className="text-[11px] text-[var(--color-text-muted)] truncate max-w-[300px]">
-            ({firstArgPreview(toolCall.args)})
+        {preview && (
+          <code
+            className="text-[11px] text-[var(--color-text-muted)] truncate max-w-[300px]"
+            title={preview}
+          >
+            ({preview})
           </code>
         )}
         <span className="flex-1" />

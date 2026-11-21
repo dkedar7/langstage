@@ -71,3 +71,38 @@ export function findEndedCall(
     latest(messages, id, 0, running)
   );
 }
+
+/* ── the collapsed card's argument preview (gh #243) ──────────────────────── */
+
+const ARG_VALUE_CAP = 50;
+const ARGS_PREVIEW_CAP = 100;
+
+function previewValue(val: unknown): string {
+  const str = typeof val === "string" ? val : JSON.stringify(val) ?? String(val);
+  return str.replace(/\s+/g, " ").trim();
+}
+
+function cap(str: string, max: number): string {
+  return str.length > max ? str.slice(0, max) + "…" : str;
+}
+
+/**
+ * The arguments shown in a collapsed tool card's header, or `null` for none.
+ *
+ * It used to show only the first argument's value, so `add(a=17, b=25)` read as
+ * `add (17)`. As in the terminal (langstage-cli #184): a one-argument call shows
+ * its bare value (`read_file (docs/a.md)`), and a call with several shows them
+ * all by name (`a=17, b=25`), each value capped at 50 characters. The whole
+ * preview is capped at 100.
+ */
+export function argsPreview(args: Record<string, unknown> | null | undefined): string | null {
+  if (!args || typeof args !== "object") return null;
+  const entries = Object.entries(args);
+  if (entries.length === 0) return null;
+  if (entries.length === 1) {
+    const only = entries[0][1];
+    return only == null ? null : cap(previewValue(only), ARGS_PREVIEW_CAP);
+  }
+  const joined = entries.map(([k, v]) => `${k}=${cap(previewValue(v), ARG_VALUE_CAP)}`).join(", ");
+  return cap(joined, ARGS_PREVIEW_CAP);
+}
