@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.1 — 2026-11-21
+
+### Fixed
+- **A tool card's header shows every argument** (gh #243). The collapsed card showed only the
+  first argument's value, so `add(a=17, b=25)` read as `add (17)`, in the chat and in the
+  Board's task view. A call with several arguments now shows them all by name
+  (`add (a=17, b=25)`), each value capped at 50 characters and the whole preview at 100, as
+  the terminal does (langstage-cli #184). A one-argument call still shows its bare value.
+  Hovering the header shows the preview untruncated by the card's width.
+
 ## 0.14.0 — 2026-11-19
 
 ### Added

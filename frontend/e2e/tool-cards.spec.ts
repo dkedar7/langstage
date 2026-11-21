@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { currentTurnStart, findAnnouncedCall, findEndedCall } from '../src/toolCards';
+import { argsPreview, currentTurnStart, findAnnouncedCall, findEndedCall } from '../src/toolCards';
 import type { ChatMessage, ToolCall } from '../src/types';
 
 /**
@@ -27,6 +27,39 @@ const assistant = (...toolCalls: ToolCall[]): ChatMessage => ({
   role: 'assistant',
   content: '',
   toolCalls
+});
+
+/* ── the collapsed header's argument preview (gh #243) ──────────────────── */
+
+test.describe('tool card argument preview', () => {
+  test('every argument of a multi-argument call is shown by name', () => {
+    expect(argsPreview({ a: 17, b: 25 })).toBe('a=17, b=25');
+    expect(argsPreview({ path: 'notes.md', content: 'line one' + String.fromCharCode(10) + 'line two' })).toBe(
+      'path=notes.md, content=line one line two'
+    );
+    expect(argsPreview({ a: 1, b: null })).toBe('a=1, b=null');
+  });
+
+  test('a one-argument call keeps its bare value', () => {
+    expect(argsPreview({ query: 'NW-1041' })).toBe('NW-1041');
+    expect(argsPreview({ filters: { status: 'open' } })).toBe('{"status":"open"}');
+  });
+
+  test('no arguments, or a lone null, shows nothing', () => {
+    expect(argsPreview({})).toBeNull();
+    expect(argsPreview(undefined)).toBeNull();
+    expect(argsPreview({ x: null })).toBeNull();
+  });
+
+  test('each value is capped at 50 characters and the whole preview at 100', () => {
+    const long = 'x'.repeat(80);
+    expect(argsPreview({ a: long, b: 1 })).toBe(`a=${'x'.repeat(50)}…, b=1`);
+    const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`arg${i}`, i]));
+    const preview = argsPreview(many)!;
+    expect(preview.length).toBe(101);
+    expect(preview.endsWith('…')).toBe(true);
+    expect(argsPreview({ only: 'y'.repeat(150) })).toBe('y'.repeat(100) + '…');
+  });
 });
 
 test.describe('tool card matching', () => {
