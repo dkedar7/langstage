@@ -18,8 +18,10 @@ export function useFileMentions(enabled: boolean) {
   const seq = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastQuery = useRef<string | null>(null);
-  // Escape closes the picker for this `@` until the caret leaves it.
-  const dismissedAt = useRef<number | null>(null);
+  // The picker stays closed for this `@` while the query extends `query`: after
+  // Escape (query "") until the caret leaves the mention, and after a word past a
+  // space found nothing (gh #245), since typing on can only narrow the match.
+  const dismissed = useRef<{ start: number; query: string } | null>(null);
 
   const close = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -35,7 +37,7 @@ export function useFileMentions(enabled: boolean) {
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  const search = useCallback((query: string) => {
+  const search = useCallback((query: string, start: number) => {
     if (timer.current) clearTimeout(timer.current);
     const mine = ++seq.current;
     setLoading(true);
@@ -44,7 +46,14 @@ export function useFileMentions(enabled: boolean) {
         const res = await fetch(`/api/files/search?q=${encodeURIComponent(query)}&limit=${LIMIT}`);
         const data = res.ok ? await res.json() : { results: [] };
         if (mine !== seq.current) return; // a newer keystroke owns the list
-        setResults(data.results ?? []);
+        const hits: FileSearchHit[] = data.results ?? [];
+        if (!hits.length && query.includes(" ")) {
+          // `@sales and then...`: the words after the space are prose, not a path.
+          dismissed.current = { start, query };
+          close();
+          return;
+        }
+        setResults(hits);
         setSelectedIndex(0);
       } catch {
         if (mine === seq.current) setResults([]);
@@ -52,7 +61,7 @@ export function useFileMentions(enabled: boolean) {
         if (mine === seq.current) setLoading(false);
       }
     }, DEBOUNCE_MS);
-  }, []);
+  }, [close]);
 
   /** Call on every edit and caret move. */
   const update = useCallback(
@@ -60,22 +69,24 @@ export function useFileMentions(enabled: boolean) {
       if (!enabled) return;
       const m = activeMention(text, caret);
       if (!m) {
-        dismissedAt.current = null;
+        dismissed.current = null;
         if (lastQuery.current !== null) close();
         return;
       }
-      if (dismissedAt.current === m.start) return;
+      const d = dismissed.current;
+      if (d && d.start === m.start && m.query.startsWith(d.query)) return;
+      dismissed.current = null;
       setMention(m);
       if (m.query !== lastQuery.current) {
         lastQuery.current = m.query;
-        search(m.query);
+        search(m.query, m.start);
       }
     },
     [enabled, close, search],
   );
 
   const dismiss = useCallback(() => {
-    if (mention) dismissedAt.current = mention.start;
+    if (mention) dismissed.current = { start: mention.start, query: "" };
     close();
   }, [mention, close]);
 

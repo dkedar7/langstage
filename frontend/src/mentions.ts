@@ -22,21 +22,26 @@ const MAX_QUERY = 200;
  * The mention the caret is in, or null.
  *
  * The `@` must start the text or follow whitespace or an opening bracket or quote,
- * so `ana@example.org` isn't a mention. The query stops at whitespace or a backtick,
- * so an inserted mention doesn't reopen the picker.
+ * so `ana@example.org` isn't a mention. The query may hold single spaces, so
+ * `@q3 draft` is one query and matches `reports/q3/draft.md` (the server wants every
+ * word in the path). It stops at a backtick, so an inserted mention doesn't reopen
+ * the picker, and at a line break, a tab or two spaces in a row. The picker itself
+ * closes when a word after a space leaves no match (gh #245), so prose typed after
+ * an `@word` doesn't keep it open.
  */
 export function activeMention(text: string, caret: number): ActiveMention | null {
   let i = caret - 1;
   while (i >= 0) {
     const ch = text[i];
     if (ch === "@") break;
-    if (/\s|`/.test(ch)) return null;
+    if (ch === "`" || (/\s/.test(ch) && (ch !== " " || text[i - 1] === " "))) return null;
     i--;
   }
   if (i < 0) return null;
   if (i > 0 && !/[\s([{"']/.test(text[i - 1])) return null;
   const query = text.slice(i + 1, caret);
-  if (query.length > MAX_QUERY) return null;
+  // A lone `@` followed by a space ("meet @ 5pm") isn't a mention.
+  if (query.length > MAX_QUERY || query.startsWith(" ")) return null;
   let end = caret;
   while (end < text.length && !/\s/.test(text[end])) end++;
   return { start: i, end, query };
