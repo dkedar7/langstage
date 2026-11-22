@@ -32,11 +32,24 @@ test.describe('mention text', () => {
     expect(activeMention('@salXY rest', 4)).toEqual({ start: 0, end: 6, query: 'sal' });
   });
 
-  test('ignores an email address, a finished word and an inserted mention', () => {
+  test('ignores an email address, an inserted mention and a lone @', () => {
     expect(activeMention('ana@example.org', 15)).toBeNull();
-    expect(activeMention('@sales done', 11)).toBeNull();
+    expect(activeMention('write to ana@example.org and more', 33)).toBeNull();
     expect(activeMention('`data/sales.csv` ', 17)).toBeNull();
+    expect(activeMention('`data/sales.csv` and more', 25)).toBeNull();
     expect(activeMention('no at here', 5)).toBeNull();
+    expect(activeMention('meet @ 5pm', 10)).toBeNull();
+  });
+
+  test('a query spans single spaces on one line (gh #245)', () => {
+    expect(activeMention('@q3 draft', 9)).toEqual({ start: 0, end: 9, query: 'q3 draft' });
+    expect(activeMention('see @q3 ', 8)).toEqual({ start: 4, end: 8, query: 'q3 ' });
+    expect(activeMention('see @q3 dr rest', 10)).toEqual({ start: 4, end: 10, query: 'q3 dr' });
+    // Two spaces, a tab or a line break end it.
+    expect(activeMention('@q3  draft', 10)).toBeNull();
+    expect(activeMention('@q3\tdraft', 9)).toBeNull();
+    expect(activeMention('@q3\ndraft', 9)).toBeNull();
+    expect(activeMention('@q3\n@dra', 8)).toEqual({ start: 4, end: 8, query: 'dra' });
   });
 
   test('formats a path as workspace-relative code', () => {
@@ -54,6 +67,9 @@ test.describe('mention text', () => {
     expect(edit.caret).toBe('compare `data/sales.csv`'.length);
     const end = applyMention('@sa', activeMention('@sa', 3)!, 'x.md');
     expect(end).toEqual({ text: '`x.md` ', caret: 7 });
+    const multi = 'open @q3 dr now';
+    const picked = applyMention(multi, activeMention(multi, 11)!, 'reports/q3/draft.md');
+    expect(picked.text).toBe('open `reports/q3/draft.md` now');
   });
 
   test('inserts dropped paths with spaces around them', () => {
@@ -123,6 +139,29 @@ test.describe('@ mentions in the chat', () => {
     await input.pressSequentially('write to ana@example.org');
     await page.waitForTimeout(300);
     await expect(page.getByTestId('mention-menu')).toHaveCount(0);
+  });
+
+  test('a query with a space finds the file, and prose after it closes the picker (gh #245)', async ({ page }) => {
+    const id = uid();
+    writeFile(`m245-${id}/q3/draft_${id}.md`);
+    writeFile(`m245-${id}/q3/final_${id}.md`);
+    const input = await openApp(page);
+    const menu = page.getByTestId('mention-menu');
+
+    await input.click();
+    await input.pressSequentially(`@m245-${id} draft`);
+    await expect(menu.getByRole('option')).toHaveCount(1);
+    await expect(menu.getByRole('option').first()).toContainText(`m245-${id}/q3/draft_${id}.md`);
+    await input.press('Enter');
+    await expect(input).toHaveValue(`\`m245-${id}/q3/draft_${id}.md\` `);
+
+    // An @word followed by ordinary words: the picker closes once they match nothing,
+    // and Enter sends the message as typed.
+    await input.fill('');
+    await input.pressSequentially(`ask @m245-${id} about zebras`);
+    await expect(menu).toHaveCount(0);
+    await input.press('Enter');
+    await expect(page.getByText(`ask @m245-${id} about zebras`).first()).toBeVisible();
   });
 
   test('hidden folders are never offered', async ({ page }) => {

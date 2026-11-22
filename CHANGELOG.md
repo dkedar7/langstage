@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.2 — 2026-11-22
+
+### Fixed
+- **A multi-word `@` mention finds its file** (gh #245). The picker closed at the first space,
+  so the documented `@q3 draft` never found `reports/q3/draft.md` and was sent as typed. The
+  query now runs across single spaces, as the server's search already allowed (every word
+  must appear in the path). The picker closes when a word after a space matches nothing, so
+  ordinary text typed after an `@word` sends as before; two spaces, a tab, a line break or
+  Escape also end it, and a lone `@` before a space (`meet @ 5pm`) opens nothing.
+
 ## 0.14.1 — 2026-11-21
 
 ### Fixed
