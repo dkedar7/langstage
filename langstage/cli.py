@@ -48,7 +48,7 @@ class _Group(click.Group):
 
 
 def _port_bind_error(host, port):
-    """Return why ``host:port`` can't be bound, or None if it's free.
+    """Return a one-line reason ``host:port`` can't be served, or None if it's free.
 
     Probed before the server banner so a busy port is a clean one-line error and exit 1
     rather than a success banner followed by uvicorn's own exit 3 (ADR 0007).
@@ -57,18 +57,49 @@ def _port_bind_error(host, port):
     previous run's socket in ``TIME_WAIT`` doesn't read as busy for a minute after a
     restart, while a live listener still fails with ``EADDRINUSE``. On Windows the option
     would let a second server share a port that is really in use, so it stays off there,
-    as in uvicorn and ``langstage_core.agui``."""
+    as in uvicorn and ``langstage_core.agui``.
+
+    It also probes *every* address the host resolves to, as asyncio's ``create_server``
+    (which uvicorn uses) binds them all (gh #247). ``localhost`` resolves to ``::1`` and
+    ``127.0.0.1``; probing only the first let a server holding ``127.0.0.1`` pass the
+    probe, and uvicorn then failed after printing the banner. IPv6 sockets set
+    ``IPV6_V6ONLY`` as asyncio does, so ``::`` and ``0.0.0.0`` are probed separately."""
     import socket
 
     try:
-        family, type_, proto, _, addr = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)[0]
-        with socket.socket(family, type_, proto) as sock:
-            if sys.platform != "win32":
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(addr)
+        infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM, 0,
+                                   socket.AI_PASSIVE)
     except OSError as exc:
-        return exc.strerror or str(exc)
+        return f"cannot serve at http://{host}:{port}: {exc.strerror or exc}"
+    seen = set()
+    for family, type_, proto, _, addr in infos:
+        if (family, addr[:2]) in seen:
+            continue
+        seen.add((family, addr[:2]))
+        try:
+            sock = socket.socket(family, type_, proto)
+        except OSError:
+            continue  # this family isn't available here; asyncio skips it too
+        try:
+            with sock:
+                if sys.platform != "win32":
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                if family == getattr(socket, "AF_INET6", None) and hasattr(socket, "IPV6_V6ONLY"):
+                    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                sock.bind(addr)
+        except OSError as exc:
+            if _is_addr_in_use(exc):
+                return (f"port {port} is already in use on {addr[0]}; "
+                        "pass --port or set LANGSTAGE_PORT")
+            return f"cannot serve at http://{host}:{port}: {exc.strerror or exc}"
     return None
+
+
+def _is_addr_in_use(exc: OSError) -> bool:
+    """``EADDRINUSE`` on POSIX; ``WSAEADDRINUSE`` (10048) on Windows."""
+    import errno
+
+    return exc.errno in (errno.EADDRINUSE, 10048) or getattr(exc, "winerror", None) == 10048
 
 
 def _echo(message: str) -> None:
@@ -182,7 +213,7 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
     cfg = getattr(app, "config", None)  # absent only on test doubles
     reason = _port_bind_error(cfg.host, cfg.port) if cfg is not None else None
     if reason:
-        raise click.ClickException(f"cannot serve at http://{cfg.host}:{cfg.port}: {reason}")
+        raise click.ClickException(reason)
     try:
         app.run(open_browser=not no_browser)
     except SystemExit as e:

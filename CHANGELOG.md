@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.3 — 2026-11-25
+
+### Fixed
+- **A busy port is one clean line, whatever the host** (gh #247). `langstage run` probes the
+  port before printing its banner, but it probed only the first address the host resolves to.
+  `localhost` (the default) resolves to `::1` and then `127.0.0.1`, so with another server on
+  `127.0.0.1:8050` the probe passed, the banner printed as if the server had started, and
+  uvicorn then failed with its raw bind error. The probe now tries every address, as uvicorn
+  binds them all, and a port in use reads
+  `Error: port 8050 is already in use on 127.0.0.1; pass --port or set LANGSTAGE_PORT`
+  (exit 1, no banner). Other bind failures (an unresolvable host, a reserved port) still read
+  `Error: cannot serve at http://HOST:PORT: <reason>`.
+
 ## 0.14.2 — 2026-11-22
 
 ### Fixed

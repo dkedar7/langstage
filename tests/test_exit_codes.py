@@ -140,7 +140,7 @@ def test_run_busy_port_is_failure_1_before_banner(monkeypatch):
     finally:
         holder.close()
     assert result.exit_code == 1, result.output
-    assert "cannot serve" in result.output
+    assert f"port {port} is already in use on 127.0.0.1" in result.output
     assert served == []
 
 
