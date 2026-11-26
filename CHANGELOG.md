@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.14.4 — 2026-11-26
+
+### Fixed
+- **`run`, `check` and `chat` name an unknown or misplaced `langstage.toml` key** (gh #249).
+  `langstage config` listed a typo'd `[agent] spce`, a top-level `spec` or an `[agents]`
+  table as an unknown key, but the commands a user runs said nothing. They fell back to the
+  built-in default agent and blamed the missing `deepagents` extra, and `check` claimed
+  "nothing is configured". Each now prints one stderr note per unknown key, in the style of
+  the invalid-value note, for example
+  `note: unknown key agent.spce in ./langstage.toml ignored (did you mean agent.spec?)`.
+  When no agent spec resolved, an agent-looking key also says where the spec goes
+  (`[agent] spec = "path/to/agent.py:graph"`), and `check` says the spec was ignored instead
+  of "nothing is configured". `check --json` lists the keys under `unknown_toml_keys`.
+
 ## 0.14.3 — 2026-11-25
 
 ### Fixed
