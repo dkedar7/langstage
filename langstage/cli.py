@@ -171,6 +171,7 @@ def run(agent_spec, demo, workspace, port, host, debug, title, subtitle, welcome
         if agent_spec:
             raise click.UsageError("--demo and --agent are mutually exclusive.")
         agent_spec = DEMO_AGENT_SPEC
+    _note_unknown_toml_keys(AppConfig.resolve())  # gh #249
     try:
         app = CoworkApp(
             agent_spec=agent_spec,
@@ -330,6 +331,68 @@ def init(target, force):
                f"Check with `langstage config`, which lists the file it reads.")
 
 
+def _is_agent_key(key: str) -> bool:
+    """Whether an unknown TOML key was probably meant to name the agent: anything under
+    ``[agent]`` / ``[agents]``, or a ``spec`` / ``agent_spec`` key anywhere (gh #249)."""
+    parts = key.split(".")
+    return parts[0] in ("agent", "agents") or parts[-1] in ("spec", "agent_spec")
+
+
+def _toml_file_for(cfg, key: str):
+    """The langstage.toml that holds ``key`` (the nearest file wins), cwd-relative when
+    it sits below the cwd. ``None`` when core doesn't expose per-file data."""
+    from pathlib import Path
+
+    for path, data in reversed(getattr(cfg, "_toml_files", None) or []):
+        node = data
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                node = None
+                break
+            node = node[part]
+        if node is not None:
+            try:
+                rel = Path(path).resolve().relative_to(Path.cwd().resolve())
+                return f"./{rel.as_posix()}"
+            except (ValueError, OSError):
+                return str(path)
+    return None
+
+
+def _note_unknown_toml_keys(cfg) -> list[str]:
+    """Print one stderr note per unknown ``langstage.toml`` key; return every such key.
+
+    ``config`` lists them, but ``run`` / ``check`` / ``chat`` didn't, so a typo'd or
+    misplaced ``[agent] spce`` / ``[agents]`` / top-level ``spec`` was silently
+    ignored and the run fell back to the built-in default agent, with an error about
+    the ``deepagents`` extra that pointed at the wrong fix (gh #249). Same style as the
+    invalid-value note. A misplaced bare key (``debug`` under ``[server]``) is skipped:
+    core already notes it at resolve time. A diagnostic must never break the command.
+    """
+    try:
+        issues = [i for i in cfg.config_issues() if i.get("kind") == "unknown_toml_key"]
+        misplaced = set(getattr(cfg, "_misplaced_bare_keys", dict)())
+    except Exception:  # noqa: BLE001
+        return []
+    no_spec = not getattr(cfg, "agent_spec", None)
+    keys = []
+    for issue in issues:
+        key = issue["key"]
+        keys.append(key)
+        if key in misplaced:
+            continue
+        agent_key = _is_agent_key(key) and no_spec
+        hint = issue.get("did_you_mean") or ("agent.spec" if agent_key else None)
+        where = _toml_file_for(cfg, key)
+        msg = f"note: unknown key {key}{f' in {where}' if where else ''} ignored"
+        if hint:
+            msg += f" (did you mean {hint}?)"
+        if agent_key:
+            msg += '. The agent spec goes in the [agent] table: [agent] spec = "path/to/agent.py:graph"'
+        safe_print(msg, file=sys.stderr)
+    return keys
+
+
 def _resolved_agent_spec():
     """The ``agent_spec`` that ``run`` would serve when no ``--agent`` is given.
 
@@ -389,11 +452,15 @@ def check(agent_spec, demo, live, as_json):
     spec = DEMO_AGENT_SPEC if demo else agent_spec
     base_dir = None
     default_workspace = None
+    # Unknown langstage.toml keys: one stderr note each, also under --json (gh #249).
+    ignored_keys = _note_unknown_toml_keys(AppConfig.resolve())
+    ignored_agent_keys: list[str] = []
     if not spec:
         # No flag: preflight what `run` would serve, i.e. the spec resolved from env /
         # langstage.toml (gh #143), or with nothing configured the built-in default
         # agent, built for the resolved workspace exactly as CoworkApp does (gh #187).
         spec, cfg = _resolved_agent_spec()
+        ignored_agent_keys = [k for k in ignored_keys if _is_agent_key(k)]
         if spec:
             base_dir = cfg.toml_dir_for("agent_spec")
         else:
@@ -412,6 +479,7 @@ def check(agent_spec, demo, live, as_json):
         "agent_name": None,
         "checks": {},
         "live": {"ran": False},
+        "unknown_toml_keys": ignored_keys,
         "ok": False,
     }
 
@@ -428,7 +496,12 @@ def check(agent_spec, demo, live, as_json):
             safe_print(_json.dumps(report, indent=2))
         raise SystemExit(code)
 
-    if default_workspace is not None:
+    if default_workspace is not None and ignored_agent_keys:
+        # Something IS configured, under a key nothing reads (gh #249).
+        say("Checking agent: the built-in default agent (no agent spec resolved: "
+            f"langstage.toml's {', '.join(ignored_agent_keys)} was ignored, see the note "
+            "above; this is what `run` serves)\n")
+    elif default_workspace is not None:
         say("Checking agent: the built-in default agent (nothing is configured, so this "
             "is what `run` serves)\n")
     else:
@@ -717,6 +790,7 @@ def chat(agent_spec, demo, workspace, as_json, no_context, prompt):
         if agent_spec:
             raise click.UsageError("--demo and --agent are mutually exclusive.")
         agent_spec = DEMO_AGENT_SPEC
+    _note_unknown_toml_keys(AppConfig.resolve())  # gh #249
     try:
         # Reuse CoworkApp for agent-load + workspace + checkpointer resolution (the
         # exact wiring `run` uses), so `chat` resolves --workspace/toml/env the same
